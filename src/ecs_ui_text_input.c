@@ -5,6 +5,8 @@
 ECS_COMPONENT_DECLARE(EcsUiTextField);
 ECS_COMPONENT_DECLARE(EcsUiTextEditState);
 ECS_COMPONENT_DECLARE(EcsUiTextInsertRequest);
+ECS_COMPONENT_DECLARE(EcsUiTextPasteRequest);
+ECS_COMPONENT_DECLARE(EcsUiTextClipboardWriteRequest);
 ECS_TAG_DECLARE(EcsUiFocusedTextField);
 ECS_TAG_DECLARE(EcsUiTextFieldUiNode);
 ECS_TAG_DECLARE(EcsUiTextFieldValueUiNode);
@@ -22,12 +24,16 @@ ECS_TAG_DECLARE(EcsUiTextSelectLeftRequest);
 ECS_TAG_DECLARE(EcsUiTextSelectRightRequest);
 ECS_TAG_DECLARE(EcsUiTextSelectStartRequest);
 ECS_TAG_DECLARE(EcsUiTextSelectEndRequest);
+ECS_TAG_DECLARE(EcsUiTextCopyRequest);
+ECS_TAG_DECLARE(EcsUiTextCutRequest);
 
 static bool EcsUiTextInputReady(void)
 {
     return ecs_id(EcsUiTextField) != 0 &&
         ecs_id(EcsUiTextEditState) != 0 &&
         ecs_id(EcsUiTextInsertRequest) != 0 &&
+        ecs_id(EcsUiTextPasteRequest) != 0 &&
+        ecs_id(EcsUiTextClipboardWriteRequest) != 0 &&
         EcsUiFocusedTextField != 0 && EcsUiTextFieldUiNode != 0 &&
         EcsUiTextFieldValueUiNode != 0 && EcsUiForTextField != 0 &&
         EcsUiFocusTextFieldRequest != 0 &&
@@ -41,7 +47,9 @@ static bool EcsUiTextInputReady(void)
         EcsUiTextSelectLeftRequest != 0 &&
         EcsUiTextSelectRightRequest != 0 &&
         EcsUiTextSelectStartRequest != 0 &&
-        EcsUiTextSelectEndRequest != 0;
+        EcsUiTextSelectEndRequest != 0 &&
+        EcsUiTextCopyRequest != 0 &&
+        EcsUiTextCutRequest != 0;
 }
 
 static void EcsUiTextInputCopyString(
@@ -59,6 +67,37 @@ static void EcsUiTextInputCopyString(
         out[i] = source[i];
     }
     out[i] = '\0';
+}
+
+static void EcsUiTextInputCopySubstring(
+    char *out,
+    size_t out_size,
+    const char *value,
+    uint32_t start,
+    uint32_t end)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+
+    const char *source = value != NULL ? value : "";
+    size_t length = strlen(source);
+    size_t copy_start = start <= length ? (size_t)start : length;
+    size_t copy_end = end <= length ? (size_t)end : length;
+    if (copy_start > copy_end) {
+        size_t swap = copy_start;
+        copy_start = copy_end;
+        copy_end = swap;
+    }
+
+    size_t out_index = 0u;
+    for (size_t i = copy_start;
+         i < copy_end && out_index + 1u < out_size;
+         i += 1u) {
+        out[out_index] = source[i];
+        out_index += 1u;
+    }
+    out[out_index] = '\0';
 }
 
 static bool EcsUiTextInputPushChar(
@@ -436,6 +475,37 @@ ecs_entity_t EcsUiTextInputRequestSelectEnd(ecs_world_t *world)
     return ecs_new_w_id(world, EcsUiTextSelectEndRequest);
 }
 
+ecs_entity_t EcsUiTextInputRequestCopy(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+    return ecs_new_w_id(world, EcsUiTextCopyRequest);
+}
+
+ecs_entity_t EcsUiTextInputRequestCut(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+    return ecs_new_w_id(world, EcsUiTextCutRequest);
+}
+
+ecs_entity_t EcsUiTextInputRequestPaste(
+    ecs_world_t *world,
+    const char *text)
+{
+    if (world == NULL || text == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+
+    ecs_entity_t request = ecs_new(world);
+    EcsUiTextPasteRequest paste = {0};
+    EcsUiTextInputCopyString(paste.text, sizeof(paste.text), text);
+    ecs_set_ptr(world, request, EcsUiTextPasteRequest, &paste);
+    return request;
+}
+
 const char *EcsUiTextInputValue(
     const ecs_world_t *world,
     ecs_entity_t field)
@@ -681,6 +751,52 @@ bool EcsUiTextInputDisplayText(
     return true;
 }
 
+bool EcsUiTextInputPopClipboardWrite(
+    ecs_world_t *world,
+    char *out,
+    size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return false;
+    }
+    out[0] = '\0';
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return false;
+    }
+
+    ecs_query_t *query = ecs_query(world, {
+        .terms = {
+            {.id = ecs_id(EcsUiTextClipboardWriteRequest)},
+        },
+    });
+    if (query == NULL) {
+        return false;
+    }
+
+    bool found = false;
+    ecs_entity_t request = 0;
+    ecs_iter_t it = ecs_query_iter(world, query);
+    while (!found && ecs_query_next(&it)) {
+        const EcsUiTextClipboardWriteRequest *writes =
+            ecs_field(&it, EcsUiTextClipboardWriteRequest, 0);
+        for (int32_t i = 0; i < it.count; i += 1) {
+            EcsUiTextInputCopyString(out, out_size, writes[i].text);
+            request = it.entities[i];
+            found = true;
+            break;
+        }
+    }
+    if (found) {
+        ecs_iter_fini(&it);
+    }
+    ecs_query_fini(query);
+
+    if (request != 0) {
+        ecs_delete(world, request);
+    }
+    return found;
+}
+
 bool EcsUiTextInputSetFieldUiNodes(
     ecs_world_t *world,
     ecs_entity_t field,
@@ -808,6 +924,66 @@ static bool EcsUiTextInputInsertCodepoint(
     field_data->value[cursor] = (char)codepoint;
     edit_state->cursor = cursor + 1u;
     EcsUiTextInputClearEditSelection(edit_state);
+    return true;
+}
+
+static bool EcsUiTextInputInsertString(
+    EcsUiTextField *field_data,
+    EcsUiTextEditState *edit_state,
+    const char *text)
+{
+    if (field_data == NULL || edit_state == NULL || text == NULL) {
+        return false;
+    }
+
+    bool changed = false;
+    if (EcsUiTextInputEditStateHasSelection(edit_state)) {
+        changed = EcsUiTextInputDeleteSelection(field_data, edit_state);
+    }
+    for (size_t i = 0u; text[i] != '\0'; i += 1u) {
+        if (EcsUiTextInputInsertCodepoint(
+                field_data,
+                edit_state,
+                (uint32_t)(unsigned char)text[i])) {
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+static bool EcsUiTextInputCopySelectedText(
+    const EcsUiTextField *field_data,
+    const EcsUiTextEditState *edit_state,
+    char *out,
+    size_t out_size)
+{
+    if (field_data == NULL || edit_state == NULL || out == NULL ||
+        out_size == 0u ||
+        !EcsUiTextInputEditStateHasSelection(edit_state)) {
+        return false;
+    }
+
+    EcsUiTextInputCopySubstring(
+        out,
+        out_size,
+        field_data->value,
+        EcsUiTextInputSelectionMin(edit_state),
+        EcsUiTextInputSelectionMax(edit_state));
+    return true;
+}
+
+static bool EcsUiTextInputCreateClipboardWrite(
+    ecs_world_t *world,
+    const char *text)
+{
+    if (world == NULL || text == NULL) {
+        return false;
+    }
+
+    EcsUiTextClipboardWriteRequest write = {0};
+    EcsUiTextInputCopyString(write.text, sizeof(write.text), text);
+    ecs_entity_t request = ecs_new(world);
+    ecs_set_ptr(world, request, EcsUiTextClipboardWriteRequest, &write);
     return true;
 }
 
@@ -1089,6 +1265,28 @@ static void EcsUiTextInputInsertSystem(ecs_iter_t *it)
     }
 }
 
+static void EcsUiTextInputPasteSystem(ecs_iter_t *it)
+{
+    const EcsUiTextPasteRequest *requests =
+        ecs_field(it, EcsUiTextPasteRequest, 0);
+
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t field = EcsUiTextInputFocusedField(it->world);
+        EcsUiTextEditState *edit_state =
+            EcsUiTextInputEnsureEditState(it->world, field);
+        EcsUiTextField *field_data =
+            field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
+        if (EcsUiTextInputInsertString(
+                field_data,
+                edit_state,
+                requests[i].text)) {
+            ecs_modified(it->world, field, EcsUiTextField);
+            ecs_modified(it->world, field, EcsUiTextEditState);
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
 static void EcsUiTextInputDeleteSystem(ecs_iter_t *it)
 {
     for (int32_t i = 0; i < it->count; i += 1) {
@@ -1103,6 +1301,42 @@ static void EcsUiTextInputDeleteSystem(ecs_iter_t *it)
         }
         ecs_delete(it->world, it->entities[i]);
     }
+}
+
+static void EcsUiTextInputClipboardSystem(ecs_iter_t *it, bool cut)
+{
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t field = EcsUiTextInputFocusedField(it->world);
+        EcsUiTextEditState *edit_state =
+            EcsUiTextInputEnsureEditState(it->world, field);
+        EcsUiTextField *field_data =
+            field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
+        char clipboard_text[ECS_UI_TEXT_MAX] = {0};
+        if (EcsUiTextInputCopySelectedText(
+                field_data,
+                edit_state,
+                clipboard_text,
+                sizeof(clipboard_text))) {
+            if (cut && EcsUiTextInputDeleteSelection(field_data, edit_state)) {
+                ecs_modified(it->world, field, EcsUiTextField);
+                ecs_modified(it->world, field, EcsUiTextEditState);
+            }
+            (void)EcsUiTextInputCreateClipboardWrite(
+                it->world,
+                clipboard_text);
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
+static void EcsUiTextInputCopySystem(ecs_iter_t *it)
+{
+    EcsUiTextInputClipboardSystem(it, false);
+}
+
+static void EcsUiTextInputCutSystem(ecs_iter_t *it)
+{
+    EcsUiTextInputClipboardSystem(it, true);
 }
 
 static void EcsUiTextInputMoveCursorSystem(ecs_iter_t *it, int32_t direction)
@@ -1224,6 +1458,8 @@ void EcsUiTextInputImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiTextField);
     ECS_COMPONENT_DEFINE(world, EcsUiTextEditState);
     ECS_COMPONENT_DEFINE(world, EcsUiTextInsertRequest);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextPasteRequest);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextClipboardWriteRequest);
     ECS_TAG_DEFINE(world, EcsUiFocusedTextField);
     ECS_TAG_DEFINE(world, EcsUiTextFieldUiNode);
     ECS_TAG_DEFINE(world, EcsUiTextFieldValueUiNode);
@@ -1241,6 +1477,8 @@ void EcsUiTextInputImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiTextSelectRightRequest);
     ECS_TAG_DEFINE(world, EcsUiTextSelectStartRequest);
     ECS_TAG_DEFINE(world, EcsUiTextSelectEndRequest);
+    ECS_TAG_DEFINE(world, EcsUiTextCopyRequest);
+    ECS_TAG_DEFINE(world, EcsUiTextCutRequest);
 
     ecs_add_id(world, EcsUiFocusedTextField, EcsExclusive);
     ecs_add_id(world, EcsUiTextFieldUiNode, EcsExclusive);
@@ -1314,6 +1552,39 @@ void EcsUiTextInputImport(ecs_world_t *world)
             {.id = EcsUiTextDeleteRequest},
         },
         .callback = EcsUiTextInputDeleteSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputPasteSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = ecs_id(EcsUiTextPasteRequest)},
+        },
+        .callback = EcsUiTextInputPasteSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputCopySystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = EcsUiTextCopyRequest},
+        },
+        .callback = EcsUiTextInputCopySystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputCutSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = EcsUiTextCutRequest},
+        },
+        .callback = EcsUiTextInputCutSystem,
     });
 
     (void)ecs_system(world, {

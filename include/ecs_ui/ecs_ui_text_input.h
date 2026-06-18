@@ -24,9 +24,19 @@ typedef struct EcsUiTextInsertRequest {
     uint32_t codepoint;
 } EcsUiTextInsertRequest;
 
+typedef struct EcsUiTextPasteRequest {
+    char text[ECS_UI_TEXT_MAX];
+} EcsUiTextPasteRequest;
+
+typedef struct EcsUiTextClipboardWriteRequest {
+    char text[ECS_UI_TEXT_MAX];
+} EcsUiTextClipboardWriteRequest;
+
 extern ECS_COMPONENT_DECLARE(EcsUiTextField);
 extern ECS_COMPONENT_DECLARE(EcsUiTextEditState);
 extern ECS_COMPONENT_DECLARE(EcsUiTextInsertRequest);
+extern ECS_COMPONENT_DECLARE(EcsUiTextPasteRequest);
+extern ECS_COMPONENT_DECLARE(EcsUiTextClipboardWriteRequest);
 extern ECS_TAG_DECLARE(EcsUiFocusedTextField);
 extern ECS_TAG_DECLARE(EcsUiTextFieldUiNode);
 extern ECS_TAG_DECLARE(EcsUiTextFieldValueUiNode);
@@ -44,6 +54,8 @@ extern ECS_TAG_DECLARE(EcsUiTextSelectLeftRequest);
 extern ECS_TAG_DECLARE(EcsUiTextSelectRightRequest);
 extern ECS_TAG_DECLARE(EcsUiTextSelectStartRequest);
 extern ECS_TAG_DECLARE(EcsUiTextSelectEndRequest);
+extern ECS_TAG_DECLARE(EcsUiTextCopyRequest);
+extern ECS_TAG_DECLARE(EcsUiTextCutRequest);
 
 void EcsUiTextInputImport(ecs_world_t *world);
 
@@ -76,6 +88,11 @@ ecs_entity_t EcsUiTextInputRequestSelectLeft(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestSelectRight(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestSelectStart(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestSelectEnd(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestCopy(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestCut(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestPaste(
+    ecs_world_t *world,
+    const char *text);
 
 const char *EcsUiTextInputValue(
     const ecs_world_t *world,
@@ -117,6 +134,10 @@ bool EcsUiTextInputDisplayText(
     const ecs_world_t *world,
     ecs_entity_t field,
     bool include_caret,
+    char *out,
+    size_t out_size);
+bool EcsUiTextInputPopClipboardWrite(
+    ecs_world_t *world,
     char *out,
     size_t out_size);
 

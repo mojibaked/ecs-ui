@@ -39,17 +39,50 @@ static void DemoClayPushKeyboardEvent(
     (void)EcsUiEventListPush(events, &event);
 }
 
+static void DemoClayPushKeyboardTextEvent(
+    EcsUiEventList *events,
+    EcsUiEventType type,
+    const char *text)
+{
+    if (events == NULL) {
+        return;
+    }
+
+    EcsUiEvent event = {
+        .type = type,
+    };
+    const char *value = text != NULL ? text : "";
+    (void)snprintf(event.text, sizeof(event.text), "%s", value);
+    (void)EcsUiEventListPush(events, &event);
+}
+
 static void DemoClayCollectKeyboardEvents(EcsUiEventList *events)
 {
     if (events == NULL) {
         return;
     }
 
+    const bool shortcut_down =
+        IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     for (int key = GetCharPressed(); key > 0; key = GetCharPressed()) {
-        DemoClayPushKeyboardEvent(
+        if (!shortcut_down) {
+            DemoClayPushKeyboardEvent(
+                events,
+                ECS_UI_EVENT_TEXT_INPUT,
+                (uint32_t)key);
+        }
+    }
+    if (shortcut_down && IsKeyPressed(KEY_C)) {
+        DemoClayPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_COPY, 0u);
+    }
+    if (shortcut_down && IsKeyPressed(KEY_X)) {
+        DemoClayPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_CUT, 0u);
+    }
+    if (shortcut_down && IsKeyPressed(KEY_V)) {
+        DemoClayPushKeyboardTextEvent(
             events,
-            ECS_UI_EVENT_TEXT_INPUT,
-            (uint32_t)key);
+            ECS_UI_EVENT_TEXT_PASTE,
+            GetClipboardText());
     }
     if (IsKeyPressed(KEY_BACKSPACE)) {
         DemoClayPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_DELETE, 0u);
@@ -197,6 +230,13 @@ int main(void)
         (void)ecs_progress(app_world, dt);
         DemoUiSyncProjection(ui_world, app_world);
         (void)ecs_progress(ui_world, dt);
+        char clipboard_text[ECS_UI_TEXT_MAX] = {0};
+        while (DemoTextInputPopClipboardWrite(
+            ui_world,
+            clipboard_text,
+            sizeof(clipboard_text))) {
+            SetClipboardText(clipboard_text);
+        }
         if (root != 0) {
             (void)EcsUiReadTree(ui_world, root, &tree);
         }

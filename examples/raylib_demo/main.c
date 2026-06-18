@@ -58,6 +58,13 @@ int main(void)
             (void)ecs_progress(app_world, dt);
             DemoUiSyncProjection(ui_world, app_world);
             (void)ecs_progress(ui_world, dt);
+            char clipboard_text[ECS_UI_TEXT_MAX] = {0};
+            while (DemoTextInputPopClipboardWrite(
+                ui_world,
+                clipboard_text,
+                sizeof(clipboard_text))) {
+                SetClipboardText(clipboard_text);
+            }
             (void)EcsUiReadTree(ui_world, root, &tree);
         }
 

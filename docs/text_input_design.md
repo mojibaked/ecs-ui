@@ -16,8 +16,8 @@ The reusable text-input layer owns renderer-agnostic ECS state and requests:
 - Editing requests: insert text/codepoint and delete backward.
 - UI links: relationships from field state to retained UI nodes and from UI
   nodes back to fields.
-- Future clipboard: copy, cut, and paste should be represented as requests, but
-  platform clipboard access stays at the renderer/app edge.
+- Clipboard requests: copy, cut, paste, and clipboard-write requests for the
+  renderer/app edge to commit to the platform clipboard.
 
 The layer may provide projection helpers for common field visuals, but it should
 not require a specific renderer or widget shape.
@@ -54,7 +54,13 @@ This slice extracts the mechanics already proven in the raylib demo:
 - `EcsUiTextSelectRightRequest`
 - `EcsUiTextSelectStartRequest`
 - `EcsUiTextSelectEndRequest`
+- `EcsUiTextCopyRequest`
+- `EcsUiTextCutRequest`
+- `EcsUiTextPasteRequest`
+- `EcsUiTextClipboardWriteRequest`
 - field-to-UI and UI-to-field relationships
 
-The demo keeps the add-item field projection and submit behavior. Copy/paste
-remains a planned follow-up.
+The demo keeps the add-item field projection and submit behavior. Platform
+clipboard reads/writes remain outside core `ecs-ui`: renderers may emit paste
+events with clipboard text, and app edges pop clipboard-write requests after
+text-input systems run.

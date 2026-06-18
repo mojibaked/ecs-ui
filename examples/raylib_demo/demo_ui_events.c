@@ -136,6 +136,27 @@ void DemoUiApplyEvents(
             continue;
         }
 
+        if (event->type == ECS_UI_EVENT_TEXT_COPY) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestCopy(ui_world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_CUT) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestCut(ui_world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_PASTE) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestPaste(ui_world, event->text);
+            }
+            continue;
+        }
+
         if (event->type == ECS_UI_EVENT_TEXT_SUBMIT) {
             if (DemoTextInputHasFocusedField(ui_world)) {
                 const char *label = DemoTextInputAddItemNameValue(ui_world);

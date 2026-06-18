@@ -355,5 +355,24 @@ Definition of done:
 - [x] Unit tests cover backward selection, forward selection, collapse,
   selected-range delete, and selected-range replacement.
 - [x] The raylib demo can show selected text in a focused field.
-- [x] Clipboard operations remain a follow-up that can consume the selected
-  range.
+- [x] Clipboard operations have a selected range to consume.
+
+## Phase 17: Text Clipboard Requests
+
+Represent clipboard behavior as ECS requests without moving platform clipboard
+APIs into core `ecs-ui`.
+
+- [x] Add copy and cut request tags.
+- [x] Add paste requests that carry text into the text-input system.
+- [x] Add clipboard-write request entities emitted by copy/cut systems.
+- [x] Keep OS clipboard reads/writes at the raylib/demo edge.
+- [x] Replace selected text on paste and delete selected text on cut.
+- [x] Emit Ctrl+C, Ctrl+X, and Ctrl+V events from raylib and Clay keyboard
+  adapters.
+
+Definition of done:
+
+- [x] Unit tests cover copy publishing selected text, cut publishing and
+  deleting selected text, paste insert, and paste replacement.
+- [x] The raylib demo can bridge copy/cut/paste to the platform clipboard.
+- [x] Core `ecs-ui-text-input` remains renderer-agnostic.

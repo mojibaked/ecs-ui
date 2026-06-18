@@ -236,6 +236,21 @@ void DemoTextInputRequestSelectEnd(ecs_world_t *world)
     (void)EcsUiTextInputRequestSelectEnd(world);
 }
 
+void DemoTextInputRequestCopy(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestCopy(world);
+}
+
+void DemoTextInputRequestCut(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestCut(world);
+}
+
+void DemoTextInputRequestPaste(ecs_world_t *world, const char *text)
+{
+    (void)EcsUiTextInputRequestPaste(world, text);
+}
+
 bool DemoTextInputHasFocusedField(ecs_world_t *world)
 {
     return EcsUiTextInputHasFocusedField(world);
@@ -255,6 +270,14 @@ void DemoTextInputClearAddItemFields(ecs_world_t *world)
 void DemoTextInputClearAddItemName(ecs_world_t *world)
 {
     DemoTextInputClearAddItemFields(world);
+}
+
+bool DemoTextInputPopClipboardWrite(
+    ecs_world_t *world,
+    char *out,
+    size_t out_size)
+{
+    return EcsUiTextInputPopClipboardWrite(world, out, out_size);
 }
 
 static void DemoTextInputProjectFieldsSystem(ecs_iter_t *it)

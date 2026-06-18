@@ -232,6 +232,10 @@ int main(void)
         ecs_id(EcsUiTextEditState) != 0,
         "EcsUiTextEditState should be registered");
     result |= Require(
+        ecs_id(EcsUiTextPasteRequest) != 0 &&
+            ecs_id(EcsUiTextClipboardWriteRequest) != 0,
+        "text clipboard request components should be registered");
+    result |= Require(
         ecs_has_id(world, EcsUiTextFieldUiNode, EcsExclusive),
         "EcsUiTextFieldUiNode should be exclusive");
     result |= Require(
@@ -259,6 +263,9 @@ int main(void)
             EcsUiTextSelectStartRequest != 0 &&
             EcsUiTextSelectEndRequest != 0,
         "text selection request tags should be registered");
+    result |= Require(
+        EcsUiTextCopyRequest != 0 && EcsUiTextCutRequest != 0,
+        "text clipboard request tags should be registered");
 
     ecs_entity_t animation_target =
         ecs_entity(world, {.name = "AnimationTarget"});
@@ -618,6 +625,74 @@ int main(void)
             EcsUiTextInputCursor(world, text_field_a) == 1u &&
             !EcsUiTextInputHasSelection(world, text_field_a),
         "insert should replace selected text");
+    result |= Require(
+        EcsUiTextInputSetValue(world, text_field_a, "clip") &&
+            EcsUiTextInputSetCursor(world, text_field_a, 0u),
+        "text field should reset before clipboard tests");
+    result |= Require(
+        EcsUiTextInputRequestSelectEnd(world) != 0,
+        "clipboard select request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputRequestCopy(world) != 0,
+        "copy request should be created");
+    (void)ecs_progress(world, 0.0f);
+    char clipboard_text[ECS_UI_TEXT_MAX] = {0};
+    result |= Require(
+        EcsUiTextInputPopClipboardWrite(
+            world,
+            clipboard_text,
+            sizeof(clipboard_text)) &&
+            strcmp(clipboard_text, "clip") == 0,
+        "copy should publish selected text");
+    result |= Require(
+        !EcsUiTextInputPopClipboardWrite(
+            world,
+            clipboard_text,
+            sizeof(clipboard_text)),
+        "clipboard write queue should be empty after pop");
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "clip") == 0 &&
+            EcsUiTextInputHasSelection(world, text_field_a),
+        "copy should preserve field value and selection");
+    result |= Require(
+        EcsUiTextInputRequestCut(world) != 0,
+        "cut request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputPopClipboardWrite(
+            world,
+            clipboard_text,
+            sizeof(clipboard_text)) &&
+            strcmp(clipboard_text, "clip") == 0,
+        "cut should publish selected text");
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 0u &&
+            !EcsUiTextInputHasSelection(world, text_field_a),
+        "cut should delete selected text");
+    result |= Require(
+        EcsUiTextInputRequestPaste(world, "go") != 0,
+        "paste request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "go") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 2u,
+        "paste should insert clipboard text");
+    result |= Require(
+        EcsUiTextInputSetCursor(world, text_field_a, 0u) &&
+            EcsUiTextInputRequestSelectRight(world) != 0,
+        "paste replacement selection should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputRequestPaste(world, "X") != 0,
+        "paste replacement request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "Xo") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 1u &&
+            !EcsUiTextInputHasSelection(world, text_field_a),
+        "paste should replace selected text");
     result |= Require(
         EcsUiTextInputSetValue(world, text_field_a, "hi") &&
             EcsUiTextInputSetCursor(world, text_field_a, 2u),

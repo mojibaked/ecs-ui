@@ -712,17 +712,50 @@ static void EcsUiRaylibPushKeyboardEvent(
     (void)EcsUiEventListPush(events, &event);
 }
 
+static void EcsUiRaylibPushKeyboardTextEvent(
+    EcsUiEventList *events,
+    EcsUiEventType type,
+    const char *text)
+{
+    if (events == NULL) {
+        return;
+    }
+
+    EcsUiEvent event = {
+        .type = type,
+    };
+    const char *value = text != NULL ? text : "";
+    (void)snprintf(event.text, sizeof(event.text), "%s", value);
+    (void)EcsUiEventListPush(events, &event);
+}
+
 static void EcsUiRaylibCollectKeyboardEvents(EcsUiEventList *events)
 {
     if (events == NULL) {
         return;
     }
 
+    const bool shortcut_down =
+        IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     for (int key = GetCharPressed(); key > 0; key = GetCharPressed()) {
-        EcsUiRaylibPushKeyboardEvent(
+        if (!shortcut_down) {
+            EcsUiRaylibPushKeyboardEvent(
+                events,
+                ECS_UI_EVENT_TEXT_INPUT,
+                (uint32_t)key);
+        }
+    }
+    if (shortcut_down && IsKeyPressed(KEY_C)) {
+        EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_COPY, 0u);
+    }
+    if (shortcut_down && IsKeyPressed(KEY_X)) {
+        EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_CUT, 0u);
+    }
+    if (shortcut_down && IsKeyPressed(KEY_V)) {
+        EcsUiRaylibPushKeyboardTextEvent(
             events,
-            ECS_UI_EVENT_TEXT_INPUT,
-            (uint32_t)key);
+            ECS_UI_EVENT_TEXT_PASTE,
+            GetClipboardText());
     }
     if (IsKeyPressed(KEY_BACKSPACE)) {
         EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_DELETE, 0u);

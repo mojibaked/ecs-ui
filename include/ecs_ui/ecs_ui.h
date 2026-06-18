@@ -72,6 +72,9 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_TEXT_SELECT_RIGHT = 18,
     ECS_UI_EVENT_TEXT_SELECT_START = 19,
     ECS_UI_EVENT_TEXT_SELECT_END = 20,
+    ECS_UI_EVENT_TEXT_COPY = 21,
+    ECS_UI_EVENT_TEXT_CUT = 22,
+    ECS_UI_EVENT_TEXT_PASTE = 23,
 } EcsUiEventType;
 
 typedef struct EcsUiNodeId {
@@ -195,6 +198,7 @@ typedef struct EcsUiEvent {
     float velocity_x;
     float velocity_y;
     uint32_t codepoint;
+    char text[ECS_UI_TEXT_MAX];
 } EcsUiEvent;
 
 typedef struct EcsUiEventList {

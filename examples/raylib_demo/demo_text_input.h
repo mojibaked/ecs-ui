@@ -30,9 +30,16 @@ void DemoTextInputRequestSelectLeft(ecs_world_t *world);
 void DemoTextInputRequestSelectRight(ecs_world_t *world);
 void DemoTextInputRequestSelectStart(ecs_world_t *world);
 void DemoTextInputRequestSelectEnd(ecs_world_t *world);
+void DemoTextInputRequestCopy(ecs_world_t *world);
+void DemoTextInputRequestCut(ecs_world_t *world);
+void DemoTextInputRequestPaste(ecs_world_t *world, const char *text);
 bool DemoTextInputHasFocusedField(ecs_world_t *world);
 const char *DemoTextInputAddItemNameValue(ecs_world_t *world);
 void DemoTextInputClearAddItemFields(ecs_world_t *world);
 void DemoTextInputClearAddItemName(ecs_world_t *world);
+bool DemoTextInputPopClipboardWrite(
+    ecs_world_t *world,
+    char *out,
+    size_t out_size);
 
 #endif
