@@ -733,9 +733,9 @@ static void EcsUiRaylibCollectKeyboardEvents(EcsUiEventList *events)
     if (IsKeyPressed(KEY_ESCAPE)) {
         EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_CANCEL, 0u);
     }
+    const bool shift_down =
+        IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if (IsKeyPressed(KEY_TAB)) {
-        const bool shift_down =
-            IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
         EcsUiRaylibPushKeyboardEvent(
             events,
             shift_down ?
@@ -746,25 +746,33 @@ static void EcsUiRaylibCollectKeyboardEvents(EcsUiEventList *events)
     if (IsKeyPressed(KEY_LEFT)) {
         EcsUiRaylibPushKeyboardEvent(
             events,
-            ECS_UI_EVENT_TEXT_CURSOR_LEFT,
+            shift_down ?
+                ECS_UI_EVENT_TEXT_SELECT_LEFT :
+                ECS_UI_EVENT_TEXT_CURSOR_LEFT,
             0u);
     }
     if (IsKeyPressed(KEY_RIGHT)) {
         EcsUiRaylibPushKeyboardEvent(
             events,
-            ECS_UI_EVENT_TEXT_CURSOR_RIGHT,
+            shift_down ?
+                ECS_UI_EVENT_TEXT_SELECT_RIGHT :
+                ECS_UI_EVENT_TEXT_CURSOR_RIGHT,
             0u);
     }
     if (IsKeyPressed(KEY_HOME)) {
         EcsUiRaylibPushKeyboardEvent(
             events,
-            ECS_UI_EVENT_TEXT_CURSOR_START,
+            shift_down ?
+                ECS_UI_EVENT_TEXT_SELECT_START :
+                ECS_UI_EVENT_TEXT_CURSOR_START,
             0u);
     }
     if (IsKeyPressed(KEY_END)) {
         EcsUiRaylibPushKeyboardEvent(
             events,
-            ECS_UI_EVENT_TEXT_CURSOR_END,
+            shift_down ?
+                ECS_UI_EVENT_TEXT_SELECT_END :
+                ECS_UI_EVENT_TEXT_CURSOR_END,
             0u);
     }
 }

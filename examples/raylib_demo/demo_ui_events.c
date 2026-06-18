@@ -108,6 +108,34 @@ void DemoUiApplyEvents(
             continue;
         }
 
+        if (event->type == ECS_UI_EVENT_TEXT_SELECT_LEFT) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestSelectLeft(ui_world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_SELECT_RIGHT) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestSelectRight(ui_world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_SELECT_START) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestSelectStart(ui_world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_SELECT_END) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestSelectEnd(ui_world);
+            }
+            continue;
+        }
+
         if (event->type == ECS_UI_EVENT_TEXT_SUBMIT) {
             if (DemoTextInputHasFocusedField(ui_world)) {
                 const char *label = DemoTextInputAddItemNameValue(ui_world);

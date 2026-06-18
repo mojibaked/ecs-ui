@@ -18,6 +18,10 @@ ECS_TAG_DECLARE(EcsUiTextCursorLeftRequest);
 ECS_TAG_DECLARE(EcsUiTextCursorRightRequest);
 ECS_TAG_DECLARE(EcsUiTextCursorStartRequest);
 ECS_TAG_DECLARE(EcsUiTextCursorEndRequest);
+ECS_TAG_DECLARE(EcsUiTextSelectLeftRequest);
+ECS_TAG_DECLARE(EcsUiTextSelectRightRequest);
+ECS_TAG_DECLARE(EcsUiTextSelectStartRequest);
+ECS_TAG_DECLARE(EcsUiTextSelectEndRequest);
 
 static bool EcsUiTextInputReady(void)
 {
@@ -33,7 +37,11 @@ static bool EcsUiTextInputReady(void)
         EcsUiTextCursorLeftRequest != 0 &&
         EcsUiTextCursorRightRequest != 0 &&
         EcsUiTextCursorStartRequest != 0 &&
-        EcsUiTextCursorEndRequest != 0;
+        EcsUiTextCursorEndRequest != 0 &&
+        EcsUiTextSelectLeftRequest != 0 &&
+        EcsUiTextSelectRightRequest != 0 &&
+        EcsUiTextSelectStartRequest != 0 &&
+        EcsUiTextSelectEndRequest != 0;
 }
 
 static void EcsUiTextInputCopyString(
@@ -53,33 +61,59 @@ static void EcsUiTextInputCopyString(
     out[i] = '\0';
 }
 
-static void EcsUiTextInputCopyStringWithCaret(
+static bool EcsUiTextInputPushChar(
+    char *out,
+    size_t out_size,
+    size_t *out_index,
+    char value)
+{
+    if (out == NULL || out_index == NULL || *out_index + 1u >= out_size) {
+        return false;
+    }
+    out[*out_index] = value;
+    *out_index += 1u;
+    return true;
+}
+
+static void EcsUiTextInputCopyStringWithEditState(
     char *out,
     size_t out_size,
     const char *value,
-    uint32_t cursor)
+    uint32_t cursor,
+    uint32_t selection_start,
+    uint32_t selection_end)
 {
     if (out == NULL || out_size == 0u) {
         return;
     }
 
     const char *source = value != NULL ? value : "";
+    const size_t source_length = strlen(source);
+    const bool has_selection = selection_start < selection_end;
     size_t out_index = 0u;
-    size_t source_index = 0u;
-    while (out_index + 1u < out_size && source[source_index] != '\0' &&
-        source_index < (size_t)cursor) {
-        out[out_index] = source[source_index];
-        out_index += 1u;
-        source_index += 1u;
-    }
-    if (out_index + 1u < out_size) {
-        out[out_index] = '|';
-        out_index += 1u;
-    }
-    while (out_index + 1u < out_size && source[source_index] != '\0') {
-        out[out_index] = source[source_index];
-        out_index += 1u;
-        source_index += 1u;
+    for (size_t i = 0u; i <= source_length; i += 1u) {
+        bool wrote_cursor = false;
+        if (has_selection && i == (size_t)selection_start &&
+            i == (size_t)cursor) {
+            wrote_cursor =
+                EcsUiTextInputPushChar(out, out_size, &out_index, '|');
+        }
+        if (has_selection && i == (size_t)selection_start) {
+            (void)EcsUiTextInputPushChar(out, out_size, &out_index, '[');
+        }
+        if (has_selection && i == (size_t)selection_end) {
+            (void)EcsUiTextInputPushChar(out, out_size, &out_index, ']');
+        }
+        if (!wrote_cursor && i == (size_t)cursor) {
+            (void)EcsUiTextInputPushChar(out, out_size, &out_index, '|');
+        }
+        if (i < source_length) {
+            (void)EcsUiTextInputPushChar(
+                out,
+                out_size,
+                &out_index,
+                source[i]);
+        }
     }
     out[out_index] = '\0';
 }
@@ -93,6 +127,52 @@ static uint32_t EcsUiTextInputClampCursor(
         length = UINT32_MAX;
     }
     return cursor > (uint32_t)length ? (uint32_t)length : cursor;
+}
+
+static uint32_t EcsUiTextInputMinU32(uint32_t a, uint32_t b)
+{
+    return a < b ? a : b;
+}
+
+static uint32_t EcsUiTextInputMaxU32(uint32_t a, uint32_t b)
+{
+    return a > b ? a : b;
+}
+
+static void EcsUiTextInputClearEditSelection(EcsUiTextEditState *edit_state)
+{
+    if (edit_state == NULL) {
+        return;
+    }
+    edit_state->selection_anchor = edit_state->cursor;
+    edit_state->selection_focus = edit_state->cursor;
+}
+
+static bool EcsUiTextInputEditStateHasSelection(
+    const EcsUiTextEditState *edit_state)
+{
+    return edit_state != NULL &&
+        edit_state->selection_anchor != edit_state->selection_focus;
+}
+
+static uint32_t EcsUiTextInputSelectionMin(
+    const EcsUiTextEditState *edit_state)
+{
+    return edit_state != NULL ?
+        EcsUiTextInputMinU32(
+            edit_state->selection_anchor,
+            edit_state->selection_focus) :
+        0u;
+}
+
+static uint32_t EcsUiTextInputSelectionMax(
+    const EcsUiTextEditState *edit_state)
+{
+    return edit_state != NULL ?
+        EcsUiTextInputMaxU32(
+            edit_state->selection_anchor,
+            edit_state->selection_focus) :
+        0u;
 }
 
 static EcsUiTextEditState *EcsUiTextInputEnsureEditState(
@@ -119,6 +199,8 @@ static EcsUiTextEditState *EcsUiTextInputEnsureEditState(
             EcsUiTextEditState,
             {
                 .cursor = length,
+                .selection_anchor = length,
+                .selection_focus = length,
             });
         return ecs_get_mut(world, field, EcsUiTextEditState);
     }
@@ -131,8 +213,21 @@ static EcsUiTextEditState *EcsUiTextInputEnsureEditState(
 
     uint32_t cursor =
         edit_state->cursor > length ? length : edit_state->cursor;
-    if (edit_state->cursor != cursor) {
-        edit_state->cursor = cursor;
+    uint32_t selection_anchor =
+        edit_state->selection_anchor > length ?
+            length :
+            edit_state->selection_anchor;
+    uint32_t selection_focus =
+        edit_state->selection_focus > length ?
+            length :
+            edit_state->selection_focus;
+    bool changed = edit_state->cursor != cursor ||
+        edit_state->selection_anchor != selection_anchor ||
+        edit_state->selection_focus != selection_focus;
+    edit_state->cursor = cursor;
+    edit_state->selection_anchor = selection_anchor;
+    edit_state->selection_focus = selection_focus;
+    if (changed) {
         ecs_modified(world, field, EcsUiTextEditState);
     }
     return edit_state;
@@ -309,6 +404,38 @@ ecs_entity_t EcsUiTextInputRequestMoveCursorEnd(ecs_world_t *world)
     return ecs_new_w_id(world, EcsUiTextCursorEndRequest);
 }
 
+ecs_entity_t EcsUiTextInputRequestSelectLeft(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+    return ecs_new_w_id(world, EcsUiTextSelectLeftRequest);
+}
+
+ecs_entity_t EcsUiTextInputRequestSelectRight(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+    return ecs_new_w_id(world, EcsUiTextSelectRightRequest);
+}
+
+ecs_entity_t EcsUiTextInputRequestSelectStart(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+    return ecs_new_w_id(world, EcsUiTextSelectStartRequest);
+}
+
+ecs_entity_t EcsUiTextInputRequestSelectEnd(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0;
+    }
+    return ecs_new_w_id(world, EcsUiTextSelectEndRequest);
+}
+
 const char *EcsUiTextInputValue(
     const ecs_world_t *world,
     ecs_entity_t field)
@@ -341,7 +468,62 @@ uint32_t EcsUiTextInputCursor(
         ecs_get(world, field, EcsUiTextEditState);
     return EcsUiTextInputClampCursor(
         field_data,
-        edit_state != NULL ? edit_state->cursor : (uint32_t)strlen(field_data->value));
+        edit_state != NULL ?
+            edit_state->cursor :
+            (uint32_t)strlen(field_data->value));
+}
+
+bool EcsUiTextInputHasSelection(
+    const ecs_world_t *world,
+    ecs_entity_t field)
+{
+    const EcsUiTextField *field_data =
+        field != 0 ? ecs_get(world, field, EcsUiTextField) : NULL;
+    const EcsUiTextEditState *edit_state =
+        field != 0 ? ecs_get(world, field, EcsUiTextEditState) : NULL;
+    if (field_data == NULL || edit_state == NULL) {
+        return false;
+    }
+
+    uint32_t selection_anchor =
+        EcsUiTextInputClampCursor(field_data, edit_state->selection_anchor);
+    uint32_t selection_focus =
+        EcsUiTextInputClampCursor(field_data, edit_state->selection_focus);
+    return selection_anchor != selection_focus;
+}
+
+uint32_t EcsUiTextInputSelectionStart(
+    const ecs_world_t *world,
+    ecs_entity_t field)
+{
+    const EcsUiTextField *field_data =
+        field != 0 ? ecs_get(world, field, EcsUiTextField) : NULL;
+    const EcsUiTextEditState *edit_state =
+        field != 0 ? ecs_get(world, field, EcsUiTextEditState) : NULL;
+    if (field_data == NULL || edit_state == NULL) {
+        return 0u;
+    }
+
+    return EcsUiTextInputMinU32(
+        EcsUiTextInputClampCursor(field_data, edit_state->selection_anchor),
+        EcsUiTextInputClampCursor(field_data, edit_state->selection_focus));
+}
+
+uint32_t EcsUiTextInputSelectionEnd(
+    const ecs_world_t *world,
+    ecs_entity_t field)
+{
+    const EcsUiTextField *field_data =
+        field != 0 ? ecs_get(world, field, EcsUiTextField) : NULL;
+    const EcsUiTextEditState *edit_state =
+        field != 0 ? ecs_get(world, field, EcsUiTextEditState) : NULL;
+    if (field_data == NULL || edit_state == NULL) {
+        return 0u;
+    }
+
+    return EcsUiTextInputMaxU32(
+        EcsUiTextInputClampCursor(field_data, edit_state->selection_anchor),
+        EcsUiTextInputClampCursor(field_data, edit_state->selection_focus));
 }
 
 bool EcsUiTextInputSetValue(
@@ -363,8 +545,17 @@ bool EcsUiTextInputSetValue(
         field_data->value,
         sizeof(field_data->value),
         value);
+    uint32_t length = EcsUiTextInputClampCursor(field_data, UINT32_MAX);
     ecs_modified(world, field, EcsUiTextField);
-    (void)EcsUiTextInputEnsureEditState(world, field);
+
+    EcsUiTextEditState *edit_state =
+        EcsUiTextInputEnsureEditState(world, field);
+    if (edit_state != NULL) {
+        edit_state->cursor =
+            edit_state->cursor > length ? length : edit_state->cursor;
+        EcsUiTextInputClearEditSelection(edit_state);
+        ecs_modified(world, field, EcsUiTextEditState);
+    }
     return true;
 }
 
@@ -419,6 +610,28 @@ bool EcsUiTextInputSetCursor(
         EcsUiTextInputClampCursor(field_data, cursor);
     if (edit_state->cursor != clamped_cursor) {
         edit_state->cursor = clamped_cursor;
+    }
+    EcsUiTextInputClearEditSelection(edit_state);
+    ecs_modified(world, field, EcsUiTextEditState);
+    return true;
+}
+
+bool EcsUiTextInputClearSelection(
+    ecs_world_t *world,
+    ecs_entity_t field)
+{
+    if (world == NULL || field == 0 || !EcsUiTextInputReady()) {
+        return false;
+    }
+
+    EcsUiTextEditState *edit_state =
+        EcsUiTextInputEnsureEditState(world, field);
+    if (edit_state == NULL) {
+        return false;
+    }
+
+    if (EcsUiTextInputEditStateHasSelection(edit_state)) {
+        EcsUiTextInputClearEditSelection(edit_state);
         ecs_modified(world, field, EcsUiTextEditState);
     }
     return true;
@@ -446,11 +659,22 @@ bool EcsUiTextInputDisplayText(
     if (!focused && field_data->value[0] == '\0') {
         EcsUiTextInputCopyString(out, out_size, field_data->placeholder);
     } else if (include_caret && focused) {
-        EcsUiTextInputCopyStringWithCaret(
+        const EcsUiTextEditState *edit_state =
+            ecs_get(world, field, EcsUiTextEditState);
+        uint32_t cursor = EcsUiTextInputCursor(world, field);
+        uint32_t selection_start = edit_state != NULL ?
+            EcsUiTextInputSelectionStart(world, field) :
+            cursor;
+        uint32_t selection_end = edit_state != NULL ?
+            EcsUiTextInputSelectionEnd(world, field) :
+            cursor;
+        EcsUiTextInputCopyStringWithEditState(
             out,
             out_size,
             field_data->value,
-            EcsUiTextInputCursor(world, field));
+            cursor,
+            selection_start,
+            selection_end);
     } else {
         EcsUiTextInputCopyString(out, out_size, field_data->value);
     }
@@ -523,6 +747,39 @@ ecs_entity_t EcsUiTextInputUiField(
     return ecs_get_target(world, ui_node, EcsUiForTextField, 0);
 }
 
+static bool EcsUiTextInputDeleteSelection(
+    EcsUiTextField *field_data,
+    EcsUiTextEditState *edit_state)
+{
+    if (field_data == NULL || edit_state == NULL ||
+        !EcsUiTextInputEditStateHasSelection(edit_state)) {
+        return false;
+    }
+
+    size_t length = strlen(field_data->value);
+    uint32_t selection_start =
+        EcsUiTextInputClampCursor(
+            field_data,
+            EcsUiTextInputSelectionMin(edit_state));
+    uint32_t selection_end =
+        EcsUiTextInputClampCursor(
+            field_data,
+            EcsUiTextInputSelectionMax(edit_state));
+    if (selection_start >= selection_end) {
+        edit_state->cursor = selection_start;
+        EcsUiTextInputClearEditSelection(edit_state);
+        return false;
+    }
+
+    memmove(
+        &field_data->value[selection_start],
+        &field_data->value[selection_end],
+        length - (size_t)selection_end + 1u);
+    edit_state->cursor = selection_start;
+    EcsUiTextInputClearEditSelection(edit_state);
+    return true;
+}
+
 static bool EcsUiTextInputInsertCodepoint(
     EcsUiTextField *field_data,
     EcsUiTextEditState *edit_state,
@@ -531,6 +788,10 @@ static bool EcsUiTextInputInsertCodepoint(
     if (field_data == NULL || edit_state == NULL || codepoint < 32u ||
         codepoint > 126u) {
         return false;
+    }
+
+    if (EcsUiTextInputEditStateHasSelection(edit_state)) {
+        (void)EcsUiTextInputDeleteSelection(field_data, edit_state);
     }
 
     size_t length = strlen(field_data->value);
@@ -546,6 +807,7 @@ static bool EcsUiTextInputInsertCodepoint(
         length - (size_t)cursor + 1u);
     field_data->value[cursor] = (char)codepoint;
     edit_state->cursor = cursor + 1u;
+    EcsUiTextInputClearEditSelection(edit_state);
     return true;
 }
 
@@ -557,11 +819,16 @@ static bool EcsUiTextInputDeleteBeforeCursor(
         return false;
     }
 
+    if (EcsUiTextInputEditStateHasSelection(edit_state)) {
+        return EcsUiTextInputDeleteSelection(field_data, edit_state);
+    }
+
     size_t length = strlen(field_data->value);
     uint32_t cursor =
         EcsUiTextInputClampCursor(field_data, edit_state->cursor);
     if (length == 0u || cursor == 0u) {
         edit_state->cursor = cursor;
+        EcsUiTextInputClearEditSelection(edit_state);
         return false;
     }
 
@@ -570,6 +837,7 @@ static bool EcsUiTextInputDeleteBeforeCursor(
         &field_data->value[cursor],
         length - (size_t)cursor + 1u);
     edit_state->cursor = cursor - 1u;
+    EcsUiTextInputClearEditSelection(edit_state);
     return true;
 }
 
@@ -585,7 +853,11 @@ static bool EcsUiTextInputMoveCursor(
     uint32_t cursor =
         EcsUiTextInputClampCursor(field_data, edit_state->cursor);
     uint32_t next_cursor = cursor;
-    if (direction < 0 && cursor > 0u) {
+    if (EcsUiTextInputEditStateHasSelection(edit_state)) {
+        next_cursor = direction < 0 ?
+            EcsUiTextInputSelectionMin(edit_state) :
+            EcsUiTextInputSelectionMax(edit_state);
+    } else if (direction < 0 && cursor > 0u) {
         next_cursor = cursor - 1u;
     } else if (direction > 0) {
         uint32_t length = EcsUiTextInputClampCursor(field_data, UINT32_MAX);
@@ -594,12 +866,99 @@ static bool EcsUiTextInputMoveCursor(
         }
     }
 
-    if (edit_state->cursor == next_cursor) {
+    bool changed = edit_state->cursor != next_cursor ||
+        EcsUiTextInputEditStateHasSelection(edit_state);
+    if (!changed) {
         return false;
     }
 
     edit_state->cursor = next_cursor;
+    EcsUiTextInputClearEditSelection(edit_state);
     return true;
+}
+
+static bool EcsUiTextInputMoveCursorToEdge(
+    EcsUiTextField *field_data,
+    EcsUiTextEditState *edit_state,
+    bool to_end)
+{
+    if (field_data == NULL || edit_state == NULL) {
+        return false;
+    }
+
+    uint32_t next_cursor =
+        to_end ? EcsUiTextInputClampCursor(field_data, UINT32_MAX) : 0u;
+    bool changed = edit_state->cursor != next_cursor ||
+        EcsUiTextInputEditStateHasSelection(edit_state);
+    if (!changed) {
+        return false;
+    }
+
+    edit_state->cursor = next_cursor;
+    EcsUiTextInputClearEditSelection(edit_state);
+    return true;
+}
+
+static bool EcsUiTextInputExtendSelection(
+    EcsUiTextField *field_data,
+    EcsUiTextEditState *edit_state,
+    int32_t direction)
+{
+    if (field_data == NULL || edit_state == NULL) {
+        return false;
+    }
+
+    uint32_t focus =
+        EcsUiTextInputClampCursor(field_data, edit_state->cursor);
+    uint32_t next_focus = focus;
+    if (direction < 0 && focus > 0u) {
+        next_focus = focus - 1u;
+    } else if (direction > 0) {
+        uint32_t length = EcsUiTextInputClampCursor(field_data, UINT32_MAX);
+        if (focus < length) {
+            next_focus = focus + 1u;
+        }
+    }
+
+    if (!EcsUiTextInputEditStateHasSelection(edit_state)) {
+        edit_state->selection_anchor = focus;
+    }
+    bool changed = edit_state->cursor != next_focus ||
+        edit_state->selection_focus != next_focus ||
+        edit_state->selection_anchor != edit_state->selection_focus;
+    edit_state->cursor = next_focus;
+    edit_state->selection_focus = next_focus;
+    if (edit_state->selection_anchor == edit_state->selection_focus) {
+        EcsUiTextInputClearEditSelection(edit_state);
+    }
+    return changed;
+}
+
+static bool EcsUiTextInputExtendSelectionToEdge(
+    EcsUiTextField *field_data,
+    EcsUiTextEditState *edit_state,
+    bool to_end)
+{
+    if (field_data == NULL || edit_state == NULL) {
+        return false;
+    }
+
+    uint32_t focus =
+        EcsUiTextInputClampCursor(field_data, edit_state->cursor);
+    uint32_t next_focus =
+        to_end ? EcsUiTextInputClampCursor(field_data, UINT32_MAX) : 0u;
+    if (!EcsUiTextInputEditStateHasSelection(edit_state)) {
+        edit_state->selection_anchor = focus;
+    }
+    bool changed = edit_state->cursor != next_focus ||
+        edit_state->selection_focus != next_focus ||
+        edit_state->selection_anchor != edit_state->selection_focus;
+    edit_state->cursor = next_focus;
+    edit_state->selection_focus = next_focus;
+    if (edit_state->selection_anchor == edit_state->selection_focus) {
+        EcsUiTextInputClearEditSelection(edit_state);
+    }
+    return changed;
 }
 
 static void EcsUiTextInputFocusFieldSystem(ecs_iter_t *it)
@@ -781,15 +1140,11 @@ static void EcsUiTextInputCursorToEdgeSystem(
             EcsUiTextInputEnsureEditState(it->world, field);
         EcsUiTextField *field_data =
             field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
-        if (field_data != NULL && edit_state != NULL) {
-            uint32_t next_cursor =
-                to_end ?
-                    EcsUiTextInputClampCursor(field_data, UINT32_MAX) :
-                    0u;
-            if (edit_state->cursor != next_cursor) {
-                edit_state->cursor = next_cursor;
-                ecs_modified(it->world, field, EcsUiTextEditState);
-            }
+        if (EcsUiTextInputMoveCursorToEdge(
+                field_data,
+                edit_state,
+                to_end)) {
+            ecs_modified(it->world, field, EcsUiTextEditState);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -803,6 +1158,61 @@ static void EcsUiTextInputCursorStartSystem(ecs_iter_t *it)
 static void EcsUiTextInputCursorEndSystem(ecs_iter_t *it)
 {
     EcsUiTextInputCursorToEdgeSystem(it, true);
+}
+
+static void EcsUiTextInputSelectSystem(ecs_iter_t *it, int32_t direction)
+{
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t field = EcsUiTextInputFocusedField(it->world);
+        EcsUiTextEditState *edit_state =
+            EcsUiTextInputEnsureEditState(it->world, field);
+        EcsUiTextField *field_data =
+            field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
+        if (EcsUiTextInputExtendSelection(field_data, edit_state, direction)) {
+            ecs_modified(it->world, field, EcsUiTextEditState);
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
+static void EcsUiTextInputSelectLeftSystem(ecs_iter_t *it)
+{
+    EcsUiTextInputSelectSystem(it, -1);
+}
+
+static void EcsUiTextInputSelectRightSystem(ecs_iter_t *it)
+{
+    EcsUiTextInputSelectSystem(it, 1);
+}
+
+static void EcsUiTextInputSelectToEdgeSystem(
+    ecs_iter_t *it,
+    bool to_end)
+{
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t field = EcsUiTextInputFocusedField(it->world);
+        EcsUiTextEditState *edit_state =
+            EcsUiTextInputEnsureEditState(it->world, field);
+        EcsUiTextField *field_data =
+            field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
+        if (EcsUiTextInputExtendSelectionToEdge(
+                field_data,
+                edit_state,
+                to_end)) {
+            ecs_modified(it->world, field, EcsUiTextEditState);
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
+static void EcsUiTextInputSelectStartSystem(ecs_iter_t *it)
+{
+    EcsUiTextInputSelectToEdgeSystem(it, false);
+}
+
+static void EcsUiTextInputSelectEndSystem(ecs_iter_t *it)
+{
+    EcsUiTextInputSelectToEdgeSystem(it, true);
 }
 
 void EcsUiTextInputImport(ecs_world_t *world)
@@ -827,6 +1237,10 @@ void EcsUiTextInputImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiTextCursorRightRequest);
     ECS_TAG_DEFINE(world, EcsUiTextCursorStartRequest);
     ECS_TAG_DEFINE(world, EcsUiTextCursorEndRequest);
+    ECS_TAG_DEFINE(world, EcsUiTextSelectLeftRequest);
+    ECS_TAG_DEFINE(world, EcsUiTextSelectRightRequest);
+    ECS_TAG_DEFINE(world, EcsUiTextSelectStartRequest);
+    ECS_TAG_DEFINE(world, EcsUiTextSelectEndRequest);
 
     ecs_add_id(world, EcsUiFocusedTextField, EcsExclusive);
     ecs_add_id(world, EcsUiTextFieldUiNode, EcsExclusive);
@@ -944,5 +1358,49 @@ void EcsUiTextInputImport(ecs_world_t *world)
             {.id = EcsUiTextCursorEndRequest},
         },
         .callback = EcsUiTextInputCursorEndSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputSelectLeftSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = EcsUiTextSelectLeftRequest},
+        },
+        .callback = EcsUiTextInputSelectLeftSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputSelectRightSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = EcsUiTextSelectRightRequest},
+        },
+        .callback = EcsUiTextInputSelectRightSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputSelectStartSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = EcsUiTextSelectStartRequest},
+        },
+        .callback = EcsUiTextInputSelectStartSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputSelectEndSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = EcsUiTextSelectEndRequest},
+        },
+        .callback = EcsUiTextInputSelectEndSystem,
     });
 }

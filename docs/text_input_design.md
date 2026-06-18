@@ -9,7 +9,7 @@ project. It should not own app-specific form semantics.
 The reusable text-input layer owns renderer-agnostic ECS state and requests:
 
 - Field state: value and placeholder.
-- Edit state: cursor position, with future selection anchor/focus.
+- Edit state: cursor position plus selection anchor/focus.
 - Focus state: one focused field under the text-input root.
 - Focus requests: focus field and blur focused field.
 - Traversal requests: focus next and focus previous through ordered fields.
@@ -50,7 +50,11 @@ This slice extracts the mechanics already proven in the raylib demo:
 - `EcsUiTextCursorRightRequest`
 - `EcsUiTextCursorStartRequest`
 - `EcsUiTextCursorEndRequest`
+- `EcsUiTextSelectLeftRequest`
+- `EcsUiTextSelectRightRequest`
+- `EcsUiTextSelectStartRequest`
+- `EcsUiTextSelectEndRequest`
 - field-to-UI and UI-to-field relationships
 
-The demo keeps the add-item field projection and submit behavior. Selection and
-copy/paste remain planned follow-ups.
+The demo keeps the add-item field projection and submit behavior. Copy/paste
+remains a planned follow-up.

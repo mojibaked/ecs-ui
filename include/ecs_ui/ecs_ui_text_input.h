@@ -16,6 +16,8 @@ typedef struct EcsUiTextField {
 
 typedef struct EcsUiTextEditState {
     uint32_t cursor;
+    uint32_t selection_anchor;
+    uint32_t selection_focus;
 } EcsUiTextEditState;
 
 typedef struct EcsUiTextInsertRequest {
@@ -38,6 +40,10 @@ extern ECS_TAG_DECLARE(EcsUiTextCursorLeftRequest);
 extern ECS_TAG_DECLARE(EcsUiTextCursorRightRequest);
 extern ECS_TAG_DECLARE(EcsUiTextCursorStartRequest);
 extern ECS_TAG_DECLARE(EcsUiTextCursorEndRequest);
+extern ECS_TAG_DECLARE(EcsUiTextSelectLeftRequest);
+extern ECS_TAG_DECLARE(EcsUiTextSelectRightRequest);
+extern ECS_TAG_DECLARE(EcsUiTextSelectStartRequest);
+extern ECS_TAG_DECLARE(EcsUiTextSelectEndRequest);
 
 void EcsUiTextInputImport(ecs_world_t *world);
 
@@ -66,6 +72,10 @@ ecs_entity_t EcsUiTextInputRequestMoveCursorLeft(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestMoveCursorRight(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestMoveCursorStart(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestMoveCursorEnd(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestSelectLeft(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestSelectRight(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestSelectStart(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestSelectEnd(ecs_world_t *world);
 
 const char *EcsUiTextInputValue(
     const ecs_world_t *world,
@@ -74,6 +84,15 @@ const char *EcsUiTextInputPlaceholder(
     const ecs_world_t *world,
     ecs_entity_t field);
 uint32_t EcsUiTextInputCursor(
+    const ecs_world_t *world,
+    ecs_entity_t field);
+bool EcsUiTextInputHasSelection(
+    const ecs_world_t *world,
+    ecs_entity_t field);
+uint32_t EcsUiTextInputSelectionStart(
+    const ecs_world_t *world,
+    ecs_entity_t field);
+uint32_t EcsUiTextInputSelectionEnd(
     const ecs_world_t *world,
     ecs_entity_t field);
 bool EcsUiTextInputSetValue(
@@ -91,6 +110,9 @@ bool EcsUiTextInputSetCursor(
     ecs_world_t *world,
     ecs_entity_t field,
     uint32_t cursor);
+bool EcsUiTextInputClearSelection(
+    ecs_world_t *world,
+    ecs_entity_t field);
 bool EcsUiTextInputDisplayText(
     const ecs_world_t *world,
     ecs_entity_t field,

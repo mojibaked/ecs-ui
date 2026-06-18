@@ -337,4 +337,23 @@ Definition of done:
   display text with caret-at-cursor.
 - [x] The raylib demo can move the caret in a focused field with Left, Right,
   Home, and End.
-- [x] Selection remains a follow-up built on top of `EcsUiTextEditState`.
+- [x] Selection has a clear place to build on top of `EcsUiTextEditState`.
+
+## Phase 16: Text Selection
+
+Build selection on top of cursor/edit state before adding clipboard support.
+
+- [x] Extend `EcsUiTextEditState` with selection anchor and focus.
+- [x] Add Shift+Left, Shift+Right, Shift+Home, and Shift+End request tags.
+- [x] Collapse selection on normal cursor movement.
+- [x] Delete selected text as a range.
+- [x] Replace selected text on insert.
+- [x] Emit selection movement events from raylib and Clay keyboard adapters.
+
+Definition of done:
+
+- [x] Unit tests cover backward selection, forward selection, collapse,
+  selected-range delete, and selected-range replacement.
+- [x] The raylib demo can show selected text in a focused field.
+- [x] Clipboard operations remain a follow-up that can consume the selected
+  range.

@@ -253,6 +253,12 @@ int main(void)
             EcsUiTextCursorStartRequest != 0 &&
             EcsUiTextCursorEndRequest != 0,
         "text cursor request tags should be registered");
+    result |= Require(
+        EcsUiTextSelectLeftRequest != 0 &&
+            EcsUiTextSelectRightRequest != 0 &&
+            EcsUiTextSelectStartRequest != 0 &&
+            EcsUiTextSelectEndRequest != 0,
+        "text selection request tags should be registered");
 
     ecs_entity_t animation_target =
         ecs_entity(world, {.name = "AnimationTarget"});
@@ -426,7 +432,8 @@ int main(void)
         "text fields should be created");
     result |= Require(
         ecs_get(world, text_field_a, EcsUiTextEditState) != NULL &&
-            EcsUiTextInputCursor(world, text_field_a) == 0u,
+            EcsUiTextInputCursor(world, text_field_a) == 0u &&
+            !EcsUiTextInputHasSelection(world, text_field_a),
         "text field edit state should be created");
     result |= Require(
         strcmp(EcsUiTextInputPlaceholder(world, text_field_a), "first") == 0,
@@ -509,6 +516,112 @@ int main(void)
     result |= Require(
         EcsUiTextInputCursor(world, text_field_a) == 2u,
         "cursor should move to end");
+    result |= Require(
+        EcsUiTextInputRequestSelectStart(world) != 0,
+        "select start request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 0u &&
+            EcsUiTextInputHasSelection(world, text_field_a) &&
+            EcsUiTextInputSelectionStart(world, text_field_a) == 0u &&
+            EcsUiTextInputSelectionEnd(world, text_field_a) == 2u,
+        "select start should extend selection to start");
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_a,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "backward selected text display should be created");
+    result |= Require(
+        strcmp(text_display, "|[hi]") == 0,
+        "backward selected text display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestMoveCursorEnd(world) != 0,
+        "cursor end collapse request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 2u &&
+            !EcsUiTextInputHasSelection(world, text_field_a),
+        "cursor movement should collapse selection");
+    result |= Require(
+        EcsUiTextInputRequestSelectLeft(world) != 0,
+        "select left request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 1u &&
+            EcsUiTextInputHasSelection(world, text_field_a) &&
+            EcsUiTextInputSelectionStart(world, text_field_a) == 1u &&
+            EcsUiTextInputSelectionEnd(world, text_field_a) == 2u,
+        "select left should select previous character");
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_a,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "selected text field display should be created");
+    result |= Require(
+        strcmp(text_display, "h|[i]") == 0,
+        "selected text field display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestDelete(world) != 0,
+        "selection delete request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "h") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 1u &&
+            !EcsUiTextInputHasSelection(world, text_field_a),
+        "delete should remove selected text");
+    result |= Require(
+        EcsUiTextInputSetValue(world, text_field_a, "hi") &&
+            EcsUiTextInputSetCursor(world, text_field_a, 0u),
+        "text field should reset for selection replacement");
+    result |= Require(
+        EcsUiTextInputRequestSelectRight(world) != 0,
+        "select right request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 1u &&
+            EcsUiTextInputHasSelection(world, text_field_a) &&
+            EcsUiTextInputSelectionStart(world, text_field_a) == 0u &&
+            EcsUiTextInputSelectionEnd(world, text_field_a) == 1u,
+        "select right should select next character");
+    result |= Require(
+        EcsUiTextInputRequestSelectEnd(world) != 0,
+        "select end request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 2u &&
+            EcsUiTextInputSelectionStart(world, text_field_a) == 0u &&
+            EcsUiTextInputSelectionEnd(world, text_field_a) == 2u,
+        "select end should extend selection to end");
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_a,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "forward selected text display should be created");
+    result |= Require(
+        strcmp(text_display, "[hi]|") == 0,
+        "forward selected text display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestInsert(world, '!') != 0,
+        "selection replacement insert request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "!") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 1u &&
+            !EcsUiTextInputHasSelection(world, text_field_a),
+        "insert should replace selected text");
+    result |= Require(
+        EcsUiTextInputSetValue(world, text_field_a, "hi") &&
+            EcsUiTextInputSetCursor(world, text_field_a, 2u),
+        "text field should reset before final delete");
     result |= Require(
         EcsUiTextInputRequestDelete(world) != 0,
         "delete request should be created");
