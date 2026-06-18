@@ -80,9 +80,9 @@ Prove ordered children and app-state ordering work together.
 
 Definition of done:
 
-- Rows stay visually ordered after repeated add/delete/reorder operations.
-- `DemoItem` order and `ItemList` child order agree.
-- No orphan UI rows remain after item deletion.
+- [x] Rows stay visually ordered after repeated add/delete/reorder operations.
+- [x] `DemoItem` order and `ItemList` child order agree.
+- [x] No orphan UI rows remain after item deletion.
 
 ## Phase 4: Navigation And Presentation
 
