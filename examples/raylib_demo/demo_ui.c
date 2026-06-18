@@ -63,6 +63,48 @@ static void DemoUiRefreshStatus(ecs_world_t *world)
     DemoUiSetStatusForItemCount(world, DemoUiCountItems(world));
 }
 
+static void DemoUiApplyItemSelectionStyle(
+    ecs_world_t *world,
+    ecs_entity_t item,
+    ecs_entity_t selected_item)
+{
+    ecs_entity_t select_button =
+        ecs_get_target(world, item, DemoItemSelectUiNode, 0);
+    EcsUiButton *button =
+        select_button != 0 ? ecs_get_mut(world, select_button, EcsUiButton) : NULL;
+    if (button == NULL) {
+        return;
+    }
+
+    const EcsUiButtonVariant variant =
+        item == selected_item ? ECS_UI_BUTTON_PRIMARY : ECS_UI_BUTTON_SUBTLE;
+    if (button->variant == variant) {
+        return;
+    }
+
+    button->variant = variant;
+    ecs_modified(world, select_button, EcsUiButton);
+}
+
+static void DemoUiRefreshSelectionStyles(ecs_world_t *world)
+{
+    ecs_entity_t selected_item = ecs_get_target(
+        world,
+        DemoAppSelectionRoot(world),
+        DemoSelectedItem,
+        0);
+
+    ecs_iter_t it = ecs_each(world, DemoItem);
+    while (ecs_each_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            DemoUiApplyItemSelectionStyle(
+                world,
+                it.entities[i],
+                selected_item);
+        }
+    }
+}
+
 static void DemoUiCreateItemRow(
     ecs_world_t *world,
     ecs_entity_t item,
@@ -140,6 +182,7 @@ static void DemoUiCreateItemRow(
     if (EcsUiBuilderOk(&builder) && row != 0) {
         ecs_add_pair(world, item, DemoItemUiNode, row);
         if (select_button != 0) {
+            ecs_add_pair(world, item, DemoItemSelectUiNode, select_button);
             ecs_add_pair(world, select_button, DemoUiForItem, item);
         }
         if (delete_button != 0) {
@@ -170,6 +213,7 @@ static void DemoUiMaterializeItemRowObserver(ecs_iter_t *it)
             refs->delete_item_action);
     }
     DemoUiRefreshStatus(it->world);
+    DemoUiRefreshSelectionStyles(it->world);
 }
 
 static void DemoUiRemoveItemRowObserver(ecs_iter_t *it)
@@ -190,6 +234,7 @@ static void DemoUiRemoveItemRowObserver(ecs_iter_t *it)
 static void DemoUiSelectionStatusObserver(ecs_iter_t *it)
 {
     DemoUiRefreshStatus(it->world);
+    DemoUiRefreshSelectionStyles(it->world);
 }
 
 void DemoUiRegister(ecs_world_t *world)

@@ -10,6 +10,7 @@ ECS_TAG_DECLARE(DemoSelectItemRequest);
 ECS_TAG_DECLARE(DemoDeleteItemRequest);
 ECS_TAG_DECLARE(DemoSelectedItem);
 ECS_TAG_DECLARE(DemoItemUiNode);
+ECS_TAG_DECLARE(DemoItemSelectUiNode);
 ECS_TAG_DECLARE(DemoUiForItem);
 
 ecs_entity_t DemoAppItemRoot(ecs_world_t *world)
@@ -137,11 +138,13 @@ void DemoAppRegister(ecs_world_t *world)
     ECS_TAG_DEFINE(world, DemoDeleteItemRequest);
     ECS_TAG_DEFINE(world, DemoSelectedItem);
     ECS_TAG_DEFINE(world, DemoItemUiNode);
+    ECS_TAG_DEFINE(world, DemoItemSelectUiNode);
     ECS_TAG_DEFINE(world, DemoUiForItem);
     ecs_add_id(world, DemoSelectItemRequest, EcsExclusive);
     ecs_add_id(world, DemoDeleteItemRequest, EcsExclusive);
     ecs_add_id(world, DemoSelectedItem, EcsExclusive);
     ecs_add_id(world, DemoItemUiNode, EcsExclusive);
+    ecs_add_id(world, DemoItemSelectUiNode, EcsExclusive);
     ecs_add_id(world, DemoUiForItem, EcsExclusive);
 
     ecs_singleton_set(

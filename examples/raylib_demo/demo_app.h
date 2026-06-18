@@ -22,6 +22,7 @@ extern ECS_TAG_DECLARE(DemoSelectItemRequest);
 extern ECS_TAG_DECLARE(DemoDeleteItemRequest);
 extern ECS_TAG_DECLARE(DemoSelectedItem);
 extern ECS_TAG_DECLARE(DemoItemUiNode);
+extern ECS_TAG_DECLARE(DemoItemSelectUiNode);
 extern ECS_TAG_DECLARE(DemoUiForItem);
 
 void DemoAppRegister(ecs_world_t *world);

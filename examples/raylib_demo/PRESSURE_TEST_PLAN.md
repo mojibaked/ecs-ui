@@ -18,6 +18,8 @@ entities.
 - Row controls submit relationship-backed request entities such as
   `(DemoSelectItemRequest, item)` and `(DemoDeleteItemRequest, item)`.
 - App state stores `(DemoSelectedItem, item)` on `DemoSelection`.
+- Selected row styling is projected from `(DemoSelectedItem, item)` onto row UI
+  buttons.
 
 ## Phase 1: Relationship-Backed Row Actions
 
@@ -57,14 +59,14 @@ items.
 
 - Make `DemoSelectedItem` exclusive so there is at most one selected item.
 - Observe selection changes and update row UI state/style.
-- Keep row identity linked with `(DemoItemUiNode, row)` and `(DemoUiForItem,
-  item)`.
+- Keep row identity linked with `(DemoItemUiNode, row)`, `(DemoItemSelectUiNode,
+  select_button)`, and `(DemoUiForItem, item)`.
 
 Definition of done:
 
-- Selecting item B removes selected styling from item A.
-- Deleting the selected item clears or retargets the selection.
-- Selection survives row label/style updates without rebuilding the list.
+- [x] Selecting item B removes selected styling from item A.
+- [x] Deleting the selected item clears or retargets the selection.
+- [x] Selection survives row label/style updates without rebuilding the list.
 
 ## Phase 3: List Mutation And Ordering
 
