@@ -73,15 +73,15 @@ Definition of done:
 Prove ordered children and app-state ordering work together.
 
 - Add delete, rename, and reorder actions.
-- Keep app order in `DemoItem.order`.
-- Keep UI order through Flecs ordered children under `ItemList`.
+- Keep app order through Flecs ordered children under `DemoItems`.
+- Keep UI row order through Flecs ordered children under `ItemList`.
 - Use observers/systems to apply minimal row moves instead of rebuilding the
   entire list.
 
 Definition of done:
 
 - [x] Rows stay visually ordered after repeated add/delete/reorder operations.
-- [x] `DemoItem` order and `ItemList` child order agree.
+- [x] `DemoItems` child order and `ItemList` child order agree.
 - [x] No orphan UI rows remain after item deletion.
 
 ## Phase 4: Navigation And Presentation

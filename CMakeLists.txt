@@ -139,6 +139,10 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
         add_executable(ecs_ui_raylib_demo
             examples/raylib_demo/demo_app.c
             examples/raylib_demo/demo_ui.c
+            examples/raylib_demo/demo_ui_build.c
+            examples/raylib_demo/demo_ui_events.c
+            examples/raylib_demo/demo_ui_item_rows.c
+            examples/raylib_demo/demo_ui_items.c
             examples/raylib_demo/main.c)
         target_link_libraries(ecs_ui_raylib_demo
             PRIVATE ecs_ui_raylib)

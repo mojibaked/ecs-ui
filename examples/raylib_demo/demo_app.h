@@ -7,7 +7,6 @@
 
 typedef struct DemoItem {
     uint32_t id;
-    uint32_t order;
     uint32_t rename_count;
     char label[ECS_UI_TEXT_MAX];
 } DemoItem;
@@ -24,6 +23,7 @@ extern ECS_TAG_DECLARE(DemoDeleteItemRequest);
 extern ECS_TAG_DECLARE(DemoRenameItemRequest);
 extern ECS_TAG_DECLARE(DemoMoveItemUpRequest);
 extern ECS_TAG_DECLARE(DemoMoveItemDownRequest);
+extern ECS_TAG_DECLARE(DemoItemOrderDirty);
 extern ECS_TAG_DECLARE(DemoSelectedItem);
 extern ECS_TAG_DECLARE(DemoItemUiNode);
 extern ECS_TAG_DECLARE(DemoItemSelectUiNode);
