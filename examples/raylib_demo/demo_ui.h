@@ -8,6 +8,7 @@ typedef struct DemoUiRefs {
     ecs_entity_t add_item_action;
     ecs_entity_t present_add_item_action;
     ecs_entity_t dismiss_presentation_action;
+    ecs_entity_t drag_presentation_action;
     ecs_entity_t select_item_action;
     ecs_entity_t delete_item_action;
     ecs_entity_t rename_item_action;

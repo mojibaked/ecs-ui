@@ -10,6 +10,8 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
         ecs_entity(world, {.name = "PresentAddItemAction"});
     ecs_entity_t dismiss_presentation_action =
         ecs_entity(world, {.name = "DismissPresentationAction"});
+    ecs_entity_t drag_presentation_action =
+        ecs_entity(world, {.name = "DragPresentationAction"});
     ecs_entity_t select_item_action =
         ecs_entity(world, {.name = "SelectItemAction"});
     ecs_entity_t delete_item_action =
@@ -103,6 +105,7 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
             .add_item_action = add_item_action,
             .present_add_item_action = present_add_item_action,
             .dismiss_presentation_action = dismiss_presentation_action,
+            .drag_presentation_action = drag_presentation_action,
             .select_item_action = select_item_action,
             .delete_item_action = delete_item_action,
             .rename_item_action = rename_item_action,

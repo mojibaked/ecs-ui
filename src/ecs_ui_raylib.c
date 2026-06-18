@@ -61,6 +61,24 @@ static Color EcsUiRaylibLerpColor(Color from, Color to, float amount)
     };
 }
 
+typedef struct EcsUiRaylibPointerCapture {
+    bool active;
+    ecs_entity_t node;
+    ecs_entity_t action;
+    char node_id[ECS_UI_ID_MAX];
+    Vector2 start;
+    double start_time;
+} EcsUiRaylibPointerCapture;
+
+static EcsUiRaylibPointerCapture g_ecs_ui_raylib_pointer_capture;
+
+static float EcsUiRaylibDistanceSquared(Vector2 from, Vector2 to)
+{
+    const float dx = to.x - from.x;
+    const float dy = to.y - from.y;
+    return (dx * dx) + (dy * dy);
+}
+
 static uint32_t EcsUiRaylibChildCount(
     const EcsUiTreeSnapshot *tree,
     uint32_t index)
@@ -562,8 +580,65 @@ static void EcsUiRaylibPushPointerEvent(
         .action = node->on_click,
         .x = point.x,
         .y = point.y,
+        .start_x = point.x,
+        .start_y = point.y,
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", node->id);
+    (void)EcsUiEventListPush(events, &event);
+}
+
+static void EcsUiRaylibStartPointerCapture(
+    const EcsUiTreeNodeSnapshot *node,
+    Vector2 point)
+{
+    if (node == NULL) {
+        return;
+    }
+
+    g_ecs_ui_raylib_pointer_capture = (EcsUiRaylibPointerCapture){
+        .active = true,
+        .node = node->entity,
+        .action = node->on_click,
+        .start = point,
+        .start_time = GetTime(),
+    };
+    (void)snprintf(
+        g_ecs_ui_raylib_pointer_capture.node_id,
+        sizeof(g_ecs_ui_raylib_pointer_capture.node_id),
+        "%s",
+        node->id);
+}
+
+static void EcsUiRaylibPushCapturedPointerEvent(
+    EcsUiEventList *events,
+    EcsUiEventType type,
+    Vector2 point)
+{
+    const EcsUiRaylibPointerCapture *capture =
+        &g_ecs_ui_raylib_pointer_capture;
+    if (events == NULL || !capture->active) {
+        return;
+    }
+
+    const float elapsed =
+        (float)EcsUiRaylibMaxFloat((float)(GetTime() - capture->start_time), 0.001f);
+    const float delta_x = point.x - capture->start.x;
+    const float delta_y = point.y - capture->start.y;
+    EcsUiEvent event = {
+        .type = type,
+        .node = capture->node,
+        .action = capture->action,
+        .x = point.x,
+        .y = point.y,
+        .start_x = capture->start.x,
+        .start_y = capture->start.y,
+        .delta_x = delta_x,
+        .delta_y = delta_y,
+        .elapsed = elapsed,
+        .velocity_x = delta_x / elapsed,
+        .velocity_y = delta_y / elapsed,
+    };
+    (void)snprintf(event.node_id, sizeof(event.node_id), "%s", capture->node_id);
     (void)EcsUiEventListPush(events, &event);
 }
 
@@ -607,8 +682,36 @@ void EcsUiRaylibCollectEvents(
         return;
     }
 
-    EcsUiRaylibHit hit = {0};
     const Vector2 point = GetMousePosition();
+    if (g_ecs_ui_raylib_pointer_capture.active) {
+        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            EcsUiRaylibPushCapturedPointerEvent(
+                events,
+                ECS_UI_EVENT_DRAGGED,
+                point);
+        }
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            const bool did_drag =
+                EcsUiRaylibDistanceSquared(
+                    g_ecs_ui_raylib_pointer_capture.start,
+                    point) > 36.0f;
+            EcsUiRaylibPushCapturedPointerEvent(
+                events,
+                ECS_UI_EVENT_DRAG_ENDED,
+                point);
+            if (!did_drag) {
+                EcsUiRaylibPushCapturedPointerEvent(
+                    events,
+                    ECS_UI_EVENT_CLICKED,
+                    point);
+            }
+            g_ecs_ui_raylib_pointer_capture =
+                (EcsUiRaylibPointerCapture){0};
+        }
+        return;
+    }
+
+    EcsUiRaylibHit hit = {0};
     EcsUiRaylibHitNode(tree, 0u, bounds, point, &hit);
     if (!hit.found || hit.index >= tree->count) {
         return;
@@ -618,8 +721,10 @@ void EcsUiRaylibCollectEvents(
     EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_HOVERED, point);
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_PRESSED, point);
-    }
-    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-        EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_CLICKED, point);
+        EcsUiRaylibStartPointerCapture(node, point);
+        EcsUiRaylibPushCapturedPointerEvent(
+            events,
+            ECS_UI_EVENT_DRAG_STARTED,
+            point);
     }
 }

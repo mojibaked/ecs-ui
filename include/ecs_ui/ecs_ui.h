@@ -54,6 +54,9 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_HOVERED = 1,
     ECS_UI_EVENT_PRESSED = 2,
     ECS_UI_EVENT_CLICKED = 3,
+    ECS_UI_EVENT_DRAG_STARTED = 4,
+    ECS_UI_EVENT_DRAGGED = 5,
+    ECS_UI_EVENT_DRAG_ENDED = 6,
 } EcsUiEventType;
 
 typedef struct EcsUiNodeId {
@@ -154,6 +157,13 @@ typedef struct EcsUiEvent {
     char node_id[ECS_UI_ID_MAX];
     float x;
     float y;
+    float start_x;
+    float start_y;
+    float delta_x;
+    float delta_y;
+    float elapsed;
+    float velocity_x;
+    float velocity_y;
 } EcsUiEvent;
 
 typedef struct EcsUiEventList {

@@ -13,11 +13,39 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
     const DemoUiRefs *refs = ecs_singleton_get(world, DemoUiRefs);
     for (uint32_t i = 0u; i < events->count; i += 1u) {
         const EcsUiEvent *event = &events->events[i];
-        if (event->type != ECS_UI_EVENT_CLICKED) {
+        if (refs == NULL) {
             continue;
         }
 
-        if (refs == NULL) {
+        if (event->action == refs->drag_presentation_action) {
+            if (event->type == ECS_UI_EVENT_DRAG_STARTED) {
+                TraceLog(
+                    LOG_INFO,
+                    "DEMO: presentation drag started from %s",
+                    event->node_id);
+                DemoNavRequestBeginPresentationDrag(world);
+                continue;
+            }
+            if (event->type == ECS_UI_EVENT_DRAGGED) {
+                DemoNavRequestUpdatePresentationDrag(world, event->delta_y);
+                continue;
+            }
+            if (event->type == ECS_UI_EVENT_DRAG_ENDED) {
+                TraceLog(
+                    LOG_INFO,
+                    "DEMO: presentation drag ended from %s at %.1fpx %.1fpx/s",
+                    event->node_id,
+                    event->delta_y,
+                    event->velocity_y);
+                DemoNavRequestEndPresentationDrag(
+                    world,
+                    event->delta_y,
+                    event->velocity_y);
+                continue;
+            }
+        }
+
+        if (event->type != ECS_UI_EVENT_CLICKED) {
             continue;
         }
 

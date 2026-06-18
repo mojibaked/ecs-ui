@@ -12,6 +12,27 @@ ECS_TAG_DECLARE(DemoPresentationUiNode);
 ECS_TAG_DECLARE(DemoActivePresentation);
 ECS_TAG_DECLARE(DemoPresentRouteRequest);
 ECS_TAG_DECLARE(DemoDismissPresentationRequest);
+ECS_COMPONENT_DECLARE(DemoPresentationDrag);
+ECS_TAG_DECLARE(DemoBeginPresentationDragRequest);
+ECS_COMPONENT_DECLARE(DemoUpdatePresentationDragRequest);
+ECS_COMPONENT_DECLARE(DemoEndPresentationDragRequest);
+
+static float DemoNavClamp01(float value)
+{
+    if (value < 0.0f) {
+        return 0.0f;
+    }
+    if (value > 1.0f) {
+        return 1.0f;
+    }
+    return value;
+}
+
+static float DemoNavDragValue(float start_value, float delta_y)
+{
+    const float downward = delta_y > 0.0f ? delta_y : 0.0f;
+    return DemoNavClamp01(start_value - (downward / 180.0f));
+}
 
 ecs_entity_t DemoNavRoot(ecs_world_t *world)
 {
@@ -39,6 +60,60 @@ void DemoNavRequestDismissPresentation(ecs_world_t *world)
     }
 
     (void)ecs_new_w_id(world, DemoDismissPresentationRequest);
+}
+
+void DemoNavRequestBeginPresentationDrag(ecs_world_t *world)
+{
+    if (world == NULL) {
+        return;
+    }
+
+    (void)ecs_new_w_id(world, DemoBeginPresentationDragRequest);
+}
+
+void DemoNavRequestUpdatePresentationDrag(ecs_world_t *world, float delta_y)
+{
+    if (world == NULL) {
+        return;
+    }
+
+    ecs_entity_t request = ecs_new(world);
+    ecs_set(
+        world,
+        request,
+        DemoUpdatePresentationDragRequest,
+        {
+            .delta_y = delta_y,
+        });
+}
+
+void DemoNavRequestEndPresentationDrag(
+    ecs_world_t *world,
+    float delta_y,
+    float velocity_y)
+{
+    if (world == NULL) {
+        return;
+    }
+
+    ecs_entity_t request = ecs_new(world);
+    ecs_set(
+        world,
+        request,
+        DemoEndPresentationDragRequest,
+        {
+            .delta_y = delta_y,
+            .velocity_y = velocity_y,
+        });
+}
+
+static ecs_entity_t DemoNavActivePresentationEntity(ecs_world_t *world)
+{
+    return ecs_get_target(
+        world,
+        DemoNavRoot(world),
+        DemoActivePresentation,
+        0);
 }
 
 static void DemoNavDeletePresentationUi(
@@ -78,6 +153,20 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
                 .gap = 12.0f,
                 .padding = 24.0f,
             });
+    EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = "SheetDragHandle",
+            .variant = ECS_UI_BUTTON_SUBTLE,
+            .on_click = refs->drag_presentation_action,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "SheetDragHandleIcon",
+            .name = "=",
+        });
+    EcsUiEnd(&builder);
     (void)EcsUiAddText(
         &builder,
         (EcsUiTextDesc){
@@ -213,10 +302,8 @@ static void DemoNavPresentRouteSystem(ecs_iter_t *it)
 
 static void DemoNavDismissPresentationSystem(ecs_iter_t *it)
 {
-    ecs_entity_t nav_root = DemoNavRoot(it->world);
     for (int32_t i = 0; i < it->count; i += 1) {
-        ecs_entity_t active =
-            ecs_get_target(it->world, nav_root, DemoActivePresentation, 0);
+        ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
         if (active != 0) {
             DemoAnimStartPresentation(
                 it->world,
@@ -231,6 +318,77 @@ static void DemoNavDismissPresentationSystem(ecs_iter_t *it)
     }
 }
 
+static void DemoNavBeginPresentationDragSystem(ecs_iter_t *it)
+{
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
+        if (active != 0) {
+            const float value = DemoAnimPresentationValue(it->world, active);
+            ecs_set(
+                it->world,
+                active,
+                DemoPresentationDrag,
+                {
+                    .start_value = value,
+                });
+            DemoAnimSetPresentationValue(it->world, active, value);
+            TraceLog(LOG_INFO, "DEMO: began presentation drag");
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
+static void DemoNavUpdatePresentationDragSystem(ecs_iter_t *it)
+{
+    const DemoUpdatePresentationDragRequest *requests =
+        ecs_field(it, DemoUpdatePresentationDragRequest, 0);
+
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
+        const DemoPresentationDrag *drag =
+            active != 0 ? ecs_get(it->world, active, DemoPresentationDrag) : NULL;
+        if (drag != NULL) {
+            DemoAnimSetPresentationValue(
+                it->world,
+                active,
+                DemoNavDragValue(drag->start_value, requests[i].delta_y));
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
+static void DemoNavEndPresentationDragSystem(ecs_iter_t *it)
+{
+    const DemoEndPresentationDragRequest *requests =
+        ecs_field(it, DemoEndPresentationDragRequest, 0);
+
+    for (int32_t i = 0; i < it->count; i += 1) {
+        ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
+        const DemoPresentationDrag *drag =
+            active != 0 ? ecs_get(it->world, active, DemoPresentationDrag) : NULL;
+        if (drag != NULL) {
+            const float current =
+                DemoNavDragValue(drag->start_value, requests[i].delta_y);
+            const bool should_dismiss = requests[i].delta_y > 96.0f ||
+                requests[i].velocity_y > 900.0f ||
+                current < 0.52f;
+            ecs_remove(it->world, active, DemoPresentationDrag);
+            DemoAnimStartPresentation(
+                it->world,
+                active,
+                current,
+                should_dismiss ? 0.0f : 1.0f,
+                should_dismiss ? 0.16f : 0.18f,
+                should_dismiss);
+            TraceLog(
+                LOG_INFO,
+                "DEMO: ended presentation drag (%s)",
+                should_dismiss ? "dismiss" : "cancel");
+        }
+        ecs_delete(it->world, it->entities[i]);
+    }
+}
+
 void DemoNavRegister(ecs_world_t *world)
 {
     ECS_TAG_DEFINE(world, DemoRoute);
@@ -240,6 +398,10 @@ void DemoNavRegister(ecs_world_t *world)
     ECS_TAG_DEFINE(world, DemoActivePresentation);
     ECS_TAG_DEFINE(world, DemoPresentRouteRequest);
     ECS_TAG_DEFINE(world, DemoDismissPresentationRequest);
+    ECS_COMPONENT_DEFINE(world, DemoPresentationDrag);
+    ECS_TAG_DEFINE(world, DemoBeginPresentationDragRequest);
+    ECS_COMPONENT_DEFINE(world, DemoUpdatePresentationDragRequest);
+    ECS_COMPONENT_DEFINE(world, DemoEndPresentationDragRequest);
 
     ecs_add_id(world, DemoPresentationRoute, EcsExclusive);
     ecs_add_id(world, DemoPresentationUiNode, EcsExclusive);
@@ -292,5 +454,38 @@ void DemoNavRegister(ecs_world_t *world)
             {.id = DemoDismissPresentationRequest},
         },
         .callback = DemoNavDismissPresentationSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "DemoNavBeginPresentationDragSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = DemoBeginPresentationDragRequest},
+        },
+        .callback = DemoNavBeginPresentationDragSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "DemoNavUpdatePresentationDragSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = ecs_id(DemoUpdatePresentationDragRequest)},
+        },
+        .callback = DemoNavUpdatePresentationDragSystem,
+    });
+
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "DemoNavEndPresentationDragSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
+        }),
+        .query.terms = {
+            {.id = ecs_id(DemoEndPresentationDragRequest)},
+        },
+        .callback = DemoNavEndPresentationDragSystem,
     });
 }

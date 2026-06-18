@@ -134,15 +134,17 @@ Definition of done:
 
 Pressure-test pointer state beyond simple clicks.
 
-- Drag a sheet down to update an interactive transition entity.
-- On release, commit or cancel based on distance/velocity.
-- Reuse action/request flow for begin, update, and end drag events.
+- [x] Drag a sheet down to update an interactive transition entity.
+- [x] On release, commit or cancel based on distance/velocity.
+- [x] Reuse action/request flow for begin, update, and end drag events.
+- [x] Pointer capture keeps the release attached to the pressed handle.
+- [x] Release requests carry drag distance and vertical velocity.
 
 Definition of done:
 
-- Dragging directly changes the rendered sheet offset.
-- Canceling springs back; committing dismisses and cleans up the presentation.
-- Pointer capture prevents unrelated controls from receiving the same gesture.
+- [x] Dragging directly changes the rendered sheet offset.
+- [x] Canceling springs back; committing dismisses and cleans up the presentation.
+- [x] Pointer capture prevents unrelated controls from receiving the same gesture.
 
 ## Phase 7: Text Input
 

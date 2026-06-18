@@ -132,6 +132,28 @@ void DemoAnimStartPresentation(
     DemoAnimApplyPresentationVisual(world, presentation, from);
 }
 
+void DemoAnimSetPresentationValue(
+    ecs_world_t *world,
+    ecs_entity_t presentation,
+    float value)
+{
+    if (world == NULL || presentation == 0) {
+        return;
+    }
+
+    const float visible = DemoAnimClamp01(value);
+    ecs_set(
+        world,
+        presentation,
+        DemoAnimatedFloat,
+        {
+            .value = visible,
+        });
+    ecs_remove(world, presentation, DemoLinear1f);
+    ecs_remove_id(world, presentation, DemoDismissPresentationOnAnimationComplete);
+    DemoAnimApplyPresentationVisual(world, presentation, visible);
+}
+
 static void DemoAnimStartNode(
     ecs_world_t *world,
     ecs_entity_t node,

@@ -28,6 +28,10 @@ void DemoAnimStartPresentation(
     float to,
     float duration,
     bool dismiss_on_complete);
+void DemoAnimSetPresentationValue(
+    ecs_world_t *world,
+    ecs_entity_t presentation,
+    float value);
 float DemoAnimPresentationValue(ecs_world_t *world, ecs_entity_t presentation);
 void DemoAnimApplyVisualToNode(
     ecs_world_t *world,
