@@ -199,6 +199,9 @@ int main(void)
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
         "EcsUiOnClick should be exclusive");
     result |= Require(
+        ecs_has_id(world, EcsUiUsesStyle, EcsExclusive),
+        "EcsUiUsesStyle should be exclusive");
+    result |= Require(
         ecs_id(EcsUiPressable) != 0,
         "EcsUiPressable should be registered");
     result |= Require(
@@ -821,6 +824,19 @@ int main(void)
 
     ecs_entity_t present_add_machine_action =
         ecs_entity(world, {.name = "PresentAddMachineAction"});
+    ecs_entity_t search_style_token =
+        ecs_entity(world, {.name = "SearchStyleToken"});
+    ecs_set(
+        world,
+        search_style_token,
+        EcsUiBoxStyle,
+        {
+            .background = {10u, 20u, 30u, 255u},
+            .hover_background = {20u, 30u, 40u, 255u},
+            .highlight_background = {50u, 60u, 70u, 255u},
+            .radius = 0.1f,
+            .padding = 9.0f,
+        });
 
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
     VStack(&builder, {.id = "HomeStack", .gap = 10.0f, .padding = 16.0f}) {
@@ -863,16 +879,32 @@ int main(void)
                 .role = ECS_UI_TEXT_BODY,
             });
         EcsUiEnd(&builder);
+        ecs_add_pair(world, search_field, EcsUiUsesStyle, search_style_token);
+        ecs_entity_t direct_field = EcsUiBeginPressable(
+            &builder,
+            (EcsUiPressableDesc){
+                .id = "DirectStyleField",
+                .on_click = present_add_machine_action,
+            });
+        Text(
+            &builder,
+            {
+                .id = "DirectStyleText",
+                .text = "direct",
+                .role = ECS_UI_TEXT_BODY,
+            });
+        EcsUiEnd(&builder);
+        ecs_add_pair(world, direct_field, EcsUiUsesStyle, search_style_token);
         ecs_set(
             world,
-            search_field,
+            direct_field,
             EcsUiBoxStyle,
             {
-                .background = {10u, 20u, 30u, 255u},
-                .hover_background = {20u, 30u, 40u, 255u},
-                .highlight_background = {50u, 60u, 70u, 255u},
-                .radius = 0.1f,
-                .padding = 9.0f,
+                .background = {90u, 80u, 70u, 255u},
+                .hover_background = {91u, 81u, 71u, 255u},
+                .highlight_background = {92u, 82u, 72u, 255u},
+                .radius = 0.2f,
+                .padding = 7.0f,
             });
         Custom(
             &builder,
@@ -889,7 +921,7 @@ int main(void)
 
     EcsUiTreeSnapshot tree = {0};
     result |= Require(EcsUiReadTree(world, root, &tree), "read tree failed");
-    result |= Require(tree.count == 10u, "unexpected tree count");
+    result |= Require(tree.count == 12u, "unexpected tree count");
     result |= Require(!tree.truncated, "tree truncated");
     result |= RequireNode(&tree, 0u, "Home", ECS_UI_NODE_ROOT);
     result |= RequireNode(&tree, 1u, "HomeStack", ECS_UI_NODE_VSTACK);
@@ -900,7 +932,9 @@ int main(void)
     result |= RequireNode(&tree, 6u, "FooterLabel", ECS_UI_NODE_TEXT);
     result |= RequireNode(&tree, 7u, "SearchField", ECS_UI_NODE_PRESSABLE);
     result |= RequireNode(&tree, 8u, "SearchText", ECS_UI_NODE_TEXT);
-    result |= RequireNode(&tree, 9u, "TerminalPreview", ECS_UI_NODE_CUSTOM);
+    result |= RequireNode(&tree, 9u, "DirectStyleField", ECS_UI_NODE_PRESSABLE);
+    result |= RequireNode(&tree, 10u, "DirectStyleText", ECS_UI_NODE_TEXT);
+    result |= RequireNode(&tree, 11u, "TerminalPreview", ECS_UI_NODE_CUSTOM);
 
     result |= Require(
         tree.nodes[1u].first_child == 2u,
@@ -913,7 +947,10 @@ int main(void)
         "Footer next sibling should be SearchField");
     result |= Require(
         tree.nodes[7u].next_sibling == 9u,
-        "SearchField next sibling should be TerminalPreview");
+        "SearchField next sibling should be DirectStyleField");
+    result |= Require(
+        tree.nodes[9u].next_sibling == 11u,
+        "DirectStyleField next sibling should be TerminalPreview");
     result |= Require(
         strcmp(tree.nodes[3u].text.text, "add machine") == 0,
         "text payload not copied");
@@ -921,11 +958,14 @@ int main(void)
         strcmp(tree.nodes[8u].text.text, "search") == 0,
         "pressable text payload not copied");
     result |= Require(
-        strcmp(tree.nodes[9u].custom.kind, "terminal") == 0,
+        strcmp(tree.nodes[10u].text.text, "direct") == 0,
+        "direct style text payload not copied");
+    result |= Require(
+        strcmp(tree.nodes[11u].custom.kind, "terminal") == 0,
         "custom kind not copied");
     result |= Require(
-        tree.nodes[9u].custom.preferred_width == 320.0f &&
-            tree.nodes[9u].custom.preferred_height == 120.0f,
+        tree.nodes[11u].custom.preferred_width == 320.0f &&
+            tree.nodes[11u].custom.preferred_height == 120.0f,
         "custom preferred size not copied");
     result |= Require(
         tree.nodes[2u].visual.opacity == 1.0f,
@@ -979,14 +1019,22 @@ int main(void)
         0.1f,
         0.0001f,
         "pressable box style radius should be copied");
+    result |= Require(
+        tree.nodes[9u].has_box_style &&
+            tree.nodes[9u].box_style.background.r == 90u &&
+            tree.nodes[9u].box_style.background.g == 80u &&
+            tree.nodes[9u].box_style.background.b == 70u &&
+            tree.nodes[9u].box_style.background.a == 255u,
+        "direct box style should override style token");
 
     ecs_entities_t ordered = ecs_get_ordered_children(world, home_stack);
-    result |= Require(ordered.count == 4, "ordered child count mismatch");
+    result |= Require(ordered.count == 5, "ordered child count mismatch");
     result |= Require(
         ordered.ids[0] == tree.nodes[2u].entity &&
             ordered.ids[1] == tree.nodes[4u].entity &&
             ordered.ids[2] == tree.nodes[7u].entity &&
-            ordered.ids[3] == tree.nodes[9u].entity,
+            ordered.ids[3] == tree.nodes[9u].entity &&
+            ordered.ids[4] == tree.nodes[11u].entity,
         "ordered children mismatch");
 
     ecs_entity_t source_tag =

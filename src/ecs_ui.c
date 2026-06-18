@@ -17,6 +17,7 @@ ECS_COMPONENT_DECLARE(EcsUiVisual);
 ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
 ECS_TAG_DECLARE(EcsUiOnClick);
+ECS_TAG_DECLARE(EcsUiUsesStyle);
 
 static void EcsUiCopyString(char *out, size_t out_size, const char *value)
 {
@@ -45,6 +46,23 @@ static ecs_entity_t EcsUiCurrentParent(EcsUiBuilder *builder)
         return 0;
     }
     return builder->parent_stack[builder->depth - 1u];
+}
+
+static const EcsUiBoxStyle *EcsUiResolveBoxStyle(
+    const ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    const EcsUiBoxStyle *box_style =
+        entity != 0 ? ecs_get(world, entity, EcsUiBoxStyle) : NULL;
+    if (box_style != NULL) {
+        return box_style;
+    }
+
+    ecs_entity_t style_token =
+        entity != 0 ? ecs_get_target(world, entity, EcsUiUsesStyle, 0) : 0;
+    return style_token != 0 ?
+        ecs_get(world, style_token, EcsUiBoxStyle) :
+        NULL;
 }
 
 static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
@@ -159,7 +177,9 @@ void EcsUiImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiRoot);
     ECS_TAG_DEFINE(world, EcsUiInteractive);
     ECS_TAG_DEFINE(world, EcsUiOnClick);
+    ECS_TAG_DEFINE(world, EcsUiUsesStyle);
     ecs_add_id(world, EcsUiOnClick, EcsExclusive);
+    ecs_add_id(world, EcsUiUsesStyle, EcsExclusive);
 }
 
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id)
@@ -397,7 +417,7 @@ static uint32_t EcsUiReadNode(
         snapshot->stack = *stack;
     }
 
-    const EcsUiBoxStyle *box_style = ecs_get(world, entity, EcsUiBoxStyle);
+    const EcsUiBoxStyle *box_style = EcsUiResolveBoxStyle(world, entity);
     if (box_style != NULL) {
         snapshot->box_style = *box_style;
         snapshot->has_box_style = true;

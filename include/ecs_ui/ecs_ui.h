@@ -251,6 +251,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiVisual);
 extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);
 extern ECS_TAG_DECLARE(EcsUiOnClick);
+extern ECS_TAG_DECLARE(EcsUiUsesStyle);
 
 void EcsUiImport(ecs_world_t *world);
 

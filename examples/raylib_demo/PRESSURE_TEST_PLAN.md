@@ -415,3 +415,22 @@ Definition of done:
   present.
 - [x] Text field styling is carried by ECS state, not hard-coded as a button
   variant.
+
+## Phase 20: Style Tokens
+
+Let repeated widgets reference shared style entities before adding active theme
+switching.
+
+- [x] Add an `EcsUiUsesStyle` relationship for style-token entities.
+- [x] Keep the relationship exclusive so a node has one current style token.
+- [x] Resolve direct `EcsUiBoxStyle` first and token `EcsUiBoxStyle` second.
+- [x] Move demo text fields to a shared style token instead of copying box style
+  onto every field node.
+
+Definition of done:
+
+- [x] Unit tests cover relationship registration, token style readback, and
+  direct-style precedence.
+- [x] Existing direct style components keep working.
+- [x] Active light/dark theme switching remains a later slice built on the same
+  token lookup shape.
