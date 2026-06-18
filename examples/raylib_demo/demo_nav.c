@@ -239,6 +239,13 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
     EcsUiBuilderEnd(&builder);
 
     if (EcsUiBuilderOk(&builder) && sheet != 0) {
+        ecs_set(
+            world,
+            sheet,
+            EcsUiHitTest,
+            {
+                .mode = ECS_UI_HIT_TEST_CAPTURE,
+            });
         (void)EcsUiNavSetPresentationUiNode(world, presentation, sheet);
         return sheet;
     }

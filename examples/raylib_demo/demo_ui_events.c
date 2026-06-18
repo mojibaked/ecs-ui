@@ -208,6 +208,11 @@ void DemoUiApplyEvents(
             continue;
         }
 
+        if (DemoTextInputHasFocusedField(ui_world) &&
+            event->action != refs->focus_text_field_action) {
+            DemoTextInputRequestBlur(ui_world);
+        }
+
         if (event->action == refs->focus_text_field_action) {
             ecs_entity_t field =
                 EcsUiTextInputUiField(ui_world, event->node);

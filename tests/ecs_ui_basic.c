@@ -215,6 +215,9 @@ int main(void)
         ecs_id(EcsUiBoxStyle) != 0,
         "EcsUiBoxStyle should be registered");
     result |= Require(
+        ecs_id(EcsUiHitTest) != 0,
+        "EcsUiHitTest should be registered");
+    result |= Require(
         ecs_has_id(world, EcsUiProjectionRoot, EcsExclusive),
         "EcsUiProjectionRoot should be exclusive");
     result |= Require(
@@ -941,13 +944,20 @@ int main(void)
                 .radius = 0.2f,
                 .padding = 7.0f,
             });
-        Custom(
+        ecs_entity_t terminal_preview = Custom(
             &builder,
             {
                 .id = "TerminalPreview",
                 .kind = "terminal",
                 .preferred_width = 320.0f,
                 .preferred_height = 120.0f,
+            });
+        ecs_set(
+            world,
+            terminal_preview,
+            EcsUiHitTest,
+            {
+                .mode = ECS_UI_HIT_TEST_CAPTURE,
             });
     }
     EcsUiBuilderEnd(&builder);
@@ -1002,6 +1012,9 @@ int main(void)
         tree.nodes[11u].custom.preferred_width == 320.0f &&
             tree.nodes[11u].custom.preferred_height == 120.0f,
         "custom preferred size not copied");
+    result |= Require(
+        tree.nodes[11u].hit_test.mode == ECS_UI_HIT_TEST_CAPTURE,
+        "custom hit-test mode should be copied");
     result |= Require(
         tree.nodes[2u].visual.opacity == 1.0f,
         "visual opacity should default to 1");

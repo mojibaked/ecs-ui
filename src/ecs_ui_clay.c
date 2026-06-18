@@ -141,6 +141,13 @@ static void EcsUiClayEmitChildren(
     }
 }
 
+static void EcsUiClayFloatingId(
+    const EcsUiTreeNodeSnapshot *node,
+    char *out,
+    size_t out_size);
+static bool EcsUiClayNodeCapturesSelf(
+    const EcsUiTreeNodeSnapshot *node);
+
 static void EcsUiClayEmitStack(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme,
@@ -195,11 +202,10 @@ static void EcsUiClayEmitZStack(
                 first = false;
             } else {
                 char floating_id[ECS_UI_ID_MAX * 2u] = {0};
-                (void)snprintf(
+                EcsUiClayFloatingId(
+                    &tree->nodes[child],
                     floating_id,
-                    sizeof(floating_id),
-                    "%sFloating",
-                    tree->nodes[child].id);
+                    sizeof(floating_id));
                 CLAY(CLAY_SID(EcsUiClayString(floating_id)), {
                     .layout = {
                         .sizing = {
@@ -213,6 +219,10 @@ static void EcsUiClayEmitZStack(
                             .element = CLAY_ATTACH_POINT_LEFT_TOP,
                             .parent = CLAY_ATTACH_POINT_LEFT_TOP,
                         },
+                        .pointerCaptureMode = EcsUiClayNodeCapturesSelf(
+                            &tree->nodes[child]) ?
+                                CLAY_POINTER_CAPTURE_MODE_CAPTURE :
+                                CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
                         .attachTo = CLAY_ATTACH_TO_PARENT,
                     },
                 }) {
@@ -356,6 +366,121 @@ static bool EcsUiClayPointerOverNode(const EcsUiTreeNodeSnapshot *node)
     return Clay_PointerOver(Clay_GetElementId(EcsUiClayString(node->id)));
 }
 
+static bool EcsUiClayNodeCapturesSelf(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || node->hit_test.mode == ECS_UI_HIT_TEST_NONE ||
+        node->hit_test.mode == ECS_UI_HIT_TEST_CHILDREN) {
+        return false;
+    }
+    if (node->hit_test.mode == ECS_UI_HIT_TEST_CAPTURE) {
+        return true;
+    }
+
+    switch (node->kind) {
+    case ECS_UI_NODE_BUTTON:
+        return node->on_click != 0 && !node->button.disabled;
+    case ECS_UI_NODE_PRESSABLE:
+        return node->on_click != 0 && !node->pressable.disabled;
+    case ECS_UI_NODE_CUSTOM:
+        return node->on_click != 0;
+    case ECS_UI_NODE_ROOT:
+    case ECS_UI_NODE_VSTACK:
+    case ECS_UI_NODE_HSTACK:
+    case ECS_UI_NODE_ZSTACK:
+    case ECS_UI_NODE_TEXT:
+    case ECS_UI_NODE_ICON:
+    case ECS_UI_NODE_NONE:
+    default:
+        return false;
+    }
+}
+
+static void EcsUiClayFloatingId(
+    const EcsUiTreeNodeSnapshot *node,
+    char *out,
+    size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+    out[0] = '\0';
+    if (node == NULL) {
+        return;
+    }
+    (void)snprintf(out, out_size, "%sFloating", node->id);
+}
+
+static bool EcsUiClayPointerOverFloatingNode(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    char floating_id[ECS_UI_ID_MAX * 2u] = {0};
+    EcsUiClayFloatingId(node, floating_id, sizeof(floating_id));
+    if (floating_id[0] == '\0') {
+        return false;
+    }
+    return Clay_PointerOver(Clay_GetElementId(EcsUiClayString(floating_id)));
+}
+
+static uint32_t EcsUiClayTopCapturedLayerInSubtree(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (tree == NULL || index >= tree->count) {
+        return ECS_UI_TREE_INVALID_INDEX;
+    }
+
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    uint32_t captured = ECS_UI_TREE_INVALID_INDEX;
+    uint32_t child = node->first_child;
+    bool first_z_child = node->kind == ECS_UI_NODE_ZSTACK;
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
+        if (node->kind == ECS_UI_NODE_ZSTACK) {
+            if (!first_z_child &&
+                EcsUiClayNodeCapturesSelf(child_node) &&
+                EcsUiClayPointerOverFloatingNode(child_node)) {
+                captured = child;
+            }
+            first_z_child = false;
+        }
+
+        uint32_t nested =
+            EcsUiClayTopCapturedLayerInSubtree(tree, child);
+        if (nested != ECS_UI_TREE_INVALID_INDEX) {
+            captured = nested;
+        }
+        child = child_node->next_sibling;
+    }
+
+    return captured;
+}
+
+static bool EcsUiClayNodeIsInSubtree(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t ancestor,
+    uint32_t index)
+{
+    if (tree == NULL || ancestor >= tree->count || index >= tree->count) {
+        return false;
+    }
+
+    uint32_t current = index;
+    while (current != ECS_UI_TREE_INVALID_INDEX && current < tree->count) {
+        if (current == ancestor) {
+            return true;
+        }
+        current = tree->nodes[current].parent_index;
+    }
+    return false;
+}
+
+static bool EcsUiClayNodeAcceptsPointer(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiClayNodeCapturesSelf(node);
+}
+
 static void EcsUiClayPushPointerEvent(
     EcsUiEventList *events,
     const EcsUiTreeNodeSnapshot *node,
@@ -396,14 +521,27 @@ void EcsUiClayCollectEvents(
         },
         pointer.down);
 
+    const uint32_t captured_layer =
+        EcsUiClayTopCapturedLayerInSubtree(tree, 0u);
     const EcsUiTreeNodeSnapshot *hit = NULL;
     for (uint32_t i = tree->count; i > 0u; i -= 1u) {
-        const EcsUiTreeNodeSnapshot *node = &tree->nodes[i - 1u];
-        if (node->on_click == 0 || !EcsUiClayPointerOverNode(node)) {
+        const uint32_t index = i - 1u;
+        if (captured_layer != ECS_UI_TREE_INVALID_INDEX &&
+            !EcsUiClayNodeIsInSubtree(tree, captured_layer, index)) {
+            continue;
+        }
+        const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+        if (!EcsUiClayNodeAcceptsPointer(node) ||
+            !EcsUiClayPointerOverNode(node)) {
             continue;
         }
         hit = node;
         break;
+    }
+
+    if (hit == NULL && captured_layer != ECS_UI_TREE_INVALID_INDEX &&
+        EcsUiClayNodeCapturesSelf(&tree->nodes[captured_layer])) {
+        hit = &tree->nodes[captured_layer];
     }
 
     if (hit == NULL) {

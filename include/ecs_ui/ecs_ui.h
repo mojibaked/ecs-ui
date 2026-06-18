@@ -78,6 +78,13 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_TEXT_PASTE = 23,
 } EcsUiEventType;
 
+typedef enum EcsUiHitTestMode {
+    ECS_UI_HIT_TEST_AUTO = 0,
+    ECS_UI_HIT_TEST_NONE = 1,
+    ECS_UI_HIT_TEST_CHILDREN = 2,
+    ECS_UI_HIT_TEST_CAPTURE = 3,
+} EcsUiHitTestMode;
+
 typedef struct EcsUiNodeId {
     char value[ECS_UI_ID_MAX];
 } EcsUiNodeId;
@@ -138,6 +145,10 @@ typedef struct EcsUiVisual {
     float offset_y;
     float highlight;
 } EcsUiVisual;
+
+typedef struct EcsUiHitTest {
+    EcsUiHitTestMode mode;
+} EcsUiHitTest;
 
 typedef struct EcsUiStackDesc {
     const char *id;
@@ -203,6 +214,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiIcon icon;
     EcsUiCustom custom;
     EcsUiVisual visual;
+    EcsUiHitTest hit_test;
     bool has_box_style;
 } EcsUiTreeNodeSnapshot;
 
@@ -247,6 +259,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiText);
 extern ECS_COMPONENT_DECLARE(EcsUiIcon);
 extern ECS_COMPONENT_DECLARE(EcsUiCustom);
 extern ECS_COMPONENT_DECLARE(EcsUiVisual);
+extern ECS_COMPONENT_DECLARE(EcsUiHitTest);
 
 extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);

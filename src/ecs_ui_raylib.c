@@ -573,14 +573,81 @@ typedef struct EcsUiRaylibHit {
     Rectangle bounds;
 } EcsUiRaylibHit;
 
-static void EcsUiRaylibHitNode(
+static bool EcsUiRaylibHitNode(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
     Rectangle bounds,
     Vector2 point,
     EcsUiRaylibHit *hit);
 
-static void EcsUiRaylibHitChildrenVertical(
+static bool EcsUiRaylibHitSet(
+    EcsUiRaylibHit *hit,
+    uint32_t index,
+    Rectangle bounds)
+{
+    if (hit == NULL) {
+        return false;
+    }
+    hit->found = true;
+    hit->index = index;
+    hit->bounds = bounds;
+    return true;
+}
+
+static bool EcsUiRaylibHitTestDisabled(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL && node->hit_test.mode == ECS_UI_HIT_TEST_NONE;
+}
+
+static bool EcsUiRaylibHitTestCapturesSelf(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL) {
+        return false;
+    }
+    if (node->hit_test.mode == ECS_UI_HIT_TEST_CAPTURE) {
+        return true;
+    }
+    if (node->hit_test.mode == ECS_UI_HIT_TEST_CHILDREN ||
+        node->hit_test.mode == ECS_UI_HIT_TEST_NONE) {
+        return false;
+    }
+
+    switch (node->kind) {
+    case ECS_UI_NODE_BUTTON:
+        return !node->button.disabled;
+    case ECS_UI_NODE_PRESSABLE:
+        return !node->pressable.disabled;
+    case ECS_UI_NODE_CUSTOM:
+        return node->on_click != 0;
+    case ECS_UI_NODE_ROOT:
+    case ECS_UI_NODE_VSTACK:
+    case ECS_UI_NODE_HSTACK:
+    case ECS_UI_NODE_ZSTACK:
+    case ECS_UI_NODE_TEXT:
+    case ECS_UI_NODE_ICON:
+    case ECS_UI_NODE_NONE:
+    default:
+        return false;
+    }
+}
+
+static bool EcsUiRaylibHitSelf(
+    const EcsUiTreeNodeSnapshot *node,
+    uint32_t index,
+    Rectangle bounds,
+    Vector2 point,
+    EcsUiRaylibHit *hit)
+{
+    if (!EcsUiRaylibHitTestCapturesSelf(node) ||
+        !CheckCollisionPointRec(point, bounds)) {
+        return false;
+    }
+    return EcsUiRaylibHitSet(hit, index, bounds);
+}
+
+static bool EcsUiRaylibHitChildrenVertical(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
     Rectangle bounds,
@@ -596,7 +663,7 @@ static void EcsUiRaylibHitChildrenVertical(
             EcsUiRaylibPreferredHeight(tree, child, bounds.width);
         const float remaining = bounds.y + bounds.height - y;
         if (remaining <= 0.0f) {
-            return;
+            return false;
         }
         Rectangle child_bounds = {
             .x = bounds.x,
@@ -604,13 +671,16 @@ static void EcsUiRaylibHitChildrenVertical(
             .width = bounds.width,
             .height = preferred_height < remaining ? preferred_height : remaining,
         };
-        EcsUiRaylibHitNode(tree, child, child_bounds, point, hit);
+        if (EcsUiRaylibHitNode(tree, child, child_bounds, point, hit)) {
+            return true;
+        }
         y += child_bounds.height + gap;
         child = tree->nodes[child].next_sibling;
     }
+    return false;
 }
 
-static void EcsUiRaylibHitChildrenHorizontal(
+static bool EcsUiRaylibHitChildrenHorizontal(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
     Rectangle bounds,
@@ -620,7 +690,7 @@ static void EcsUiRaylibHitChildrenHorizontal(
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     const uint32_t child_count = EcsUiRaylibChildCount(tree, index);
     if (child_count == 0u) {
-        return;
+        return false;
     }
 
     const float gap = EcsUiRaylibClampPositive(node->stack.gap);
@@ -637,13 +707,41 @@ static void EcsUiRaylibHitChildrenHorizontal(
             .width = child_width,
             .height = bounds.height,
         };
-        EcsUiRaylibHitNode(tree, child, child_bounds, point, hit);
+        if (EcsUiRaylibHitNode(tree, child, child_bounds, point, hit)) {
+            return true;
+        }
         x += child_width + gap;
         child = tree->nodes[child].next_sibling;
     }
+    return false;
 }
 
-static void EcsUiRaylibHitNode(
+static bool EcsUiRaylibHitChildrenZStack(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    Rectangle bounds,
+    Vector2 point,
+    EcsUiRaylibHit *hit)
+{
+    uint32_t children[ECS_UI_TREE_NODE_MAX] = {0};
+    uint32_t child_count = 0u;
+    uint32_t child = tree->nodes[index].first_child;
+    while (child != ECS_UI_TREE_INVALID_INDEX &&
+           child_count < ECS_UI_TREE_NODE_MAX) {
+        children[child_count] = child;
+        child_count += 1u;
+        child = tree->nodes[child].next_sibling;
+    }
+
+    for (uint32_t i = child_count; i > 0u; i -= 1u) {
+        if (EcsUiRaylibHitNode(tree, children[i - 1u], bounds, point, hit)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool EcsUiRaylibHitNode(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
     Rectangle bounds,
@@ -652,79 +750,71 @@ static void EcsUiRaylibHitNode(
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     Rectangle node_bounds = EcsUiRaylibOffset(bounds, node->visual);
-    if (EcsUiRaylibClamp01(node->visual.opacity) <= 0.01f) {
-        return;
+    if (EcsUiRaylibClamp01(node->visual.opacity) <= 0.01f ||
+        EcsUiRaylibHitTestDisabled(node)) {
+        return false;
     }
 
     switch (node->kind) {
     case ECS_UI_NODE_ROOT:
     case ECS_UI_NODE_VSTACK:
-        EcsUiRaylibHitChildrenVertical(
+        if (EcsUiRaylibHitChildrenVertical(
             tree,
             index,
             EcsUiRaylibInset(node_bounds, node->stack.padding),
             point,
-            hit);
-        break;
+            hit)) {
+            return true;
+        }
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
     case ECS_UI_NODE_HSTACK:
-        EcsUiRaylibHitChildrenHorizontal(
+        if (EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
             EcsUiRaylibInset(node_bounds, node->stack.padding),
             point,
-            hit);
-        break;
+            hit)) {
+            return true;
+        }
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
     case ECS_UI_NODE_ZSTACK: {
         Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
-        uint32_t child = node->first_child;
-        while (child != ECS_UI_TREE_INVALID_INDEX) {
-            EcsUiRaylibHitNode(tree, child, inner, point, hit);
-            child = tree->nodes[child].next_sibling;
+        if (EcsUiRaylibHitChildrenZStack(tree, index, inner, point, hit)) {
+            return true;
         }
-        break;
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
     }
     case ECS_UI_NODE_BUTTON:
-        if (!node->button.disabled && CheckCollisionPointRec(point, node_bounds)) {
-            hit->found = true;
-            hit->index = index;
-            hit->bounds = node_bounds;
-        }
-        EcsUiRaylibHitChildrenHorizontal(
+        if (EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
             EcsUiRaylibInset(
                 node_bounds,
                 EcsUiRaylibBoxPadding(node, 12.0f)),
             point,
-            hit);
-        break;
-    case ECS_UI_NODE_PRESSABLE:
-        if (!node->pressable.disabled &&
-            CheckCollisionPointRec(point, node_bounds)) {
-            hit->found = true;
-            hit->index = index;
-            hit->bounds = node_bounds;
+            hit)) {
+            return true;
         }
-        EcsUiRaylibHitChildrenHorizontal(
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
+    case ECS_UI_NODE_PRESSABLE:
+        if (EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
             EcsUiRaylibInset(node_bounds, 12.0f),
             point,
-            hit);
-        break;
-    case ECS_UI_NODE_CUSTOM:
-        if (node->on_click != 0 && CheckCollisionPointRec(point, node_bounds)) {
-            hit->found = true;
-            hit->index = index;
-            hit->bounds = node_bounds;
+            hit)) {
+            return true;
         }
-        break;
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
+    case ECS_UI_NODE_CUSTOM:
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
     case ECS_UI_NODE_TEXT:
     case ECS_UI_NODE_ICON:
     case ECS_UI_NODE_NONE:
     default:
-        break;
+        return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
     }
+    return false;
 }
 
 static void EcsUiRaylibPushPointerEvent(

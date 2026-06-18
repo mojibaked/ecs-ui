@@ -137,6 +137,13 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
     ecs_entity_t presentation_host = DemoUiFindNodeById(world, "DemoViewport");
     if (presentation_host != 0) {
         ecs_add_id(world, presentation_host, EcsUiPresentationHost);
+        ecs_set(
+            world,
+            presentation_host,
+            EcsUiHitTest,
+            {
+                .mode = ECS_UI_HIT_TEST_CAPTURE,
+            });
     }
 
     ecs_singleton_set(

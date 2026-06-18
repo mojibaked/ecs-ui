@@ -13,6 +13,7 @@ ECS_COMPONENT_DECLARE(EcsUiText);
 ECS_COMPONENT_DECLARE(EcsUiIcon);
 ECS_COMPONENT_DECLARE(EcsUiCustom);
 ECS_COMPONENT_DECLARE(EcsUiVisual);
+ECS_COMPONENT_DECLARE(EcsUiHitTest);
 
 ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
@@ -214,6 +215,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiIcon);
     ECS_COMPONENT_DEFINE(world, EcsUiCustom);
     ECS_COMPONENT_DEFINE(world, EcsUiVisual);
+    ECS_COMPONENT_DEFINE(world, EcsUiHitTest);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
     ECS_TAG_DEFINE(world, EcsUiInteractive);
@@ -617,6 +619,11 @@ static uint32_t EcsUiReadNode(
     const EcsUiVisual *visual = ecs_get(world, entity, EcsUiVisual);
     if (visual != NULL) {
         snapshot->visual = *visual;
+    }
+
+    const EcsUiHitTest *hit_test = ecs_get(world, entity, EcsUiHitTest);
+    if (hit_test != NULL) {
+        snapshot->hit_test = *hit_test;
     }
 
     uint32_t previous_child = ECS_UI_TREE_INVALID_INDEX;

@@ -457,3 +457,26 @@ Definition of done:
   the retained UI tree.
 - [x] Theme switching remains token-based so widgets can opt into semantic
   styles instead of hard-coded colors.
+
+## Phase 22: Pointer Hit Policy
+
+Make overlapping UI input behavior explicit ECS state instead of a modal-specific
+demo rule.
+
+- [x] Add `EcsUiHitTest` with modes for auto, none, children-only, and capture.
+- [x] Include hit-test policy in tree snapshots so renderer adapters do not
+  query live ECS state during event collection.
+- [x] Update raylib hit testing to respect topmost ZStack order and captured
+  surfaces.
+- [x] Update Clay event collection to use Clay floating pointer capture when an
+  ECS layer explicitly captures pointer input.
+- [x] Opt demo presentation and viewport surfaces into capture so blank overlay
+  clicks do not fall through to background buttons.
+- [x] Blur focused text fields on captured clicks that are not text-field focus
+  requests.
+
+Definition of done:
+
+- [x] Unit tests cover hit-test component registration and snapshot readback.
+- [x] Raylib and Clay event paths share the same ECS hit policy.
+- [x] Background actions cannot fire through a captured presentation layer.
