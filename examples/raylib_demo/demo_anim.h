@@ -2,20 +2,8 @@
 #define ECS_UI_RAYLIB_DEMO_ANIM_H
 
 #include "demo_nav.h"
+#include "ecs_ui/ecs_ui_animation.h"
 
-typedef struct DemoAnimatedFloat {
-    float value;
-} DemoAnimatedFloat;
-
-typedef struct DemoLinear1f {
-    float from;
-    float to;
-    float elapsed;
-    float duration;
-} DemoLinear1f;
-
-extern ECS_COMPONENT_DECLARE(DemoAnimatedFloat);
-extern ECS_COMPONENT_DECLARE(DemoLinear1f);
 extern ECS_TAG_DECLARE(DemoAnimatedRow);
 extern ECS_TAG_DECLARE(DemoAnimatedSelection);
 extern ECS_TAG_DECLARE(DemoDismissPresentationOnAnimationComplete);

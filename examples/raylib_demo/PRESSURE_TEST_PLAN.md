@@ -108,7 +108,7 @@ Definition of done:
 
 Prove the demo can consume Glowfish-style animated values from ECS.
 
-- Add `DemoAnimatedFloat`, `DemoSpring1f`, and `DemoLinear1f` or import a small
+- Add `EcsUiAnimatedFloat`, `EcsUiLinear1f`, or a small spring component as the
   equivalent of Glowfish's animation components.
 - Animate sheet offset, scrim opacity, selected-row highlight, and row insert
   opacity/height.
@@ -117,7 +117,7 @@ Prove the demo can consume Glowfish-style animated values from ECS.
 
 Current progress:
 
-- [x] `DemoAnimatedFloat` and `DemoLinear1f` advance from `ecs_progress`.
+- [x] `EcsUiAnimatedFloat` and `EcsUiLinear1f` advance from `ecs_progress`.
 - [x] Presentation sheet offset and opacity are projected through `EcsUiVisual`.
 - [x] Row insert opacity/offset is projected through `EcsUiVisual`.
 - [x] Selected-row highlight is projected through `EcsUiVisual`.
@@ -228,7 +228,7 @@ Definition of done:
 Move proven demo concepts into focused `ecs-ui` libraries only where the shape is
 general enough for Glowfish and other projects.
 
-- [ ] Extract animation primitives into an `ecs-ui-animation` layer that can
+- [x] Extract animation primitives into an `ecs-ui-animation` layer that can
   drive `EcsUiVisual` without depending on raylib or Clay.
 - [ ] Extract navigation primitives into an `ecs-ui-navigation` layer for route
   definitions, active presentations, presentation hosts, and present/dismiss

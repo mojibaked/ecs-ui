@@ -1,4 +1,5 @@
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_animation.h"
 #include "ecs_ui/ecs_ui_projection.h"
 
 #include <stdio.h>
@@ -8,6 +9,28 @@ static int Require(bool condition, const char *message)
 {
     if (!condition) {
         (void)fprintf(stderr, "%s\n", message);
+        return 1;
+    }
+    return 0;
+}
+
+static int RequireNear(
+    float actual,
+    float expected,
+    float epsilon,
+    const char *message)
+{
+    float delta = actual - expected;
+    if (delta < 0.0f) {
+        delta = -delta;
+    }
+    if (delta > epsilon) {
+        (void)fprintf(
+            stderr,
+            "%s: actual=%f expected=%f\n",
+            message,
+            actual,
+            expected);
         return 1;
     }
     return 0;
@@ -164,6 +187,7 @@ int main(void)
     }
 
     EcsUiImport(world);
+    EcsUiAnimationImport(world);
     EcsUiProjectionImport(world);
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     int result = 0;
@@ -179,6 +203,92 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiProjectionKey) != 0,
         "EcsUiProjectionKey should be registered");
+    result |= Require(
+        ecs_id(EcsUiAnimatedFloat) != 0,
+        "EcsUiAnimatedFloat should be registered");
+    result |= Require(
+        ecs_id(EcsUiLinear1f) != 0,
+        "EcsUiLinear1f should be registered");
+
+    ecs_entity_t animation_target =
+        ecs_entity(world, {.name = "AnimationTarget"});
+    EcsUiAnimationStartLinear1f(world, animation_target, 0.0f, 1.0f, 1.0f);
+    result |= RequireNear(
+        EcsUiAnimationValue(world, animation_target, -1.0f),
+        0.0f,
+        0.0001f,
+        "animation start value mismatch");
+    (void)ecs_progress(world, 0.25f);
+    result |= RequireNear(
+        EcsUiAnimationValue(world, animation_target, -1.0f),
+        0.25f,
+        0.0001f,
+        "animation quarter value mismatch");
+    result |= Require(
+        ecs_get(world, animation_target, EcsUiLinear1f) != NULL,
+        "animation should still have linear component");
+    result |= Require(
+        !ecs_has_id(world, animation_target, EcsUiAnimationComplete),
+        "animation should not complete early");
+    (void)ecs_progress(world, 1.0f);
+    result |= RequireNear(
+        EcsUiAnimationValue(world, animation_target, -1.0f),
+        1.0f,
+        0.0001f,
+        "animation final value mismatch");
+    result |= Require(
+        ecs_get(world, animation_target, EcsUiLinear1f) == NULL,
+        "animation should remove linear component on completion");
+    result |= Require(
+        ecs_has_id(world, animation_target, EcsUiAnimationComplete),
+        "animation should add completion tag");
+    EcsUiAnimationSetValue(world, animation_target, 1.5f);
+    result |= RequireNear(
+        EcsUiAnimationValue(world, animation_target, -1.0f),
+        1.0f,
+        0.0001f,
+        "manual animation value should clamp");
+    result |= Require(
+        !ecs_has_id(world, animation_target, EcsUiAnimationComplete),
+        "manual animation value should clear completion tag");
+
+    ecs_entity_t visual_target =
+        ecs_entity(world, {.name = "AnimationVisualTarget"});
+    EcsUiAnimationApplyFadeSlideY(world, visual_target, 0.25f, 80.0f);
+    const EcsUiVisual *visual =
+        ecs_get(world, visual_target, EcsUiVisual);
+    result |= Require(
+        visual != NULL,
+        "fade slide visual should be set");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            0.25f,
+            0.0001f,
+            "fade slide opacity mismatch");
+        result |= RequireNear(
+            visual->offset_y,
+            60.0f,
+            0.0001f,
+            "fade slide offset mismatch");
+    }
+    EcsUiAnimationApplyHighlight(world, visual_target, 0.5f);
+    visual = ecs_get(world, visual_target, EcsUiVisual);
+    result |= Require(
+        visual != NULL,
+        "highlight visual should be set");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            1.0f,
+            0.0001f,
+            "highlight opacity mismatch");
+        result |= RequireNear(
+            visual->highlight,
+            0.5f,
+            0.0001f,
+            "highlight value mismatch");
+    }
 
     ecs_entity_t root = EcsUiRootEntity(world, "Home");
     if (root == 0) {
