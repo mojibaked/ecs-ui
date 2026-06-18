@@ -92,6 +92,13 @@ target_link_libraries(ecs_ui_navigation
     PUBLIC ecs_ui)
 ecs_ui_enable_warnings(ecs_ui_navigation)
 
+add_library(ecs_ui_text_input STATIC
+    src/ecs_ui_text_input.c)
+add_library(ecs_ui::text_input ALIAS ecs_ui_text_input)
+target_link_libraries(ecs_ui_text_input
+    PUBLIC ecs_ui)
+ecs_ui_enable_warnings(ecs_ui_text_input)
+
 if(ECS_UI_BUILD_CLAY_ADAPTER)
     if(TARGET clay)
         set(ECS_UI_CLAY_TARGET clay)
@@ -177,7 +184,11 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
             ${ECS_UI_RAYLIB_DEMO_COMMON_SOURCES}
             examples/raylib_demo/main.c)
         target_link_libraries(ecs_ui_raylib_demo
-            PRIVATE ecs_ui_raylib ecs_ui_animation ecs_ui_navigation)
+            PRIVATE
+                ecs_ui_raylib
+                ecs_ui_animation
+                ecs_ui_navigation
+                ecs_ui_text_input)
         ecs_ui_enable_warnings(ecs_ui_raylib_demo)
 
         if(TARGET ecs_ui_clay AND
@@ -194,6 +205,7 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
                     ecs_ui_clay
                     ecs_ui_animation
                     ecs_ui_navigation
+                    ecs_ui_text_input
                     ${ECS_UI_RAYLIB_TARGET})
         else()
             message(STATUS
@@ -210,7 +222,11 @@ if(ECS_UI_BUILD_TESTS)
     add_executable(ecs_ui_basic
         tests/ecs_ui_basic.c)
     target_link_libraries(ecs_ui_basic
-        PRIVATE ecs_ui ecs_ui_animation ecs_ui_navigation)
+        PRIVATE
+            ecs_ui
+            ecs_ui_animation
+            ecs_ui_navigation
+            ecs_ui_text_input)
     ecs_ui_enable_warnings(ecs_ui_basic)
     add_test(NAME ecs_ui_basic COMMAND ecs_ui_basic)
 endif()

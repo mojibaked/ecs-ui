@@ -2,6 +2,7 @@
 #include "ecs_ui/ecs_ui_animation.h"
 #include "ecs_ui/ecs_ui_navigation.h"
 #include "ecs_ui/ecs_ui_projection.h"
+#include "ecs_ui/ecs_ui_text_input.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -191,6 +192,7 @@ int main(void)
     EcsUiAnimationImport(world);
     EcsUiNavigationImport(world);
     EcsUiProjectionImport(world);
+    EcsUiTextInputImport(world);
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     int result = 0;
     result |= Require(
@@ -223,6 +225,21 @@ int main(void)
     result |= Require(
         ecs_has_id(world, EcsUiPresentRouteRequest, EcsExclusive),
         "EcsUiPresentRouteRequest should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiFocusedTextField, EcsExclusive),
+        "EcsUiFocusedTextField should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiTextFieldUiNode, EcsExclusive),
+        "EcsUiTextFieldUiNode should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiTextFieldValueUiNode, EcsExclusive),
+        "EcsUiTextFieldValueUiNode should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiForTextField, EcsExclusive),
+        "EcsUiForTextField should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiFocusTextFieldRequest, EcsExclusive),
+        "EcsUiFocusTextFieldRequest should be exclusive");
 
     ecs_entity_t animation_target =
         ecs_entity(world, {.name = "AnimationTarget"});
@@ -386,6 +403,116 @@ int main(void)
     result |= Require(
         EcsUiNavClearActivePresentation(world, staged_presentation),
         "deferred active presentation should clear");
+
+    ecs_entity_t text_field_a =
+        EcsUiTextInputField(world, "TextFieldA", "first");
+    ecs_entity_t text_field_b =
+        EcsUiTextInputField(world, "TextFieldB", "second");
+    result |= Require(
+        text_field_a != 0 && text_field_b != 0,
+        "text fields should be created");
+    result |= Require(
+        strcmp(EcsUiTextInputPlaceholder(world, text_field_a), "first") == 0,
+        "text field placeholder mismatch");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "focus request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a &&
+            EcsUiTextInputIsFocused(world, text_field_a),
+        "text field should be focused");
+    result |= Require(
+        EcsUiTextInputRequestInsert(world, 'h') != 0,
+        "insert request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputRequestInsert(world, 'i') != 0,
+        "second insert request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "hi") == 0,
+        "text field insert mismatch");
+    result |= Require(
+        EcsUiTextInputRequestDelete(world) != 0,
+        "delete request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "h") == 0,
+        "text field delete mismatch");
+    char text_display[ECS_UI_TEXT_MAX] = {0};
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_a,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "text field display should be created");
+    result |= Require(
+        strcmp(text_display, "h|") == 0,
+        "focused text field display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_b) != 0,
+        "second focus request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_b &&
+            !EcsUiTextInputIsFocused(world, text_field_a),
+        "text focus should move to second field");
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_b,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "second text field display should be created");
+    result |= Require(
+        strcmp(text_display, "|") == 0,
+        "focused empty text field display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestBlur(world) != 0,
+        "blur request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        !EcsUiTextInputHasFocusedField(world),
+        "text field should blur");
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_b,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "blurred text field display should be created");
+    result |= Require(
+        strcmp(text_display, "second") == 0,
+        "blurred empty text field display mismatch");
+    ecs_entity_t text_field_node =
+        ecs_entity(world, {.name = "TextFieldNode"});
+    ecs_entity_t text_value_node =
+        ecs_entity(world, {.name = "TextFieldValueNode"});
+    result |= Require(
+        EcsUiTextInputSetFieldUiNodes(
+            world,
+            text_field_a,
+            text_field_node,
+            text_value_node),
+        "text field UI links should be set");
+    result |= Require(
+        EcsUiTextInputSetUiField(world, text_field_node, text_field_a),
+        "text UI reverse link should be set");
+    result |= Require(
+        EcsUiTextInputFieldUiNode(world, text_field_a) == text_field_node &&
+            EcsUiTextInputFieldValueUiNode(world, text_field_a) ==
+                text_value_node &&
+            EcsUiTextInputUiField(world, text_field_node) == text_field_a,
+        "text UI links should round trip");
+    result |= Require(
+        EcsUiTextInputClear(world, text_field_a) &&
+            strcmp(EcsUiTextInputValue(world, text_field_a), "") == 0,
+        "text field clear mismatch");
 
     ecs_entity_t root = EcsUiRootEntity(world, "Home");
     if (root == 0) {

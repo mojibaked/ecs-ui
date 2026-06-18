@@ -117,14 +117,8 @@ void DemoUiApplyEvents(
         }
 
         if (event->action == refs->focus_text_field_action) {
-            /*
-             * The field UI node links back to a DemoTextField with DemoUiForTextField.
-             * Focusing is still request-based so the focus visual updates happen
-             * from the text-input projection system after ECS has changed focus
-             * state.
-             */
             ecs_entity_t field =
-                ecs_get_target(ui_world, event->node, DemoUiForTextField, 0);
+                EcsUiTextInputUiField(ui_world, event->node);
             if (field != 0) {
                 TraceLog(
                     LOG_INFO,

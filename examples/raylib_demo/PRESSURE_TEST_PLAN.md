@@ -151,7 +151,7 @@ Definition of done:
 Prove text fields can map to Glowfish's focus and request patterns.
 
 - [x] Add a text field to the sheet.
-- [x] Use ECS relationships for focus, for example `(DemoFocusedField,
+- [x] Use ECS relationships for focus, for example `(EcsUiFocusedTextField,
   text_field_entity)`.
 - [x] Submit insert/delete/focus/blur requests from input events.
 - [x] Update text nodes through scheduled projection systems when field state
@@ -233,7 +233,7 @@ general enough for Glowfish and other projects.
 - [x] Extract navigation primitives into an `ecs-ui-navigation` layer for route
   definitions, active presentations, presentation hosts, and present/dismiss
   requests.
-- [ ] Evaluate whether text input belongs in a reusable layer or should remain a
+- [x] Evaluate whether text input belongs in a reusable layer or should remain a
   demo/app integration pattern for now.
 - [x] Keep renderer adapters separate from app-state libraries.
 - [x] Update CMake targets so sub-libraries can be adopted independently.
@@ -247,7 +247,7 @@ Definition of done:
 - [x] Demo-specific route names, item state, and UI copy remain in the demo.
 - [x] `glowfish-mobile` can choose projection/navigation/animation pieces
   without taking the raylib demo.
-- [ ] Any feature too broad for this plan is split into a dedicated design doc
+- [x] Any feature too broad for this plan is split into a dedicated design doc
   before implementation.
 
 ## Phase 12: App World / UI World Split

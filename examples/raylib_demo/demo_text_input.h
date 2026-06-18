@@ -2,25 +2,7 @@
 #define ECS_UI_RAYLIB_DEMO_TEXT_INPUT_H
 
 #include "ecs_ui/ecs_ui.h"
-
-typedef struct DemoTextField {
-    char value[ECS_UI_TEXT_MAX];
-    char placeholder[ECS_UI_TEXT_MAX];
-} DemoTextField;
-
-typedef struct DemoTextInsertRequest {
-    uint32_t codepoint;
-} DemoTextInsertRequest;
-
-extern ECS_COMPONENT_DECLARE(DemoTextField);
-extern ECS_COMPONENT_DECLARE(DemoTextInsertRequest);
-extern ECS_TAG_DECLARE(DemoFocusedField);
-extern ECS_TAG_DECLARE(DemoTextFieldUiNode);
-extern ECS_TAG_DECLARE(DemoTextFieldValueUiNode);
-extern ECS_TAG_DECLARE(DemoUiForTextField);
-extern ECS_TAG_DECLARE(DemoFocusTextFieldRequest);
-extern ECS_TAG_DECLARE(DemoBlurTextFieldRequest);
-extern ECS_TAG_DECLARE(DemoTextDeleteRequest);
+#include "ecs_ui/ecs_ui_text_input.h"
 
 void DemoTextInputRegister(ecs_world_t *world);
 ecs_entity_t DemoTextInputRoot(ecs_world_t *world);
