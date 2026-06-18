@@ -199,6 +199,9 @@ int main(void)
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
         "EcsUiOnClick should be exclusive");
     result |= Require(
+        ecs_id(EcsUiPressable) != 0,
+        "EcsUiPressable should be registered");
+    result |= Require(
         ecs_has_id(world, EcsUiProjectionRoot, EcsExclusive),
         "EcsUiProjectionRoot should be exclusive");
     result |= Require(
@@ -843,6 +846,20 @@ int main(void)
                     .role = ECS_UI_TEXT_CAPTION,
                 });
         }
+        Pressable(
+            &builder,
+            {
+                .id = "SearchField",
+                .on_click = present_add_machine_action,
+            }) {
+            Text(
+                &builder,
+                {
+                    .id = "SearchText",
+                    .text = "search",
+                    .role = ECS_UI_TEXT_BODY,
+                });
+        }
         Custom(
             &builder,
             {
@@ -858,7 +875,7 @@ int main(void)
 
     EcsUiTreeSnapshot tree = {0};
     result |= Require(EcsUiReadTree(world, root, &tree), "read tree failed");
-    result |= Require(tree.count == 8u, "unexpected tree count");
+    result |= Require(tree.count == 10u, "unexpected tree count");
     result |= Require(!tree.truncated, "tree truncated");
     result |= RequireNode(&tree, 0u, "Home", ECS_UI_NODE_ROOT);
     result |= RequireNode(&tree, 1u, "HomeStack", ECS_UI_NODE_VSTACK);
@@ -867,7 +884,9 @@ int main(void)
     result |= RequireNode(&tree, 4u, "Footer", ECS_UI_NODE_HSTACK);
     result |= RequireNode(&tree, 5u, "FooterIcon", ECS_UI_NODE_ICON);
     result |= RequireNode(&tree, 6u, "FooterLabel", ECS_UI_NODE_TEXT);
-    result |= RequireNode(&tree, 7u, "TerminalPreview", ECS_UI_NODE_CUSTOM);
+    result |= RequireNode(&tree, 7u, "SearchField", ECS_UI_NODE_PRESSABLE);
+    result |= RequireNode(&tree, 8u, "SearchText", ECS_UI_NODE_TEXT);
+    result |= RequireNode(&tree, 9u, "TerminalPreview", ECS_UI_NODE_CUSTOM);
 
     result |= Require(
         tree.nodes[1u].first_child == 2u,
@@ -876,14 +895,23 @@ int main(void)
         tree.nodes[2u].next_sibling == 4u,
         "AddMachine next sibling should be Footer");
     result |= Require(
+        tree.nodes[4u].next_sibling == 7u,
+        "Footer next sibling should be SearchField");
+    result |= Require(
+        tree.nodes[7u].next_sibling == 9u,
+        "SearchField next sibling should be TerminalPreview");
+    result |= Require(
         strcmp(tree.nodes[3u].text.text, "add machine") == 0,
         "text payload not copied");
     result |= Require(
-        strcmp(tree.nodes[7u].custom.kind, "terminal") == 0,
+        strcmp(tree.nodes[8u].text.text, "search") == 0,
+        "pressable text payload not copied");
+    result |= Require(
+        strcmp(tree.nodes[9u].custom.kind, "terminal") == 0,
         "custom kind not copied");
     result |= Require(
-        tree.nodes[7u].custom.preferred_width == 320.0f &&
-            tree.nodes[7u].custom.preferred_height == 120.0f,
+        tree.nodes[9u].custom.preferred_width == 320.0f &&
+            tree.nodes[9u].custom.preferred_height == 120.0f,
         "custom preferred size not copied");
     result |= Require(
         tree.nodes[2u].visual.opacity == 1.0f,
@@ -910,13 +938,24 @@ int main(void)
     result |= Require(
         tree.nodes[2u].on_click == present_add_machine_action,
         "button snapshot should expose OnClick action");
+    result |= Require(
+        ecs_has_pair(
+            world,
+            tree.nodes[7u].entity,
+            EcsUiOnClick,
+            present_add_machine_action),
+        "pressable should have OnClick action pair");
+    result |= Require(
+        tree.nodes[7u].on_click == present_add_machine_action,
+        "pressable snapshot should expose OnClick action");
 
     ecs_entities_t ordered = ecs_get_ordered_children(world, home_stack);
-    result |= Require(ordered.count == 3, "ordered child count mismatch");
+    result |= Require(ordered.count == 4, "ordered child count mismatch");
     result |= Require(
         ordered.ids[0] == tree.nodes[2u].entity &&
             ordered.ids[1] == tree.nodes[4u].entity &&
-            ordered.ids[2] == tree.nodes[7u].entity,
+            ordered.ids[2] == tree.nodes[7u].entity &&
+            ordered.ids[3] == tree.nodes[9u].entity,
         "ordered children mismatch");
 
     ecs_entity_t source_tag =

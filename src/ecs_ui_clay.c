@@ -220,6 +220,28 @@ static void EcsUiClayEmitNode(
             EcsUiClayEmitChildren(tree, theme, index);
         }
         break;
+    case ECS_UI_NODE_PRESSABLE:
+        CLAY(CLAY_SID(EcsUiClayString(node->id)), {
+            .layout = {
+                .sizing = {
+                    .width = CLAY_SIZING_GROW(0),
+                    .height = CLAY_SIZING_FIXED(44.0f),
+                },
+                .padding = {
+                    .left = 14u,
+                    .right = 14u,
+                },
+                .layoutDirection = CLAY_LEFT_TO_RIGHT,
+                .childGap = 8u,
+                .childAlignment = {
+                    .y = CLAY_ALIGN_Y_CENTER,
+                },
+            },
+            .backgroundColor = theme->button_subtle,
+        }) {
+            EcsUiClayEmitChildren(tree, theme, index);
+        }
+        break;
     case ECS_UI_NODE_TEXT:
         CLAY_TEXT(
             EcsUiClayString(node->text.text),

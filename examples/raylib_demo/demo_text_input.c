@@ -34,9 +34,8 @@ static void DemoTextInputUpdateFieldUi(
 
     /*
      * The reusable text-input layer owns focus and value. The demo owns this
-     * particular projection: focused fields show a simple caret marker and use
-     * the primary button style, while empty unfocused fields show placeholder
-     * text.
+     * particular projection: focused fields show a simple caret marker and a
+     * pressable highlight, while empty unfocused fields show placeholder text.
      */
     const bool focused = EcsUiTextInputIsFocused(world, field);
     char display[ECS_UI_TEXT_MAX] = {0};
@@ -65,16 +64,6 @@ static void DemoTextInputUpdateFieldUi(
 
     ecs_entity_t field_node =
         EcsUiTextInputFieldUiNode(world, field);
-    EcsUiButton *button =
-        field_node != 0 ? ecs_get_mut(world, field_node, EcsUiButton) : NULL;
-    if (button != NULL) {
-        EcsUiButtonVariant variant =
-            focused ? ECS_UI_BUTTON_PRIMARY : ECS_UI_BUTTON_SUBTLE;
-        if (button->variant != variant) {
-            button->variant = variant;
-            ecs_modified(world, field_node, EcsUiButton);
-        }
-    }
     if (field_node != 0) {
         const float highlight = focused ? 0.22f : 0.0f;
         const EcsUiVisual *visual = ecs_get(world, field_node, EcsUiVisual);
@@ -108,13 +97,10 @@ static ecs_entity_t DemoTextInputBuildField(
         return 0;
     }
 
-    ecs_entity_t field_node = EcsUiBeginButton(
+    ecs_entity_t field_node = EcsUiBeginPressable(
         builder,
-        (EcsUiButtonDesc){
+        (EcsUiPressableDesc){
             .id = field_node_id,
-            .variant = EcsUiTextInputIsFocused(world, field) ?
-                ECS_UI_BUTTON_PRIMARY :
-                ECS_UI_BUTTON_SUBTLE,
             .on_click = focus_action,
         });
     ecs_entity_t value_node = EcsUiAddText(

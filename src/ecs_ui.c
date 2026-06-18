@@ -7,6 +7,7 @@ ECS_COMPONENT_DECLARE(EcsUiNodeId);
 ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiButton);
+ECS_COMPONENT_DECLARE(EcsUiPressable);
 ECS_COMPONENT_DECLARE(EcsUiText);
 ECS_COMPONENT_DECLARE(EcsUiIcon);
 ECS_COMPONENT_DECLARE(EcsUiCustom);
@@ -49,6 +50,7 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 {
     ecs_remove(world, entity, EcsUiStack);
     ecs_remove(world, entity, EcsUiButton);
+    ecs_remove(world, entity, EcsUiPressable);
     ecs_remove(world, entity, EcsUiText);
     ecs_remove(world, entity, EcsUiIcon);
     ecs_remove(world, entity, EcsUiCustom);
@@ -145,6 +147,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiNode);
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
+    ECS_COMPONENT_DEFINE(world, EcsUiPressable);
     ECS_COMPONENT_DEFINE(world, EcsUiText);
     ECS_COMPONENT_DEFINE(world, EcsUiIcon);
     ECS_COMPONENT_DEFINE(world, EcsUiCustom);
@@ -250,6 +253,28 @@ ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
         .disabled = desc.disabled,
     };
     ecs_set_ptr(builder->world, entity, EcsUiButton, &button);
+    ecs_add_id(builder->world, entity, EcsUiInteractive);
+    if (desc.on_click != 0) {
+        ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
+    }
+    EcsUiPushParent(builder, entity);
+    return entity;
+}
+
+ecs_entity_t EcsUiBeginPressable(
+    EcsUiBuilder *builder,
+    EcsUiPressableDesc desc)
+{
+    ecs_entity_t entity =
+        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_PRESSABLE, true);
+    if (entity == 0) {
+        return 0;
+    }
+
+    EcsUiPressable pressable = {
+        .disabled = desc.disabled,
+    };
+    ecs_set_ptr(builder->world, entity, EcsUiPressable, &pressable);
     ecs_add_id(builder->world, entity, EcsUiInteractive);
     if (desc.on_click != 0) {
         ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
@@ -372,6 +397,11 @@ static uint32_t EcsUiReadNode(
     const EcsUiButton *button = ecs_get(world, entity, EcsUiButton);
     if (button != NULL) {
         snapshot->button = *button;
+    }
+
+    const EcsUiPressable *pressable = ecs_get(world, entity, EcsUiPressable);
+    if (pressable != NULL) {
+        snapshot->pressable = *pressable;
     }
 
     const EcsUiText *text = ecs_get(world, entity, EcsUiText);

@@ -27,6 +27,7 @@ typedef enum EcsUiNodeKind {
     ECS_UI_NODE_TEXT = 6,
     ECS_UI_NODE_ICON = 7,
     ECS_UI_NODE_CUSTOM = 8,
+    ECS_UI_NODE_PRESSABLE = 9,
 } EcsUiNodeKind;
 
 typedef enum EcsUiAxis {
@@ -96,6 +97,10 @@ typedef struct EcsUiButton {
     bool disabled;
 } EcsUiButton;
 
+typedef struct EcsUiPressable {
+    bool disabled;
+} EcsUiPressable;
+
 typedef struct EcsUiText {
     char text[ECS_UI_TEXT_MAX];
     EcsUiTextRole role;
@@ -130,6 +135,12 @@ typedef struct EcsUiButtonDesc {
     ecs_entity_t on_click;
     bool disabled;
 } EcsUiButtonDesc;
+
+typedef struct EcsUiPressableDesc {
+    const char *id;
+    ecs_entity_t on_click;
+    bool disabled;
+} EcsUiPressableDesc;
 
 typedef struct EcsUiTextDesc {
     const char *id;
@@ -170,6 +181,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     uint32_t next_sibling;
     EcsUiStack stack;
     EcsUiButton button;
+    EcsUiPressable pressable;
     EcsUiText text;
     EcsUiIcon icon;
     EcsUiCustom custom;
@@ -211,6 +223,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiNodeId);
 extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
+extern ECS_COMPONENT_DECLARE(EcsUiPressable);
 extern ECS_COMPONENT_DECLARE(EcsUiText);
 extern ECS_COMPONENT_DECLARE(EcsUiIcon);
 extern ECS_COMPONENT_DECLARE(EcsUiCustom);
@@ -232,6 +245,9 @@ ecs_entity_t EcsUiBeginVStack(EcsUiBuilder *builder, EcsUiStackDesc desc);
 ecs_entity_t EcsUiBeginHStack(EcsUiBuilder *builder, EcsUiStackDesc desc);
 ecs_entity_t EcsUiBeginZStack(EcsUiBuilder *builder, EcsUiStackDesc desc);
 ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc);
+ecs_entity_t EcsUiBeginPressable(
+    EcsUiBuilder *builder,
+    EcsUiPressableDesc desc);
 void EcsUiEnd(EcsUiBuilder *builder);
 
 ecs_entity_t EcsUiAddText(EcsUiBuilder *builder, EcsUiTextDesc desc);
@@ -277,6 +293,11 @@ bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);
         EcsUiBeginButton((builder), (EcsUiButtonDesc)__VA_ARGS__), \
         EcsUiEnd((builder)))
 
+#define EcsUiPressableScope(builder, ...) \
+    EcsUiScope( \
+        EcsUiBeginPressable((builder), (EcsUiPressableDesc)__VA_ARGS__), \
+        EcsUiEnd((builder)))
+
 #define EcsUiTextNode(builder, ...) \
     EcsUiAddText((builder), (EcsUiTextDesc)__VA_ARGS__)
 
@@ -291,6 +312,7 @@ bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);
 #define HStack EcsUiHStack
 #define ZStack EcsUiZStack
 #define Button EcsUiButtonScope
+#define Pressable EcsUiPressableScope
 #define Text EcsUiTextNode
 #define Icon EcsUiIconNode
 #define Custom EcsUiCustomNode

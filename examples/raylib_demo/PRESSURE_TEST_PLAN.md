@@ -376,3 +376,22 @@ Definition of done:
   deleting selected text, paste insert, and paste replacement.
 - [x] The raylib demo can bridge copy/cut/paste to the platform clipboard.
 - [x] Core `ecs-ui-text-input` remains renderer-agnostic.
+
+## Phase 18: Pressable Primitive
+
+Separate low-level interaction from semantic button authoring.
+
+- [x] Add `EcsUiPressable` as a lower-level interactive container.
+- [x] Add a `Pressable` builder macro alongside existing `Button`.
+- [x] Keep `Button` for compatibility while future widgets migrate to lower
+  level primitives.
+- [x] Render and hit-test pressables in the raylib adapter.
+- [x] Emit pressables in the Clay adapter.
+- [x] Migrate demo text fields from `Button` to `Pressable`.
+
+Definition of done:
+
+- [x] Unit tests cover pressable component registration, tree snapshot kind,
+  child ordering, and click action readback.
+- [x] Existing button authoring and tests continue to pass.
+- [x] Text field UI no longer depends on `EcsUiButton`.

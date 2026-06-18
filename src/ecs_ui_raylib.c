@@ -132,6 +132,7 @@ static float EcsUiRaylibPreferredHeight(
     case ECS_UI_NODE_ICON:
         return 24.0f;
     case ECS_UI_NODE_BUTTON:
+    case ECS_UI_NODE_PRESSABLE:
         return 46.0f;
     case ECS_UI_NODE_CUSTOM:
         return EcsUiRaylibPreferredCustomHeight(node);
@@ -425,6 +426,34 @@ static void EcsUiRaylibDrawNode(
             node_opacity);
         break;
     }
+    case ECS_UI_NODE_PRESSABLE: {
+        const bool hovered =
+            !node->pressable.disabled &&
+            CheckCollisionPointRec(GetMousePosition(), node_bounds);
+        Color fill = theme->button_subtle;
+        if (hovered) {
+            fill = ColorAlpha(fill, 0.86f);
+        }
+        fill = EcsUiRaylibLerpColor(
+            fill,
+            (Color){255, 255, 255, fill.a},
+            EcsUiRaylibClamp01(node->visual.highlight) * 0.42f);
+        DrawRectangleRounded(
+            node_bounds,
+            theme->radius,
+            8,
+            EcsUiRaylibApplyOpacity(fill, node_opacity));
+        Rectangle inner = EcsUiRaylibInset(node_bounds, 12.0f);
+        EcsUiRaylibDrawChildrenHorizontal(
+            tree,
+            theme,
+            options,
+            index,
+            inner,
+            false,
+            node_opacity);
+        break;
+    }
     case ECS_UI_NODE_TEXT:
         EcsUiRaylibDrawTextLine(
             node->text.text,
@@ -592,6 +621,20 @@ static void EcsUiRaylibHitNode(
     }
     case ECS_UI_NODE_BUTTON:
         if (!node->button.disabled && CheckCollisionPointRec(point, node_bounds)) {
+            hit->found = true;
+            hit->index = index;
+            hit->bounds = node_bounds;
+        }
+        EcsUiRaylibHitChildrenHorizontal(
+            tree,
+            index,
+            EcsUiRaylibInset(node_bounds, 12.0f),
+            point,
+            hit);
+        break;
+    case ECS_UI_NODE_PRESSABLE:
+        if (!node->pressable.disabled &&
+            CheckCollisionPointRec(point, node_bounds)) {
             hit->found = true;
             hit->index = index;
             hit->bounds = node_bounds;
