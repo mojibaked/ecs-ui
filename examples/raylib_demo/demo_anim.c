@@ -4,6 +4,8 @@
 
 ECS_COMPONENT_DECLARE(DemoAnimatedFloat);
 ECS_COMPONENT_DECLARE(DemoLinear1f);
+ECS_TAG_DECLARE(DemoAnimatedRow);
+ECS_TAG_DECLARE(DemoAnimatedSelection);
 ECS_TAG_DECLARE(DemoDismissPresentationOnAnimationComplete);
 
 static float DemoAnimClamp01(float value)
@@ -34,6 +36,15 @@ void DemoAnimApplyVisualToNode(
     ecs_entity_t node,
     float value)
 {
+    DemoAnimApplyVisualToNodeEx(world, node, value, 180.0f);
+}
+
+void DemoAnimApplyVisualToNodeEx(
+    ecs_world_t *world,
+    ecs_entity_t node,
+    float value,
+    float offset_y)
+{
     if (world == NULL || node == 0) {
         return;
     }
@@ -45,7 +56,26 @@ void DemoAnimApplyVisualToNode(
         EcsUiVisual,
         {
             .opacity = visible,
-            .offset_y = (1.0f - visible) * 180.0f,
+            .offset_y = (1.0f - visible) * offset_y,
+        });
+}
+
+static void DemoAnimApplyHighlightToNode(
+    ecs_world_t *world,
+    ecs_entity_t node,
+    float value)
+{
+    if (world == NULL || node == 0) {
+        return;
+    }
+
+    ecs_set(
+        world,
+        node,
+        EcsUiVisual,
+        {
+            .opacity = 1.0f,
+            .highlight = DemoAnimClamp01(value),
         });
 }
 
@@ -102,6 +132,49 @@ void DemoAnimStartPresentation(
     DemoAnimApplyPresentationVisual(world, presentation, from);
 }
 
+static void DemoAnimStartNode(
+    ecs_world_t *world,
+    ecs_entity_t node,
+    float from,
+    float to,
+    float duration)
+{
+    if (world == NULL || node == 0) {
+        return;
+    }
+
+    ecs_set(
+        world,
+        node,
+        DemoAnimatedFloat,
+        {
+            .value = DemoAnimClamp01(from),
+        });
+    ecs_set(
+        world,
+        node,
+        DemoLinear1f,
+        {
+            .from = DemoAnimClamp01(from),
+            .to = DemoAnimClamp01(to),
+            .duration = DemoAnimMax(duration, 0.001f),
+        });
+}
+
+void DemoAnimStartRowInsert(ecs_world_t *world, ecs_entity_t row)
+{
+    DemoAnimStartNode(world, row, 0.0f, 1.0f, 0.18f);
+    ecs_add_id(world, row, DemoAnimatedRow);
+    DemoAnimApplyVisualToNodeEx(world, row, 0.0f, 24.0f);
+}
+
+void DemoAnimStartSelectionHighlight(ecs_world_t *world, ecs_entity_t button)
+{
+    DemoAnimStartNode(world, button, 1.0f, 0.0f, 0.34f);
+    ecs_add_id(world, button, DemoAnimatedSelection);
+    DemoAnimApplyHighlightToNode(world, button, 1.0f);
+}
+
 static void DemoAnimDeletePresentationAfterExit(
     ecs_world_t *world,
     ecs_entity_t presentation)
@@ -129,10 +202,26 @@ static void DemoAnimAdvanceLinear1fSystem(ecs_iter_t *it)
         const float t = DemoAnimClamp01(linear[i].elapsed / linear[i].duration);
         animated[i].value =
             linear[i].from + ((linear[i].to - linear[i].from) * t);
-        DemoAnimApplyPresentationVisual(
-            it->world,
-            it->entities[i],
-            animated[i].value);
+        if (ecs_has_id(it->world, it->entities[i], DemoPresentation)) {
+            DemoAnimApplyPresentationVisual(
+                it->world,
+                it->entities[i],
+                animated[i].value);
+        } else if (ecs_has_id(it->world, it->entities[i], DemoAnimatedRow)) {
+            DemoAnimApplyVisualToNodeEx(
+                it->world,
+                it->entities[i],
+                animated[i].value,
+                24.0f);
+        } else if (ecs_has_id(
+                       it->world,
+                       it->entities[i],
+                       DemoAnimatedSelection)) {
+            DemoAnimApplyHighlightToNode(
+                it->world,
+                it->entities[i],
+                animated[i].value);
+        }
 
         if (t >= 1.0f) {
             const bool dismiss =
@@ -140,7 +229,23 @@ static void DemoAnimAdvanceLinear1fSystem(ecs_iter_t *it)
                     it->world,
                     it->entities[i],
                     DemoDismissPresentationOnAnimationComplete);
+            if (!dismiss) {
+                DemoAnimApplyVisualToNodeEx(
+                    it->world,
+                    it->entities[i],
+                    1.0f,
+                    0.0f);
+            }
             ecs_remove(it->world, it->entities[i], DemoLinear1f);
+            if (ecs_has_id(it->world, it->entities[i], DemoAnimatedRow)) {
+                ecs_remove_id(it->world, it->entities[i], DemoAnimatedRow);
+            }
+            if (ecs_has_id(it->world, it->entities[i], DemoAnimatedSelection)) {
+                ecs_remove_id(
+                    it->world,
+                    it->entities[i],
+                    DemoAnimatedSelection);
+            }
             if (dismiss) {
                 TraceLog(LOG_INFO, "DEMO: presentation exit animation completed");
                 DemoAnimDeletePresentationAfterExit(it->world, it->entities[i]);
@@ -153,6 +258,8 @@ void DemoAnimRegister(ecs_world_t *world)
 {
     ECS_COMPONENT_DEFINE(world, DemoAnimatedFloat);
     ECS_COMPONENT_DEFINE(world, DemoLinear1f);
+    ECS_TAG_DEFINE(world, DemoAnimatedRow);
+    ECS_TAG_DEFINE(world, DemoAnimatedSelection);
     ECS_TAG_DEFINE(world, DemoDismissPresentationOnAnimationComplete);
 
     (void)ecs_system(world, {

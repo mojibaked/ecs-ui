@@ -117,6 +117,9 @@ int main(void)
         tree.nodes[2u].visual.offset_x == 0.0f &&
             tree.nodes[2u].visual.offset_y == 0.0f,
         "visual offset should default to 0");
+    result |= Require(
+        tree.nodes[2u].visual.highlight == 0.0f,
+        "visual highlight should default to 0");
 
     ecs_entity_t home_stack = tree.nodes[1u].entity;
     result |= Require(

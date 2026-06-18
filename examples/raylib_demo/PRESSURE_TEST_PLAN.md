@@ -119,16 +119,16 @@ Current progress:
 
 - [x] `DemoAnimatedFloat` and `DemoLinear1f` advance from `ecs_progress`.
 - [x] Presentation sheet offset and opacity are projected through `EcsUiVisual`.
+- [x] Row insert opacity/offset is projected through `EcsUiVisual`.
+- [x] Selected-row highlight is projected through `EcsUiVisual`.
 - [x] Exit animation completion deletes the presentation and retained UI subtree.
-- [ ] Scrim opacity, selected-row highlight, and row insert animation remain to
-  pressure-test.
 
 Definition of done:
 
-- Animations advance from `ecs_progress`.
-- UI rendering reflects animated ECS values without reauthoring the tree each
+- [x] Animations advance from `ecs_progress`.
+- [x] UI rendering reflects animated ECS values without reauthoring the tree each
   frame.
-- Completed transition entities/channels are cleaned up.
+- [x] Completed transition entities/channels are cleaned up.
 
 ## Phase 6: Interactive Gesture
 

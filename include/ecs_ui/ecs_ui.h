@@ -88,6 +88,7 @@ typedef struct EcsUiVisual {
     float opacity;
     float offset_x;
     float offset_y;
+    float highlight;
 } EcsUiVisual;
 
 typedef struct EcsUiStackDesc {

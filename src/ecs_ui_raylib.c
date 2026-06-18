@@ -50,6 +50,17 @@ static Color EcsUiRaylibApplyOpacity(Color color, float opacity)
     return color;
 }
 
+static Color EcsUiRaylibLerpColor(Color from, Color to, float amount)
+{
+    const float t = EcsUiRaylibClamp01(amount);
+    return (Color){
+        .r = (unsigned char)((float)from.r + ((float)to.r - (float)from.r) * t),
+        .g = (unsigned char)((float)from.g + ((float)to.g - (float)from.g) * t),
+        .b = (unsigned char)((float)from.b + ((float)to.b - (float)from.b) * t),
+        .a = (unsigned char)((float)from.a + ((float)to.a - (float)from.a) * t),
+    };
+}
+
 static uint32_t EcsUiRaylibChildCount(
     const EcsUiTreeSnapshot *tree,
     uint32_t index)
@@ -355,6 +366,10 @@ static void EcsUiRaylibDrawNode(
         if (hovered) {
             fill = ColorAlpha(fill, 0.86f);
         }
+        fill = EcsUiRaylibLerpColor(
+            fill,
+            (Color){255, 255, 255, fill.a},
+            EcsUiRaylibClamp01(node->visual.highlight) * 0.42f);
         DrawRectangleRounded(
             node_bounds,
             theme->radius,

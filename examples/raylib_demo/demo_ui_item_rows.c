@@ -1,5 +1,7 @@
 #include "demo_ui_internal.h"
 
+#include "demo_anim.h"
+
 #include <stdio.h>
 
 static void DemoUiApplyItemSelectionStyle(
@@ -23,6 +25,9 @@ static void DemoUiApplyItemSelectionStyle(
 
     button->variant = variant;
     ecs_modified(world, select_button, EcsUiButton);
+    if (item == selected_item) {
+        DemoAnimStartSelectionHighlight(world, select_button);
+    }
 }
 
 void DemoUiRefreshSelectionStyles(ecs_world_t *world)
@@ -321,6 +326,7 @@ ecs_entity_t DemoUiCreateItemRow(
         if (delete_button != 0) {
             ecs_add_pair(world, delete_button, DemoUiForItem, item);
         }
+        DemoAnimStartRowInsert(world, row);
     }
     return row;
 }
