@@ -1,4 +1,5 @@
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_projection.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +36,126 @@ static int RequireNode(
     return 0;
 }
 
+typedef struct TestProjectionItem {
+    uint64_t key;
+    char label[ECS_UI_TEXT_MAX];
+} TestProjectionItem;
+
+typedef struct TestProjectionContext {
+    ecs_entity_t ui_parent;
+    ecs_entity_t label_slot;
+    uint32_t build_count;
+    uint32_t update_count;
+} TestProjectionContext;
+
+ECS_COMPONENT_DECLARE(TestProjectionItem);
+
+static void TestProjectionSyncSource(
+    ecs_world_t *world,
+    ecs_entity_t source,
+    const EcsUiProjectionCollectionSource *item,
+    void *ctx)
+{
+    (void)ctx;
+
+    const TestProjectionItem *data =
+        item != NULL ? item->data : NULL;
+    if (data != NULL) {
+        ecs_set_ptr(world, source, TestProjectionItem, data);
+    }
+}
+
+static ecs_entity_t TestProjectionBuildRoot(
+    ecs_world_t *world,
+    ecs_entity_t source,
+    const EcsUiProjectionCollectionSource *item,
+    void *ctx)
+{
+    TestProjectionContext *projection = ctx;
+    const TestProjectionItem *data =
+        item != NULL ? item->data : NULL;
+    if (projection == NULL || data == NULL) {
+        return 0;
+    }
+
+    char row_id[ECS_UI_ID_MAX] = {0};
+    char label_id[ECS_UI_ID_MAX] = {0};
+    (void)snprintf(
+        row_id,
+        sizeof(row_id),
+        "CollectionRow%llu",
+        (unsigned long long)data->key);
+    (void)snprintf(
+        label_id,
+        sizeof(label_id),
+        "CollectionLabel%llu",
+        (unsigned long long)data->key);
+
+    EcsUiBuilder builder =
+        EcsUiBuilderBegin(world, projection->ui_parent);
+    ecs_entity_t row = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = row_id,
+        });
+    ecs_entity_t label = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = label_id,
+            .text = data->label,
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+
+    if (EcsUiBuilderOk(&builder) && row != 0 && label != 0) {
+        (void)EcsUiProjectionSetNode(
+            world,
+            source,
+            projection->label_slot,
+            label);
+        projection->build_count += 1u;
+        return row;
+    }
+    return 0;
+}
+
+static void TestProjectionUpdateRoot(
+    ecs_world_t *world,
+    ecs_entity_t source,
+    ecs_entity_t ui_root,
+    const EcsUiProjectionCollectionSource *item,
+    uint32_t position,
+    uint32_t count,
+    void *ctx)
+{
+    (void)ui_root;
+    (void)count;
+
+    TestProjectionContext *projection = ctx;
+    const TestProjectionItem *data =
+        item != NULL ? item->data : NULL;
+    if (projection == NULL || data == NULL) {
+        return;
+    }
+
+    ecs_entity_t label =
+        EcsUiProjectionGetNode(world, source, projection->label_slot);
+    EcsUiText *text =
+        label != 0 ? ecs_get_mut(world, label, EcsUiText) : NULL;
+    if (text != NULL) {
+        (void)snprintf(
+            text->text,
+            sizeof(text->text),
+            "%u:%.200s",
+            position,
+            data->label);
+        text->role = ECS_UI_TEXT_BODY;
+        ecs_modified(world, label, EcsUiText);
+    }
+    projection->update_count += 1u;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -43,10 +164,21 @@ int main(void)
     }
 
     EcsUiImport(world);
+    EcsUiProjectionImport(world);
+    ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     int result = 0;
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
         "EcsUiOnClick should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiProjectionRoot, EcsExclusive),
+        "EcsUiProjectionRoot should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiProjectionSource, EcsExclusive),
+        "EcsUiProjectionSource should be exclusive");
+    result |= Require(
+        ecs_id(EcsUiProjectionKey) != 0,
+        "EcsUiProjectionKey should be registered");
 
     ecs_entity_t root = EcsUiRootEntity(world, "Home");
     if (root == 0) {
@@ -159,6 +291,370 @@ int main(void)
             ordered.ids[1] == tree.nodes[4u].entity &&
             ordered.ids[2] == tree.nodes[7u].entity,
         "ordered children mismatch");
+
+    ecs_entity_t source_tag =
+        ecs_entity(world, {.name = "TestProjectionSource"});
+    ecs_entity_t source_parent =
+        ecs_entity(world, {.name = "TestProjectionSources"});
+    ecs_add_id(world, source_parent, EcsOrderedChildren);
+    ecs_entity_t source_a = ecs_entity(world, {
+        .parent = source_parent,
+        .name = "SourceA",
+        .sep = "",
+    });
+    ecs_entity_t source_b = ecs_entity(world, {
+        .parent = source_parent,
+        .name = "SourceB",
+        .sep = "",
+    });
+    ecs_add_id(world, source_a, source_tag);
+    ecs_add_id(world, source_b, source_tag);
+
+    ecs_entity_t projection_root =
+        EcsUiRootEntity(world, "ProjectionRoot");
+    EcsUiBuilder projection_builder =
+        EcsUiBuilderBegin(world, projection_root);
+    Text(
+        &projection_builder,
+        {
+            .id = "ProjectionHeader",
+            .text = "header",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    ecs_entity_t row_a = EcsUiBeginHStack(
+        &projection_builder,
+        (EcsUiStackDesc){
+            .id = "ProjectedRowA",
+        });
+    ecs_entity_t label_a = EcsUiAddText(
+        &projection_builder,
+        (EcsUiTextDesc){
+            .id = "ProjectedLabelA",
+            .text = "A",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&projection_builder);
+    ecs_entity_t row_b = EcsUiBeginHStack(
+        &projection_builder,
+        (EcsUiStackDesc){
+            .id = "ProjectedRowB",
+        });
+    ecs_entity_t label_b = EcsUiAddText(
+        &projection_builder,
+        (EcsUiTextDesc){
+            .id = "ProjectedLabelB",
+            .text = "B",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&projection_builder);
+    EcsUiBuilderEnd(&projection_builder);
+    result |= Require(
+        EcsUiBuilderOk(&projection_builder),
+        "projection builder failed");
+
+    ecs_entity_t label_slot =
+        ecs_entity(world, {.name = "TestProjectionLabelSlot"});
+    result |= Require(
+        EcsUiProjectionLink(world, source_a, row_a),
+        "projection link A failed");
+    result |= Require(
+        EcsUiProjectionLink(world, source_b, row_b),
+        "projection link B failed");
+    result |= Require(
+        EcsUiProjectionSetNode(world, source_a, label_slot, label_a),
+        "projection slot A failed");
+    result |= Require(
+        EcsUiProjectionSetNode(world, source_b, label_slot, label_b),
+        "projection slot B failed");
+    result |= Require(
+        EcsUiProjectionGetRoot(world, source_a) == row_a,
+        "projection root lookup failed");
+    result |= Require(
+        ecs_has_id(world, row_a, EcsUiProjectionRootNode) &&
+            ecs_has_id(world, row_b, EcsUiProjectionRootNode),
+        "projected row roots should be marked");
+    result |= Require(
+        EcsUiProjectionGetSource(world, row_b) == source_b,
+        "projection source lookup failed");
+    result |= Require(
+        EcsUiProjectionGetNode(world, source_a, label_slot) == label_a,
+        "projection slot lookup failed");
+    result |= Require(
+        ecs_has_id(world, label_slot, EcsUiProjectionSlot) &&
+            ecs_has_id(world, label_slot, EcsExclusive),
+        "projection slot should be registered");
+
+    ecs_entity_t source_order[2] = {source_b, source_a};
+    ecs_set_child_order(world, source_parent, source_order, 2);
+    result |= Require(
+        EcsUiProjectionSyncOrderedChildren(
+            world,
+            (EcsUiProjectionOrderSyncDesc){
+                .source_parent = source_parent,
+                .ui_parent = projection_root,
+                .source_filter = source_tag,
+                .preserve_unprojected_ui_children = true,
+            }),
+        "projection order sync failed");
+    ecs_entities_t projected_order =
+        ecs_get_ordered_children(world, projection_root);
+    result |= Require(
+        projected_order.count == 3,
+        "projection ordered child count mismatch");
+    result |= Require(
+        projected_order.ids[0] != row_a &&
+            projected_order.ids[0] != row_b &&
+            projected_order.ids[1] == row_b &&
+            projected_order.ids[2] == row_a,
+        "projection order mismatch");
+
+    ecs_delete(world, source_b);
+    result |= Require(
+        !EcsUiProjectionSyncOrderedChildren(
+            world,
+            (EcsUiProjectionOrderSyncDesc){
+                .source_parent = source_parent,
+                .ui_parent = projection_root,
+                .source_filter = source_tag,
+                .preserve_unprojected_ui_children = true,
+            }),
+        "projection order sync should reject stale projected rows");
+
+    ecs_delete(world, row_b);
+    result |= Require(
+        EcsUiProjectionSyncOrderedChildren(
+            world,
+            (EcsUiProjectionOrderSyncDesc){
+                .source_parent = source_parent,
+                .ui_parent = projection_root,
+                .source_filter = source_tag,
+                .preserve_unprojected_ui_children = true,
+            }),
+        "projection order sync after stale cleanup failed");
+    projected_order = ecs_get_ordered_children(world, projection_root);
+    result |= Require(
+        projected_order.count == 2 &&
+            projected_order.ids[0] != row_a &&
+            projected_order.ids[1] == row_a,
+        "projection order after stale cleanup mismatch");
+
+    result |= Require(
+        EcsUiProjectionDelete(world, source_a),
+        "projection delete failed");
+    result |= Require(
+        EcsUiProjectionGetRoot(world, source_a) == 0 &&
+            !ecs_is_alive(world, row_a),
+        "projection delete cleanup failed");
+
+    ecs_entity_t collection_source_parent =
+        ecs_entity(world, {.name = "CollectionSources"});
+    ecs_add_id(world, collection_source_parent, EcsOrderedChildren);
+    ecs_entity_t collection_ui_parent =
+        EcsUiRootEntity(world, "CollectionUi");
+    EcsUiBuilder collection_builder =
+        EcsUiBuilderBegin(world, collection_ui_parent);
+    (void)EcsUiAddText(
+        &collection_builder,
+        (EcsUiTextDesc){
+            .id = "CollectionHeader",
+            .text = "collection",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    EcsUiBuilderEnd(&collection_builder);
+    result |= Require(
+        EcsUiBuilderOk(&collection_builder),
+        "collection builder failed");
+
+    TestProjectionContext collection_ctx = {
+        .ui_parent = collection_ui_parent,
+        .label_slot = ecs_entity(world, {.name = "CollectionLabelSlot"}),
+    };
+    TestProjectionItem collection_data[2] = {
+        {
+            .key = 1u,
+            .label = "alpha",
+        },
+        {
+            .key = 2u,
+            .label = "beta",
+        },
+    };
+    EcsUiProjectionCollectionSource collection_items[2] = {
+        {
+            .key = collection_data[0].key,
+            .data = &collection_data[0],
+        },
+        {
+            .key = collection_data[1].key,
+            .data = &collection_data[1],
+        },
+    };
+    result |= Require(
+        EcsUiProjectionSyncCollection(
+            world,
+            (EcsUiProjectionCollectionDesc){
+                .source_parent = collection_source_parent,
+                .ui_parent = collection_ui_parent,
+                .source_filter = ecs_id(TestProjectionItem),
+                .items = collection_items,
+                .item_count = 2u,
+                .preserve_unprojected_ui_children = true,
+                .source_name_prefix = "CollectionSource",
+                .sync_source = TestProjectionSyncSource,
+                .build_root = TestProjectionBuildRoot,
+                .update_root = TestProjectionUpdateRoot,
+                .ctx = &collection_ctx,
+            }),
+        "collection sync failed");
+    result |= Require(
+        collection_ctx.build_count == 2u &&
+            collection_ctx.update_count == 2u,
+        "collection build/update counts mismatch");
+
+    ecs_entities_t collection_sources =
+        ecs_get_ordered_children(world, collection_source_parent);
+    result |= Require(
+        collection_sources.count == 2,
+        "collection source count mismatch");
+    const EcsUiProjectionKey *first_key =
+        ecs_get(world, collection_sources.ids[0], EcsUiProjectionKey);
+    const EcsUiProjectionKey *second_key =
+        ecs_get(world, collection_sources.ids[1], EcsUiProjectionKey);
+    result |= Require(
+        first_key != NULL && second_key != NULL &&
+            first_key->value == 1u && second_key->value == 2u,
+        "collection source key order mismatch");
+    ecs_entity_t collection_row_1 =
+        EcsUiProjectionGetRoot(world, collection_sources.ids[0]);
+    ecs_entity_t collection_row_2 =
+        EcsUiProjectionGetRoot(world, collection_sources.ids[1]);
+    result |= Require(
+        collection_row_1 != 0 && collection_row_2 != 0,
+        "collection rows not linked");
+
+    ecs_entities_t collection_order =
+        ecs_get_ordered_children(world, collection_ui_parent);
+    result |= Require(
+        collection_order.count == 3 &&
+            collection_order.ids[1] == collection_row_1 &&
+            collection_order.ids[2] == collection_row_2,
+        "collection row order mismatch");
+
+    collection_data[0] = (TestProjectionItem){
+        .key = 2u,
+        .label = "beta updated",
+    };
+    collection_data[1] = (TestProjectionItem){
+        .key = 1u,
+        .label = "alpha",
+    };
+    collection_items[0] = (EcsUiProjectionCollectionSource){
+        .key = collection_data[0].key,
+        .data = &collection_data[0],
+    };
+    collection_items[1] = (EcsUiProjectionCollectionSource){
+        .key = collection_data[1].key,
+        .data = &collection_data[1],
+    };
+    result |= Require(
+        EcsUiProjectionSyncCollection(
+            world,
+            (EcsUiProjectionCollectionDesc){
+                .source_parent = collection_source_parent,
+                .ui_parent = collection_ui_parent,
+                .source_filter = ecs_id(TestProjectionItem),
+                .items = collection_items,
+                .item_count = 2u,
+                .preserve_unprojected_ui_children = true,
+                .source_name_prefix = "CollectionSource",
+                .sync_source = TestProjectionSyncSource,
+                .build_root = TestProjectionBuildRoot,
+                .update_root = TestProjectionUpdateRoot,
+                .ctx = &collection_ctx,
+            }),
+        "collection reorder sync failed");
+    collection_sources =
+        ecs_get_ordered_children(world, collection_source_parent);
+    collection_row_2 =
+        EcsUiProjectionGetRoot(world, collection_sources.ids[0]);
+    collection_row_1 =
+        EcsUiProjectionGetRoot(world, collection_sources.ids[1]);
+    collection_order =
+        ecs_get_ordered_children(world, collection_ui_parent);
+    result |= Require(
+        collection_order.count == 3 &&
+            collection_order.ids[1] == collection_row_2 &&
+            collection_order.ids[2] == collection_row_1,
+        "collection reorder mismatch");
+    ecs_entity_t updated_label =
+        EcsUiProjectionGetNode(
+            world,
+            collection_sources.ids[0],
+            collection_ctx.label_slot);
+    const EcsUiText *updated_text =
+        updated_label != 0 ? ecs_get(world, updated_label, EcsUiText) : NULL;
+    result |= Require(
+        updated_text != NULL &&
+            strcmp(updated_text->text, "1:beta updated") == 0,
+        "collection row update mismatch");
+
+    EcsUiProjectionCollectionSource one_item[1] = {
+        {
+            .key = collection_data[0].key,
+            .data = &collection_data[0],
+        },
+    };
+    result |= Require(
+        EcsUiProjectionSyncCollection(
+            world,
+            (EcsUiProjectionCollectionDesc){
+                .source_parent = collection_source_parent,
+                .ui_parent = collection_ui_parent,
+                .source_filter = ecs_id(TestProjectionItem),
+                .items = one_item,
+                .item_count = 1u,
+                .preserve_unprojected_ui_children = true,
+                .source_name_prefix = "CollectionSource",
+                .sync_source = TestProjectionSyncSource,
+                .build_root = TestProjectionBuildRoot,
+                .update_root = TestProjectionUpdateRoot,
+                .ctx = &collection_ctx,
+            }),
+        "collection stale delete sync failed");
+    collection_sources =
+        ecs_get_ordered_children(world, collection_source_parent);
+    collection_order =
+        ecs_get_ordered_children(world, collection_ui_parent);
+    result |= Require(
+        collection_sources.count == 1 &&
+            collection_order.count == 2,
+        "collection stale delete mismatch");
+
+    result |= Require(
+        EcsUiProjectionSyncCollection(
+            world,
+            (EcsUiProjectionCollectionDesc){
+                .source_parent = collection_source_parent,
+                .ui_parent = collection_ui_parent,
+                .source_filter = ecs_id(TestProjectionItem),
+                .items = NULL,
+                .item_count = 0u,
+                .preserve_unprojected_ui_children = true,
+                .source_name_prefix = "CollectionSource",
+                .sync_source = TestProjectionSyncSource,
+                .build_root = TestProjectionBuildRoot,
+                .update_root = TestProjectionUpdateRoot,
+                .ctx = &collection_ctx,
+            }),
+        "empty collection sync failed");
+    collection_sources =
+        ecs_get_ordered_children(world, collection_source_parent);
+    collection_order =
+        ecs_get_ordered_children(world, collection_ui_parent);
+    result |= Require(
+        collection_sources.count == 0 &&
+            collection_order.count == 1,
+        "empty collection cleanup mismatch");
 
     ecs_fini(world);
     return result;

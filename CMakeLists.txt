@@ -67,7 +67,8 @@ else()
 endif()
 
 add_library(ecs_ui STATIC
-    src/ecs_ui.c)
+    src/ecs_ui.c
+    src/ecs_ui_projection.c)
 add_library(ecs_ui::ecs_ui ALIAS ecs_ui)
 target_include_directories(ecs_ui
     PUBLIC
@@ -155,7 +156,7 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
             examples/raylib_demo/demo_ui.c
             examples/raylib_demo/demo_ui_build.c
             examples/raylib_demo/demo_ui_events.c
-            examples/raylib_demo/demo_ui_item_rows.c
+            examples/raylib_demo/demo_ui_item_row_widget.c
             examples/raylib_demo/demo_ui_items.c)
 
         add_executable(ecs_ui_raylib_demo

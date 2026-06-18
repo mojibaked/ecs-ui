@@ -134,6 +134,7 @@ typedef struct EcsUiCustomDesc {
     const char *kind;
     float preferred_width;
     float preferred_height;
+    ecs_entity_t on_click;
 } EcsUiCustomDesc;
 
 typedef struct EcsUiBuilder {

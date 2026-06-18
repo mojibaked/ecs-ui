@@ -7,6 +7,7 @@
 ECS_COMPONENT_DECLARE(DemoTerminalViewport);
 
 static const char *DEMO_TERMINAL_CUSTOM_KIND = "demo-terminal";
+static const char *DEMO_DRAG_HANDLE_CUSTOM_KIND = "demo-drag-handle";
 
 static void DemoTerminalCopyString(
     char *out,
@@ -65,6 +66,11 @@ ecs_entity_t DemoTerminalBuildPreview(
         return 0;
     }
 
+    /*
+     * Custom nodes reserve layout space in the ECS UI tree but leave the pixels
+     * to the app. The renderer snapshots this custom kind and later calls
+     * DemoTerminalDrawCustom with computed bounds and inherited opacity.
+     */
     ecs_entity_t node = EcsUiAddCustom(
         builder,
         (EcsUiCustomDesc){
@@ -103,8 +109,36 @@ void DemoTerminalDrawCustom(
     float opacity,
     void *user_data)
 {
+    if (node == NULL) {
+        return;
+    }
+
+    /*
+     * One callback handles multiple custom kinds. The drag handle is an
+     * interactive gesture affordance with no app data, while the terminal
+     * viewport reads ECS component data from the snapshot's entity.
+     */
+    if (strcmp(node->custom.kind, DEMO_DRAG_HANDLE_CUSTOM_KIND) == 0) {
+        const bool hovered = CheckCollisionPointRec(GetMousePosition(), bounds);
+        Color fill = hovered ?
+            (Color){155, 184, 187, 255} :
+            (Color){103, 128, 133, 255};
+        fill = DemoTerminalApplyOpacity(fill, opacity);
+
+        const float handle_width = 48.0f;
+        const float handle_height = 5.0f;
+        Rectangle handle = {
+            .x = bounds.x + ((bounds.width - handle_width) * 0.5f),
+            .y = bounds.y + ((bounds.height - handle_height) * 0.5f),
+            .width = handle_width,
+            .height = handle_height,
+        };
+        DrawRectangleRounded(handle, 1.0f, 8, fill);
+        return;
+    }
+
     ecs_world_t *world = user_data;
-    if (node == NULL || world == NULL ||
+    if (world == NULL ||
         strcmp(node->custom.kind, DEMO_TERMINAL_CUSTOM_KIND) != 0) {
         return;
     }

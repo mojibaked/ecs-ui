@@ -3,10 +3,16 @@
 #include "demo_terminal.h"
 
 #include <stdio.h>
+#include <string.h>
 
 ecs_entity_t DemoUiBuild(ecs_world_t *world)
 {
     ecs_entity_t root = EcsUiRootEntity(world, "RaylibDemo");
+    /*
+     * Action entities are stable identity tokens attached to interactive UI
+     * nodes. Raylib event collection reports the token back, and DemoUiApplyEvents
+     * decides which domain/navigation/text request to enqueue for that action.
+     */
     ecs_entity_t add_item_action = ecs_entity(world, {.name = "AddItemAction"});
     ecs_entity_t present_add_item_action =
         ecs_entity(world, {.name = "PresentAddItemAction"});
@@ -103,6 +109,11 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
         return 0;
     }
 
+    /*
+     * DemoUiRefs is the bridge between static UI construction and runtime
+     * systems. It keeps action tokens plus a few anchor nodes that dynamic
+     * projections use as insertion points, avoiding repeated id scans later.
+     */
     ecs_singleton_set(
         world,
         DemoUiRefs,
@@ -136,7 +147,13 @@ void DemoUiSetStatus(ecs_world_t *world, const char *message)
         return;
     }
 
-    (void)snprintf(text->text, sizeof(text->text), "%s", message);
+    const char *next_message = message != NULL ? message : "";
+    if (text->role == ECS_UI_TEXT_CAPTION &&
+        strcmp(text->text, next_message) == 0) {
+        return;
+    }
+
+    (void)snprintf(text->text, sizeof(text->text), "%s", next_message);
     text->role = ECS_UI_TEXT_CAPTION;
     ecs_modified(world, status, EcsUiText);
 }

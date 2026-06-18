@@ -24,7 +24,11 @@ extern ECS_COMPONENT_DECLARE(DemoUiRefs);
 
 void DemoUiRegister(ecs_world_t *world);
 ecs_entity_t DemoUiBuild(ecs_world_t *world);
-void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events);
+void DemoUiApplyEvents(
+    ecs_world_t *ui_world,
+    ecs_world_t *app_world,
+    const EcsUiEventList *events);
+void DemoUiSyncProjection(ecs_world_t *ui_world, ecs_world_t *app_world);
 void DemoUiSetStatus(ecs_world_t *world, const char *message);
 
 #endif

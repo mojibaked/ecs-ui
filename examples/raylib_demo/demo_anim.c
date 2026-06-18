@@ -50,6 +50,11 @@ void DemoAnimApplyVisualToNodeEx(
     }
 
     const float visible = DemoAnimClamp01(value);
+    /*
+     * Animation writes normal UI visual components. The renderer does not know
+     * about demo animation state; it only sees opacity/offset/highlight values
+     * already projected onto retained UI nodes.
+     */
     ecs_set(
         world,
         node,
@@ -101,6 +106,11 @@ void DemoAnimStartPresentation(
         return;
     }
 
+    /*
+     * A presentation entity is both navigation state and animation target. The
+     * linear component means "advance me over time"; the dismiss marker means
+     * "delete the presentation after the exit tween reaches zero."
+     */
     ecs_set(
         world,
         presentation,
@@ -142,6 +152,11 @@ void DemoAnimSetPresentationValue(
     }
 
     const float visible = DemoAnimClamp01(value);
+    /*
+     * Gestures bypass the linear tween by setting the value directly and
+     * removing completion behavior. On release, navigation starts a fresh tween
+     * from this gesture-controlled value.
+     */
     ecs_set(
         world,
         presentation,
@@ -210,6 +225,11 @@ static void DemoAnimDeletePresentationAfterExit(
             DemoActivePresentation,
             EcsWildcard);
     }
+    ecs_entity_t ui =
+        ecs_get_target(world, presentation, DemoPresentationUiNode, 0);
+    if (ui != 0) {
+        ecs_delete(world, ui);
+    }
     ecs_delete(world, presentation);
 }
 
@@ -220,6 +240,11 @@ static void DemoAnimAdvanceLinear1fSystem(ecs_iter_t *it)
     const float dt = it->delta_time > 0.0f ? it->delta_time : 1.0f / 60.0f;
 
     for (int32_t i = 0; i < it->count; i += 1) {
+        /*
+         * The same scalar animation component drives different visual effects.
+         * Marker tags select the projection target: presentation sheet movement,
+         * row insertion fade/slide, or selection highlight decay.
+         */
         linear[i].elapsed += dt;
         const float t = DemoAnimClamp01(linear[i].elapsed / linear[i].duration);
         animated[i].value =
@@ -269,6 +294,11 @@ static void DemoAnimAdvanceLinear1fSystem(ecs_iter_t *it)
                     DemoAnimatedSelection);
             }
             if (dismiss) {
+                /*
+                 * Exit animations own final cleanup. Deleting the presentation
+                 * also removes its dynamic UI subtree before the presentation
+                 * entity itself goes away.
+                 */
                 TraceLog(LOG_INFO, "DEMO: presentation exit animation completed");
                 DemoAnimDeletePresentationAfterExit(it->world, it->entities[i]);
             }

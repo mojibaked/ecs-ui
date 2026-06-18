@@ -99,17 +99,19 @@ int main(void)
     fonts[0] = GetFontDefault();
     Clay_SetMeasureTextFunction(EcsUiClayRaylibMeasureText, fonts);
 
-    ecs_world_t *world = ecs_init();
-    EcsUiImport(world);
-    DemoAppRegister(world);
-    DemoUiRegister(world);
-    DemoTerminalRegister(world);
-    DemoTextInputRegister(world);
-    DemoNavRegister(world);
-    DemoAnimRegister(world);
-    (void)DemoAppItemRoot(world);
-    (void)DemoNavRoot(world);
-    ecs_entity_t root = DemoUiBuild(world);
+    ecs_world_t *app_world = ecs_init();
+    DemoAppRegister(app_world);
+    (void)DemoAppItemRoot(app_world);
+
+    ecs_world_t *ui_world = ecs_init();
+    EcsUiImport(ui_world);
+    DemoUiRegister(ui_world);
+    DemoTerminalRegister(ui_world);
+    DemoTextInputRegister(ui_world);
+    DemoNavRegister(ui_world);
+    DemoAnimRegister(ui_world);
+    (void)DemoNavRoot(ui_world);
+    ecs_entity_t root = DemoUiBuild(ui_world);
     EcsUiClayTheme theme = EcsUiClayThemeDefault();
 
     while (!WindowShouldClose()) {
@@ -140,7 +142,7 @@ int main(void)
 
         EcsUiTreeSnapshot tree = {0};
         if (root != 0) {
-            (void)EcsUiReadTree(world, root, &tree);
+            (void)EcsUiReadTree(ui_world, root, &tree);
         }
 
         (void)DemoClayEmitRenderCommands(&tree, &theme);
@@ -148,10 +150,13 @@ int main(void)
         EcsUiEventList events = {0};
         EcsUiClayCollectEvents(&tree, pointer, &events);
         DemoClayCollectKeyboardEvents(&events);
-        DemoUiApplyEvents(world, &events);
-        (void)ecs_progress(world, GetFrameTime());
+        const float dt = GetFrameTime();
+        DemoUiApplyEvents(ui_world, app_world, &events);
+        (void)ecs_progress(app_world, dt);
+        DemoUiSyncProjection(ui_world, app_world);
+        (void)ecs_progress(ui_world, dt);
         if (root != 0) {
-            (void)EcsUiReadTree(world, root, &tree);
+            (void)EcsUiReadTree(ui_world, root, &tree);
         }
 
         Clay_RenderCommandArray render_commands =
@@ -163,7 +168,8 @@ int main(void)
         EndDrawing();
     }
 
-    ecs_fini(world);
+    ecs_fini(ui_world);
+    ecs_fini(app_world);
     Clay_Raylib_Close();
     free(clay_memory);
     return 0;

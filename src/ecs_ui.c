@@ -315,6 +315,10 @@ ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
     };
     EcsUiCopyString(custom.kind, sizeof(custom.kind), desc.kind);
     ecs_set_ptr(builder->world, entity, EcsUiCustom, &custom);
+    if (desc.on_click != 0) {
+        ecs_add_id(builder->world, entity, EcsUiInteractive);
+        ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
+    }
     return entity;
 }
 

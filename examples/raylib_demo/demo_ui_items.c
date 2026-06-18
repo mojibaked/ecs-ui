@@ -1,149 +1,200 @@
 #include "demo_ui_internal.h"
 
 #include <stdio.h>
+#include <string.h>
 
-static uint32_t DemoUiCountItems(ecs_world_t *world)
+typedef struct DemoUiItemProjectionContext {
+    const DemoUiRefs *refs;
+    uint32_t selected_item_id;
+} DemoUiItemProjectionContext;
+
+static uint32_t DemoUiReadAppItems(
+    ecs_world_t *app_world,
+    DemoUiItemSource *out_items,
+    uint32_t max_items)
 {
+    if (app_world == NULL || out_items == NULL || max_items == 0u) {
+        return 0u;
+    }
+
     uint32_t count = 0u;
-    ecs_iter_t it = ecs_each(world, DemoItem);
-    while (ecs_each_next(&it)) {
-        count += (uint32_t)it.count;
+    ecs_entities_t children =
+        ecs_get_ordered_children(app_world, DemoAppItemRoot(app_world));
+    for (int32_t i = 0; i < children.count && count < max_items; i += 1) {
+        const DemoItem *item =
+            ecs_get(app_world, children.ids[i], DemoItem);
+        if (item == NULL) {
+            continue;
+        }
+
+        out_items[count] = (DemoUiItemSource){
+            .id = item->id,
+            .rename_count = item->rename_count,
+        };
+        (void)snprintf(
+            out_items[count].label,
+            sizeof(out_items[count].label),
+            "%s",
+            item->label);
+        count += 1u;
     }
     return count;
 }
 
-static void DemoUiSetStatusForItemCount(ecs_world_t *world, uint32_t count)
+static void DemoUiSetStatusForItemCount(
+    ecs_world_t *ui_world,
+    uint32_t count,
+    uint32_t selected_item_id)
 {
-    ecs_entity_t selected = ecs_get_target(
-        world,
-        DemoAppSelectionRoot(world),
-        DemoSelectedItem,
-        0);
-    const DemoItem *selected_item =
-        selected != 0 ? ecs_get(world, selected, DemoItem) : NULL;
-
     char status[ECS_UI_TEXT_MAX] = {0};
-    if (selected_item != NULL) {
+    if (selected_item_id != 0u) {
         (void)snprintf(
             status,
             sizeof(status),
             "%u items | selected item %u",
             count,
-            selected_item->id);
+            selected_item_id);
     } else {
         (void)snprintf(status, sizeof(status), "%u items", count);
     }
-    DemoUiSetStatus(world, status);
+    DemoUiSetStatus(ui_world, status);
 }
 
-static void DemoUiRefreshStatus(ecs_world_t *world)
+static bool DemoUiRefsReady(const DemoUiRefs *refs)
 {
-    DemoUiSetStatusForItemCount(world, DemoUiCountItems(world));
+    return refs != NULL && refs->item_list != 0 &&
+        refs->select_item_action != 0 && refs->delete_item_action != 0 &&
+        refs->rename_item_action != 0 && refs->move_item_up_action != 0 &&
+        refs->move_item_down_action != 0;
 }
 
-static void DemoUiMaterializeItemRowObserver(ecs_iter_t *it)
+static void DemoUiSyncItemSource(
+    ecs_world_t *ui_world,
+    ecs_entity_t source,
+    const EcsUiProjectionCollectionSource *item,
+    void *ctx)
 {
-    const DemoUiRefs *refs = ecs_singleton_get(it->world, DemoUiRefs);
-    if (refs == NULL || refs->item_list == 0 ||
-        refs->select_item_action == 0 || refs->delete_item_action == 0 ||
-        refs->rename_item_action == 0 || refs->move_item_up_action == 0 ||
-        refs->move_item_down_action == 0) {
+    (void)ctx;
+
+    const DemoUiItemSource *next =
+        item != NULL ? item->data : NULL;
+    if (ui_world == NULL || source == 0 || next == NULL) {
         return;
     }
 
-    const DemoItem *items = ecs_field(it, DemoItem, 0);
-    for (int32_t i = 0; i < it->count; i += 1) {
-        if (ecs_get_target(it->world, it->entities[i], DemoItemUiNode, 0) != 0) {
-            DemoUiUpdateItemRow(it->world, it->entities[i], &items[i]);
-            continue;
-        }
-        (void)DemoUiCreateItemRow(
-            it->world,
-            it->entities[i],
-            &items[i],
-            refs);
-    }
-    DemoUiRefreshStatus(it->world);
-    DemoUiRefreshSelectionStyles(it->world);
-}
-
-static void DemoUiRemoveItemRowObserver(ecs_iter_t *it)
-{
-    for (int32_t i = 0; i < it->count; i += 1) {
-        ecs_entity_t row =
-            ecs_get_target(it->world, it->entities[i], DemoItemUiNode, 0);
-        if (row != 0) {
-            ecs_delete(it->world, row);
-        }
-    }
-
-    uint32_t count = DemoUiCountItems(it->world);
-    count = count >= (uint32_t)it->count ? count - (uint32_t)it->count : 0u;
-    DemoUiSetStatusForItemCount(it->world, count);
-}
-
-static void DemoUiSelectionStatusObserver(ecs_iter_t *it)
-{
-    DemoUiRefreshStatus(it->world);
-    DemoUiRefreshSelectionStyles(it->world);
-}
-
-static void DemoUiApplyItemOrderSystem(ecs_iter_t *it)
-{
-    const DemoUiRefs *refs = ecs_singleton_get(it->world, DemoUiRefs);
-    if (refs == NULL || refs->item_list == 0) {
+    DemoUiItemSource *current =
+        ecs_get_mut(ui_world, source, DemoUiItemSource);
+    if (current == NULL) {
+        ecs_set_ptr(ui_world, source, DemoUiItemSource, next);
         return;
     }
 
-    for (int32_t i = 0; i < it->count; i += 1) {
-        DemoUiApplyItemOrderToList(it->world, refs->item_list);
-        ecs_remove_id(it->world, it->entities[i], DemoItemOrderDirty);
+    if (current->id == next->id &&
+        current->rename_count == next->rename_count &&
+        strcmp(current->label, next->label) == 0) {
+        return;
     }
+
+    *current = *next;
+    ecs_modified(ui_world, source, DemoUiItemSource);
 }
 
-void DemoUiRegisterItemProjection(ecs_world_t *world)
+static ecs_entity_t DemoUiBuildItemRoot(
+    ecs_world_t *ui_world,
+    ecs_entity_t source,
+    const EcsUiProjectionCollectionSource *item,
+    void *ctx)
 {
-    (void)ecs_observer(world, {
-        .entity = ecs_entity(world, {
-            .name = "DemoUiMaterializeItemRowObserver",
-        }),
-        .query.terms = {
-            {.id = ecs_id(DemoItem)},
-        },
-        .events = {EcsOnSet},
-        .callback = DemoUiMaterializeItemRowObserver,
-    });
+    DemoUiItemProjectionContext *projection_ctx = ctx;
+    const DemoUiItemSource *item_data =
+        item != NULL ? item->data : NULL;
+    if (projection_ctx == NULL || projection_ctx->refs == NULL ||
+        item_data == NULL) {
+        return 0;
+    }
 
-    (void)ecs_observer(world, {
-        .entity = ecs_entity(world, {
-            .name = "DemoUiRemoveItemRowObserver",
-        }),
-        .query.terms = {
-            {.id = ecs_id(DemoItem)},
-        },
-        .events = {EcsOnRemove},
-        .callback = DemoUiRemoveItemRowObserver,
-    });
+    return DemoUiCreateItemRow(
+        ui_world,
+        source,
+        item_data,
+        projection_ctx->refs);
+}
 
-    (void)ecs_observer(world, {
-        .entity = ecs_entity(world, {
-            .name = "DemoUiSelectionStatusObserver",
-        }),
-        .query.terms = {
-            {.id = ecs_pair(DemoSelectedItem, EcsWildcard)},
-        },
-        .events = {EcsOnAdd, EcsOnRemove},
-        .callback = DemoUiSelectionStatusObserver,
-    });
+static void DemoUiUpdateItemRoot(
+    ecs_world_t *ui_world,
+    ecs_entity_t source,
+    ecs_entity_t ui_root,
+    const EcsUiProjectionCollectionSource *item,
+    uint32_t position,
+    uint32_t count,
+    void *ctx)
+{
+    (void)ui_root;
 
-    (void)ecs_system(world, {
-        .entity = ecs_entity(world, {
-            .name = "DemoUiApplyItemOrderSystem",
-            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
-        }),
-        .query.terms = {
-            {.id = DemoItemOrderDirty},
-        },
-        .callback = DemoUiApplyItemOrderSystem,
-    });
+    DemoUiItemProjectionContext *projection_ctx = ctx;
+    const DemoUiItemSource *item_data =
+        item != NULL ? item->data : NULL;
+    if (projection_ctx == NULL || item_data == NULL) {
+        return;
+    }
+
+    DemoUiUpdateItemRowWithPosition(
+        ui_world,
+        source,
+        item_data,
+        position,
+        count);
+    DemoUiApplyItemSelectionStyle(
+        ui_world,
+        source,
+        projection_ctx->selected_item_id);
+}
+
+void DemoUiSyncProjection(ecs_world_t *ui_world, ecs_world_t *app_world)
+{
+    if (ui_world == NULL || app_world == NULL) {
+        return;
+    }
+
+    const DemoUiRefs *refs = ecs_singleton_get(ui_world, DemoUiRefs);
+    if (!DemoUiRefsReady(refs)) {
+        return;
+    }
+
+    DemoUiItemSource items[ECS_UI_TREE_NODE_MAX] = {0};
+    EcsUiProjectionCollectionSource projection_items[ECS_UI_TREE_NODE_MAX] = {0};
+    const uint32_t item_count =
+        DemoUiReadAppItems(app_world, items, ECS_UI_TREE_NODE_MAX);
+    for (uint32_t i = 0u; i < item_count; i += 1u) {
+        projection_items[i] = (EcsUiProjectionCollectionSource){
+            .key = items[i].id,
+            .data = &items[i],
+        };
+    }
+
+    DemoUiItemProjectionContext ctx = {
+        .refs = refs,
+        .selected_item_id = DemoAppSelectedItemId(app_world),
+    };
+    (void)EcsUiProjectionSyncCollection(
+        ui_world,
+        (EcsUiProjectionCollectionDesc){
+            .source_parent = DemoUiItemSourceRoot(ui_world),
+            .ui_parent = refs->item_list,
+            .source_filter = ecs_id(DemoUiItemSource),
+            .items = projection_items,
+            .item_count = item_count,
+            .preserve_unprojected_ui_children = true,
+            .source_name_prefix = "ItemSource",
+            .sync_source = DemoUiSyncItemSource,
+            .build_root = DemoUiBuildItemRoot,
+            .update_root = DemoUiUpdateItemRoot,
+            .ctx = &ctx,
+        });
+
+    ecs_entity_t item_root = DemoAppItemRoot(app_world);
+    if (ecs_has_id(app_world, item_root, DemoItemOrderDirty)) {
+        ecs_remove_id(app_world, item_root, DemoItemOrderDirty);
+    }
+    DemoUiSetStatusForItemCount(ui_world, item_count, ctx.selected_item_id);
 }

@@ -3,49 +3,39 @@
 #include "demo_anim.h"
 
 #include <stdio.h>
+#include <string.h>
 
-static void DemoUiApplyItemSelectionStyle(
+void DemoUiApplyItemSelectionStyle(
     ecs_world_t *world,
-    ecs_entity_t item,
-    ecs_entity_t selected_item)
+    ecs_entity_t source,
+    uint32_t selected_item_id)
 {
     ecs_entity_t select_button =
-        ecs_get_target(world, item, DemoItemSelectUiNode, 0);
+        EcsUiProjectionGetNode(world, source, DemoItemSelectUiNode);
     EcsUiButton *button =
         select_button != 0 ? ecs_get_mut(world, select_button, EcsUiButton) : NULL;
     if (button == NULL) {
         return;
     }
 
+    const DemoUiItemSource *item_data =
+        source != 0 ? ecs_get(world, source, DemoUiItemSource) : NULL;
+    if (item_data == NULL) {
+        return;
+    }
+
     const EcsUiButtonVariant variant =
-        item == selected_item ? ECS_UI_BUTTON_PRIMARY : ECS_UI_BUTTON_SUBTLE;
+        item_data->id == selected_item_id ?
+            ECS_UI_BUTTON_PRIMARY :
+            ECS_UI_BUTTON_SUBTLE;
     if (button->variant == variant) {
         return;
     }
 
     button->variant = variant;
     ecs_modified(world, select_button, EcsUiButton);
-    if (item == selected_item) {
+    if (item_data->id == selected_item_id) {
         DemoAnimStartSelectionHighlight(world, select_button);
-    }
-}
-
-void DemoUiRefreshSelectionStyles(ecs_world_t *world)
-{
-    ecs_entity_t selected_item = ecs_get_target(
-        world,
-        DemoAppSelectionRoot(world),
-        DemoSelectedItem,
-        0);
-
-    ecs_iter_t it = ecs_each(world, DemoItem);
-    while (ecs_each_next(&it)) {
-        for (int32_t i = 0; i < it.count; i += 1) {
-            DemoUiApplyItemSelectionStyle(
-                world,
-                it.entities[i],
-                selected_item);
-        }
     }
 }
 
@@ -60,25 +50,55 @@ static void DemoUiUpdateTextNode(
         return;
     }
 
-    (void)snprintf(text->text, sizeof(text->text), "%s", value != NULL ? value : "");
+    const char *next_value = value != NULL ? value : "";
+    if (text->role == role && strcmp(text->text, next_value) == 0) {
+        return;
+    }
+
+    (void)snprintf(text->text, sizeof(text->text), "%s", next_value);
     text->role = role;
     ecs_modified(world, node, EcsUiText);
 }
 
-static uint32_t DemoUiItemPosition(ecs_world_t *world, ecs_entity_t item)
+static void DemoUiSetButtonDisabled(
+    ecs_world_t *world,
+    ecs_entity_t node,
+    bool disabled)
 {
-    if (world == NULL || item == 0) {
+    EcsUiButton *button =
+        node != 0 ? ecs_get_mut(world, node, EcsUiButton) : NULL;
+    if (button == NULL || button->disabled == disabled) {
+        return;
+    }
+
+    button->disabled = disabled;
+    ecs_modified(world, node, EcsUiButton);
+}
+
+static uint32_t DemoUiItemCount(ecs_world_t *world)
+{
+    uint32_t count = 0u;
+    ecs_iter_t it = ecs_each(world, DemoUiItemSource);
+    while (ecs_each_next(&it)) {
+        count += (uint32_t)it.count;
+    }
+    return count;
+}
+
+static uint32_t DemoUiItemPosition(ecs_world_t *world, ecs_entity_t source)
+{
+    if (world == NULL || source == 0) {
         return 0u;
     }
 
     uint32_t position = 1u;
     ecs_entities_t children =
-        ecs_get_ordered_children(world, DemoAppItemRoot(world));
+        ecs_get_ordered_children(world, DemoUiItemSourceRoot(world));
     for (int32_t i = 0; i < children.count; i += 1) {
-        if (!ecs_has(world, children.ids[i], DemoItem)) {
+        if (!ecs_has(world, children.ids[i], DemoUiItemSource)) {
             continue;
         }
-        if (children.ids[i] == item) {
+        if (children.ids[i] == source) {
             return position;
         }
         position += 1u;
@@ -87,17 +107,19 @@ static uint32_t DemoUiItemPosition(ecs_world_t *world, ecs_entity_t item)
     return 0u;
 }
 
-static void DemoUiUpdateItemRowWithPosition(
+void DemoUiUpdateItemRowWithPosition(
     ecs_world_t *world,
-    ecs_entity_t item,
-    const DemoItem *item_data,
-    uint32_t position)
+    ecs_entity_t source,
+    const DemoUiItemSource *item_data,
+    uint32_t position,
+    uint32_t item_count)
 {
-    if (world == NULL || item == 0 || item_data == NULL) {
+    if (world == NULL || source == 0 || item_data == NULL) {
         return;
     }
 
-    ecs_entity_t label = ecs_get_target(world, item, DemoItemLabelUiNode, 0);
+    ecs_entity_t label =
+        EcsUiProjectionGetNode(world, source, DemoItemLabelUiNode);
     DemoUiUpdateTextNode(world, label, item_data->label, ECS_UI_TEXT_LABEL);
 
     char meta_text[ECS_UI_TEXT_MAX] = {0};
@@ -106,79 +128,42 @@ static void DemoUiUpdateItemRowWithPosition(
     } else {
         (void)snprintf(meta_text, sizeof(meta_text), "#?");
     }
-    ecs_entity_t meta = ecs_get_target(world, item, DemoItemMetaUiNode, 0);
+    ecs_entity_t meta =
+        EcsUiProjectionGetNode(world, source, DemoItemMetaUiNode);
     DemoUiUpdateTextNode(world, meta, meta_text, ECS_UI_TEXT_CAPTION);
+
+    ecs_entity_t up_button =
+        EcsUiProjectionGetNode(world, source, DemoItemUpUiNode);
+    DemoUiSetButtonDisabled(world, up_button, position <= 1u);
+
+    ecs_entity_t down_button =
+        EcsUiProjectionGetNode(world, source, DemoItemDownUiNode);
+    DemoUiSetButtonDisabled(
+        world,
+        down_button,
+        position == 0u || item_count == 0u || position >= item_count);
 }
 
 void DemoUiUpdateItemRow(
     ecs_world_t *world,
-    ecs_entity_t item,
-    const DemoItem *item_data)
+    ecs_entity_t source,
+    const DemoUiItemSource *item_data)
 {
     DemoUiUpdateItemRowWithPosition(
         world,
-        item,
+        source,
         item_data,
-        DemoUiItemPosition(world, item));
-}
-
-void DemoUiApplyItemOrderToList(ecs_world_t *world, ecs_entity_t item_list)
-{
-    if (world == NULL || item_list == 0) {
-        return;
-    }
-
-    ecs_entity_t ordered[ECS_UI_TREE_NODE_MAX] = {0};
-    const int32_t ordered_cap = (int32_t)ECS_UI_TREE_NODE_MAX;
-    int32_t ordered_count = 0;
-
-    ecs_entities_t ui_children = ecs_get_ordered_children(world, item_list);
-    for (int32_t i = 0; i < ui_children.count; i += 1) {
-        if (ecs_get_target(world, ui_children.ids[i], DemoUiForItem, 0) != 0) {
-            continue;
-        }
-        if (ordered_count >= ordered_cap) {
-            return;
-        }
-        ordered[ordered_count] = ui_children.ids[i];
-        ordered_count += 1;
-    }
-
-    uint32_t position = 1u;
-    ecs_entities_t items =
-        ecs_get_ordered_children(world, DemoAppItemRoot(world));
-    for (int32_t i = 0; i < items.count; i += 1) {
-        const DemoItem *item_data = ecs_get(world, items.ids[i], DemoItem);
-        if (item_data == NULL) {
-            continue;
-        }
-
-        ecs_entity_t row = ecs_get_target(world, items.ids[i], DemoItemUiNode, 0);
-        if (row != 0) {
-            if (ordered_count >= ordered_cap) {
-                return;
-            }
-            ordered[ordered_count] = row;
-            ordered_count += 1;
-            DemoUiUpdateItemRowWithPosition(
-                world,
-                items.ids[i],
-                item_data,
-                position);
-        }
-        position += 1u;
-    }
-
-    ecs_set_child_order(world, item_list, ordered, ordered_count);
+        DemoUiItemPosition(world, source),
+        DemoUiItemCount(world));
 }
 
 ecs_entity_t DemoUiCreateItemRow(
     ecs_world_t *world,
-    ecs_entity_t item,
-    const DemoItem *item_data,
+    ecs_entity_t source,
+    const DemoUiItemSource *item_data,
     const DemoUiRefs *refs)
 {
-    if (world == NULL || item == 0 || item_data == NULL || refs == NULL ||
+    if (world == NULL || source == 0 || item_data == NULL || refs == NULL ||
         refs->item_list == 0 || refs->select_item_action == 0 ||
         refs->delete_item_action == 0 || refs->rename_item_action == 0 ||
         refs->move_item_up_action == 0 || refs->move_item_down_action == 0) {
@@ -206,8 +191,14 @@ ecs_entity_t DemoUiCreateItemRow(
         meta_text,
         sizeof(meta_text),
         "#%u",
-        DemoUiItemPosition(world, item));
+        DemoUiItemPosition(world, source));
 
+    /*
+     * Rows are built once as retained UI. The root row is linked to a UI-world
+     * source proxy, selected child nodes are stored in projection slots, and
+     * action buttons point back to that proxy. Cross-world app requests use the
+     * stable item id stored on DemoUiItemSource rather than app entity ids.
+     */
     EcsUiBuilder builder = EcsUiBuilderBegin(world, refs->item_list);
     ecs_entity_t row = EcsUiBeginHStack(
         &builder,
@@ -302,29 +293,50 @@ ecs_entity_t DemoUiCreateItemRow(
     EcsUiBuilderEnd(&builder);
 
     if (EcsUiBuilderOk(&builder) && row != 0) {
-        ecs_add_pair(world, item, DemoItemUiNode, row);
-        ecs_add_pair(world, row, DemoUiForItem, item);
+        (void)EcsUiProjectionLink(world, source, row);
         if (label_text != 0) {
-            ecs_add_pair(world, item, DemoItemLabelUiNode, label_text);
+            (void)EcsUiProjectionSetNode(
+                world,
+                source,
+                DemoItemLabelUiNode,
+                label_text);
         }
         if (meta_text_node != 0) {
-            ecs_add_pair(world, item, DemoItemMetaUiNode, meta_text_node);
+            (void)EcsUiProjectionSetNode(
+                world,
+                source,
+                DemoItemMetaUiNode,
+                meta_text_node);
         }
         if (select_button != 0) {
-            ecs_add_pair(world, item, DemoItemSelectUiNode, select_button);
-            ecs_add_pair(world, select_button, DemoUiForItem, item);
+            (void)EcsUiProjectionSetNode(
+                world,
+                source,
+                DemoItemSelectUiNode,
+                select_button);
+            (void)EcsUiProjectionSetSource(world, select_button, source);
         }
         if (rename_button != 0) {
-            ecs_add_pair(world, rename_button, DemoUiForItem, item);
+            (void)EcsUiProjectionSetSource(world, rename_button, source);
         }
         if (up_button != 0) {
-            ecs_add_pair(world, up_button, DemoUiForItem, item);
+            (void)EcsUiProjectionSetNode(
+                world,
+                source,
+                DemoItemUpUiNode,
+                up_button);
+            (void)EcsUiProjectionSetSource(world, up_button, source);
         }
         if (down_button != 0) {
-            ecs_add_pair(world, down_button, DemoUiForItem, item);
+            (void)EcsUiProjectionSetNode(
+                world,
+                source,
+                DemoItemDownUiNode,
+                down_button);
+            (void)EcsUiProjectionSetSource(world, down_button, source);
         }
         if (delete_button != 0) {
-            ecs_add_pair(world, delete_button, DemoUiForItem, item);
+            (void)EcsUiProjectionSetSource(world, delete_button, source);
         }
         DemoAnimStartRowInsert(world, row);
     }

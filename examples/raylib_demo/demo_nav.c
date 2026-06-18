@@ -51,6 +51,12 @@ void DemoNavRequestPresentRoute(ecs_world_t *world, ecs_entity_t route)
         return;
     }
 
+    /*
+     * Navigation follows the same event-to-request pattern as app actions.
+     * Routes are durable entities; presentation requests are transient entities
+     * that tell the nav system which route should become active during the
+     * next ecs_progress() pass.
+     */
     (void)ecs_new_w_pair(world, DemoPresentRouteRequest, route);
 }
 
@@ -146,6 +152,11 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
         return existing;
     }
 
+    /*
+     * Presentation UI is mounted dynamically under the viewport host. The sheet
+     * itself is retained and linked to the presentation entity, so the nav
+     * projector can reapply animation values without rebuilding the subtree.
+     */
     EcsUiBuilder builder = EcsUiBuilderBegin(world, refs->presentation_host);
     ecs_entity_t sheet =
         EcsUiBeginVStack(
@@ -155,20 +166,14 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
                 .gap = 12.0f,
                 .padding = 24.0f,
             });
-    EcsUiBeginButton(
+    (void)EcsUiAddCustom(
         &builder,
-        (EcsUiButtonDesc){
+        (EcsUiCustomDesc){
             .id = "SheetDragHandle",
-            .variant = ECS_UI_BUTTON_SUBTLE,
+            .kind = "demo-drag-handle",
+            .preferred_height = 28.0f,
             .on_click = refs->drag_presentation_action,
         });
-    (void)EcsUiAddIcon(
-        &builder,
-        (EcsUiIconDesc){
-            .id = "SheetDragHandleIcon",
-            .name = "=",
-        });
-    EcsUiEnd(&builder);
     (void)EcsUiAddText(
         &builder,
         (EcsUiTextDesc){
@@ -256,6 +261,11 @@ static void DemoNavProjectPresentationUiSystem(ecs_iter_t *it)
     }
 
     for (int32_t i = 0; i < it->count; i += 1) {
+        /*
+         * This system is the presentation projector: route state lives on a
+         * presentation entity, while this system materializes the corresponding
+         * UI and applies the latest animation value to the retained sheet node.
+         */
         ecs_entity_t route =
             ecs_get_target(it->world, it->entities[i], DemoPresentationRoute, 0);
         ecs_entity_t sheet = 0;
@@ -268,13 +278,6 @@ static void DemoNavProjectPresentationUiSystem(ecs_iter_t *it)
                 sheet,
                 DemoAnimPresentationValue(it->world, it->entities[i]));
         }
-    }
-}
-
-static void DemoNavRemovePresentationUiObserver(ecs_iter_t *it)
-{
-    for (int32_t i = 0; i < it->count; i += 1) {
-        DemoNavDeletePresentationUi(it->world, it->entities[i]);
     }
 }
 
@@ -292,6 +295,11 @@ static void DemoNavPresentRouteSystem(ecs_iter_t *it)
         ecs_entity_t active =
             ecs_get_target(it->world, nav_root, DemoActivePresentation, 0);
         if (active != 0) {
+            /*
+             * Only one presentation is active. Replacing it blurs text input and
+             * deletes the previous sheet immediately because the new route owns
+             * the overlay slot under the viewport.
+             */
             DemoTextInputRequestBlur(it->world);
             DemoNavDeletePresentationUi(it->world, active);
             ecs_delete(it->world, active);
@@ -338,6 +346,11 @@ static void DemoNavBeginPresentationDragSystem(ecs_iter_t *it)
     for (int32_t i = 0; i < it->count; i += 1) {
         ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
         if (active != 0) {
+            /*
+             * Starting a drag captures the current animation value and removes
+             * any linear tween. While the pointer is down, gesture deltas drive
+             * the presentation value directly.
+             */
             const float value = DemoAnimPresentationValue(it->world, active);
             ecs_set(
                 it->world,
@@ -384,6 +397,11 @@ static void DemoNavEndPresentationDragSystem(ecs_iter_t *it)
         if (drag != NULL) {
             const float current =
                 DemoNavDragValue(drag->start_value, requests[i].delta_y);
+            /*
+             * Release policy intentionally mixes distance, velocity, and final
+             * openness. The animation layer then finishes either toward 0
+             * (dismiss and delete) or 1 (snap back to presented).
+             */
             const bool should_dismiss = requests[i].delta_y > 96.0f ||
                 requests[i].velocity_y > 900.0f ||
                 current < 0.52f;
@@ -428,17 +446,6 @@ void DemoNavRegister(ecs_world_t *world)
 
     (void)DemoNavRoot(world);
     ecs_add_id(world, DemoNavAddItemRoute(world), DemoRoute);
-
-    (void)ecs_observer(world, {
-        .entity = ecs_entity(world, {
-            .name = "DemoNavRemovePresentationUiObserver",
-        }),
-        .query.terms = {
-            {.id = DemoPresentation},
-        },
-        .events = {EcsOnRemove},
-        .callback = DemoNavRemovePresentationUiObserver,
-    });
 
     (void)ecs_system(world, {
         .entity = ecs_entity(world, {

@@ -14,7 +14,7 @@ entities.
 - The add-item route materializes a retained presentation subtree; `create item`
   submits `DemoAddItemRequest` and then dismisses the presentation.
 - A scheduled app system creates `DemoItem` entities.
-- UI observers materialize retained item rows from `DemoItem` changes.
+- UI systems materialize retained item rows from `DemoItem` state.
 - Item row buttons carry `(EcsUiOnClick, SelectItemAction)` plus
   `(DemoUiForItem, item)`.
 - Row controls submit relationship-backed request entities such as
@@ -79,7 +79,7 @@ Prove ordered children and app-state ordering work together.
 - Add delete, rename, and reorder actions.
 - Keep app order through Flecs ordered children under `DemoItems`.
 - Keep UI row order through Flecs ordered children under `ItemList`.
-- Use observers/systems to apply minimal row moves instead of rebuilding the
+- Use systems to apply minimal row moves instead of rebuilding the
   entire list.
 
 Definition of done:
@@ -101,7 +101,7 @@ Model a small Glowfish-like route surface.
 Definition of done:
 
 - [x] Opening and dismissing a sheet changes ECS navigation state first.
-- [x] UI observers/materializers project navigation state into retained UI nodes.
+- [x] UI systems/materializers project navigation state into retained UI nodes.
 - [x] Dismissing a presentation removes its UI subtree cleanly.
 
 ## Phase 5: Animation Channels
@@ -154,7 +154,8 @@ Prove text fields can map to Glowfish's focus and request patterns.
 - [x] Use ECS relationships for focus, for example `(DemoFocusedField,
   text_field_entity)`.
 - [x] Submit insert/delete/focus/blur requests from input events.
-- [x] Update text nodes through observers when field state changes.
+- [x] Update text nodes through scheduled projection systems when field state
+  changes.
 - [x] Use the text field value to create named demo items.
 
 Definition of done:
@@ -196,3 +197,103 @@ Definition of done:
 - [x] A retained ECS UI tree can be read by both raylib and Clay-oriented code.
 - [x] Renderer-specific event data stays at the edge.
 - [x] Core `ecs-ui` remains reusable by Glowfish and other projects.
+
+## Phase 10: Projection Glue Layer
+
+The demo has enough app-state-to-UI-state glue to prove the model, but the
+pattern needs structure before using it in `glowfish-mobile`.
+
+- [x] Define a small projection API for retained UI subtrees owned by app
+  entities.
+- [x] Standardize source-to-UI relationships such as projection root, projected
+  source, and named projected child nodes.
+- [x] Replace demo-specific row lifecycle glue with the projection helpers.
+- [x] Provide a reusable ordered-children sync helper for source order to UI
+  order.
+- [x] Keep event context relationship-backed so actions can resolve the app
+  entity without string matching.
+
+Definition of done:
+
+- [x] Creating an app entity materializes its retained UI subtree once.
+- [x] Updating source components mutates only the affected projected UI nodes.
+- [x] Deleting an app entity deletes its projected UI subtree with no orphan
+  nodes.
+- [x] Reordering source entities updates UI order through shared projection code.
+- [x] The demo makes clear which glue is generic projection infrastructure and
+  which glue remains app-specific policy.
+
+## Phase 11: Reusable Sub-Libraries
+
+Move proven demo concepts into focused `ecs-ui` libraries only where the shape is
+general enough for Glowfish and other projects.
+
+- [ ] Extract animation primitives into an `ecs-ui-animation` layer that can
+  drive `EcsUiVisual` without depending on raylib or Clay.
+- [ ] Extract navigation primitives into an `ecs-ui-navigation` layer for route
+  definitions, active presentations, presentation hosts, and present/dismiss
+  requests.
+- [ ] Evaluate whether text input belongs in a reusable layer or should remain a
+  demo/app integration pattern for now.
+- [ ] Keep renderer adapters separate from app-state libraries.
+- [ ] Update CMake targets so sub-libraries can be adopted independently.
+
+Definition of done:
+
+- [ ] The raylib demo consumes extracted navigation and animation APIs instead
+  of demo-local copies.
+- [ ] Public headers expose renderer-agnostic ECS components, tags, and helper
+  systems.
+- [ ] Demo-specific route names, item state, and UI copy remain in the demo.
+- [ ] `glowfish-mobile` can choose projection/navigation/animation pieces
+  without taking the raylib demo.
+- [ ] Any feature too broad for this plan is split into a dedicated design doc
+  before implementation.
+
+## Phase 12: App World / UI World Split
+
+Pressure test whether the retained UI tree should live in a separate Flecs world
+from app state.
+
+- [x] Keep `DemoItem`, selection, app ordering, and app request systems in an
+  app world.
+- [x] Keep retained UI nodes, navigation, text input, animation, and renderer
+  state in a UI world.
+- [x] Bridge UI events to app requests through stable item ids instead of
+  cross-world entity relationships.
+- [x] Mirror app items into ordered UI-world source proxies before creating or
+  ordering retained rows.
+- [x] Run the frame as app progress, projection sync, UI progress, then tree
+  read/render.
+
+Definition of done:
+
+- [x] App entity ids are not stored as UI relationship targets.
+- [x] UI systems progress after app state has been projected into the UI world.
+- [x] Add, select, rename, reorder, delete, delete-to-zero, and add-again work
+  without ordered-child assertions.
+- [x] The scheduling note documents the two-world bridge.
+
+## Phase 13: Keyed Collection Projection
+
+The item-list bridge should be a reusable library pattern, not a bespoke demo
+reconciler.
+
+- [x] Add a core `EcsUiProjectionSyncCollection` helper for stable-keyed source
+  proxies.
+- [x] Let callers provide source sync, retained-root build, and retained-root
+  update callbacks.
+- [x] Move source proxy creation, stale proxy cleanup, retained root deletion,
+  and source/UI ordering into core projection code.
+- [x] Keep demo policy in the demo: reading app DTOs, building item rows,
+  applying selection state, and choosing row copy.
+- [x] Cover create, update, reorder, stale delete, and empty collection cleanup
+  in projection tests.
+
+Definition of done:
+
+- [x] The raylib demo item list uses the core keyed collection projection helper.
+- [x] Empty collections can be synced without a dummy item array.
+- [x] Delete-to-zero does not call Flecs ordered-child APIs with an empty child
+  array.
+- [x] The helper stays renderer-agnostic and app-agnostic.

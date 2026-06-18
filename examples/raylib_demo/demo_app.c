@@ -13,11 +13,11 @@ ECS_TAG_DECLARE(DemoMoveItemUpRequest);
 ECS_TAG_DECLARE(DemoMoveItemDownRequest);
 ECS_TAG_DECLARE(DemoItemOrderDirty);
 ECS_TAG_DECLARE(DemoSelectedItem);
-ECS_TAG_DECLARE(DemoItemUiNode);
 ECS_TAG_DECLARE(DemoItemSelectUiNode);
 ECS_TAG_DECLARE(DemoItemLabelUiNode);
 ECS_TAG_DECLARE(DemoItemMetaUiNode);
-ECS_TAG_DECLARE(DemoUiForItem);
+ECS_TAG_DECLARE(DemoItemUpUiNode);
+ECS_TAG_DECLARE(DemoItemDownUiNode);
 
 ecs_entity_t DemoAppItemRoot(ecs_world_t *world)
 {
@@ -31,6 +31,40 @@ ecs_entity_t DemoAppSelectionRoot(ecs_world_t *world)
     return ecs_entity(world, {.name = "DemoSelection"});
 }
 
+ecs_entity_t DemoAppFindItemById(ecs_world_t *world, uint32_t item_id)
+{
+    if (world == NULL || item_id == 0u) {
+        return 0;
+    }
+
+    ecs_iter_t it = ecs_each(world, DemoItem);
+    while (ecs_each_next(&it)) {
+        const DemoItem *items = ecs_field(&it, DemoItem, 0);
+        for (int32_t i = 0; i < it.count; i += 1) {
+            if (items[i].id == item_id) {
+                return it.entities[i];
+            }
+        }
+    }
+    return 0;
+}
+
+uint32_t DemoAppSelectedItemId(ecs_world_t *world)
+{
+    if (world == NULL) {
+        return 0u;
+    }
+
+    ecs_entity_t selected = ecs_get_target(
+        world,
+        DemoAppSelectionRoot(world),
+        DemoSelectedItem,
+        0);
+    const DemoItem *item =
+        selected != 0 ? ecs_get(world, selected, DemoItem) : NULL;
+    return item != NULL ? item->id : 0u;
+}
+
 void DemoAppRequestAddItem(ecs_world_t *world)
 {
     DemoAppRequestAddNamedItem(world, NULL);
@@ -42,6 +76,12 @@ void DemoAppRequestAddNamedItem(ecs_world_t *world, const char *label)
         return;
     }
 
+    /*
+     * Public "request" helpers do not mutate app state directly. They create
+     * short-lived ECS entities that systems consume during ecs_progress(), which
+     * keeps raylib event handling, domain mutation, and UI projection ordered by
+     * Flecs scheduling instead of by call stack side effects.
+     */
     ecs_entity_t request = ecs_new(world);
     ecs_set(
         world,
@@ -108,8 +148,38 @@ void DemoAppRequestMoveItemDown(ecs_world_t *world, ecs_entity_t item)
     (void)ecs_new_w_pair(world, DemoMoveItemDownRequest, item);
 }
 
+void DemoAppRequestSelectItemId(ecs_world_t *world, uint32_t item_id)
+{
+    DemoAppRequestSelectItem(world, DemoAppFindItemById(world, item_id));
+}
+
+void DemoAppRequestDeleteItemId(ecs_world_t *world, uint32_t item_id)
+{
+    DemoAppRequestDeleteItem(world, DemoAppFindItemById(world, item_id));
+}
+
+void DemoAppRequestRenameItemId(ecs_world_t *world, uint32_t item_id)
+{
+    DemoAppRequestRenameItem(world, DemoAppFindItemById(world, item_id));
+}
+
+void DemoAppRequestMoveItemUpId(ecs_world_t *world, uint32_t item_id)
+{
+    DemoAppRequestMoveItemUp(world, DemoAppFindItemById(world, item_id));
+}
+
+void DemoAppRequestMoveItemDownId(ecs_world_t *world, uint32_t item_id)
+{
+    DemoAppRequestMoveItemDown(world, DemoAppFindItemById(world, item_id));
+}
+
 static void DemoAppMarkItemOrderDirty(ecs_world_t *world)
 {
+    /*
+     * Ordering is stored on the item root via EcsOrderedChildren. A dirty tag is
+     * enough to defer the UI list reorder to the projection system, where row
+     * materialization and row ordering can be synchronized in one place.
+     */
     ecs_add_id(world, DemoAppItemRoot(world), DemoItemOrderDirty);
 }
 
@@ -167,6 +237,11 @@ static void DemoAppAddItemSystem(ecs_iter_t *it)
     const DemoAddItemRequest *requests = ecs_field(it, DemoAddItemRequest, 0);
     ecs_entity_t item_root = DemoAppItemRoot(it->world);
     for (int32_t i = 0; i < it->count; i += 1) {
+        /*
+         * Creating the item under DemoItems gives the domain model stable
+         * ordered children. A scheduled UI projection system later maps that
+         * source entity into a retained row node.
+         */
         const uint32_t item_id = sequence->next_item_id;
         sequence->next_item_id += 1u;
 
@@ -314,23 +389,17 @@ void DemoAppRegister(ecs_world_t *world)
     ECS_TAG_DEFINE(world, DemoMoveItemDownRequest);
     ECS_TAG_DEFINE(world, DemoItemOrderDirty);
     ECS_TAG_DEFINE(world, DemoSelectedItem);
-    ECS_TAG_DEFINE(world, DemoItemUiNode);
-    ECS_TAG_DEFINE(world, DemoItemSelectUiNode);
-    ECS_TAG_DEFINE(world, DemoItemLabelUiNode);
-    ECS_TAG_DEFINE(world, DemoItemMetaUiNode);
-    ECS_TAG_DEFINE(world, DemoUiForItem);
     ecs_add_id(world, DemoSelectItemRequest, EcsExclusive);
     ecs_add_id(world, DemoDeleteItemRequest, EcsExclusive);
     ecs_add_id(world, DemoRenameItemRequest, EcsExclusive);
     ecs_add_id(world, DemoMoveItemUpRequest, EcsExclusive);
     ecs_add_id(world, DemoMoveItemDownRequest, EcsExclusive);
     ecs_add_id(world, DemoSelectedItem, EcsExclusive);
-    ecs_add_id(world, DemoItemUiNode, EcsExclusive);
-    ecs_add_id(world, DemoItemSelectUiNode, EcsExclusive);
-    ecs_add_id(world, DemoItemLabelUiNode, EcsExclusive);
-    ecs_add_id(world, DemoItemMetaUiNode, EcsExclusive);
-    ecs_add_id(world, DemoUiForItem, EcsExclusive);
 
+    /*
+     * The request and selection relationships are exclusive pairs: a request
+     * entity targets one item, and the selection root targets one selected item.
+     */
     ecs_singleton_set(
         world,
         DemoItemSequence,

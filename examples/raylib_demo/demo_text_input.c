@@ -42,6 +42,11 @@ ecs_entity_t DemoTextInputAddItemNameField(ecs_world_t *world)
         return 0;
     }
 
+    /*
+     * Text fields are domain state, not special renderer widgets. The button
+     * built later is just a projected view of this DemoTextField entity and is
+     * refreshed by a scheduled projection system.
+     */
     ecs_entity_t root = DemoTextInputRoot(world);
     ecs_entity_t field = ecs_entity(world, {
         .parent = root,
@@ -88,6 +93,12 @@ static void DemoTextInputUpdateFieldUi(
         return;
     }
 
+    /*
+     * The demo keeps text editing deliberately simple: focused fields show an
+     * inline caret marker and use the primary button style, while unfocused
+     * empty fields show placeholder text. The UI nodes are looked up through
+     * field-to-node relationships created during field projection.
+     */
     const bool focused = DemoTextInputIsFocused(world, field);
     char display[ECS_UI_TEXT_MAX] = {0};
     if (focused) {
@@ -111,12 +122,15 @@ static void DemoTextInputUpdateFieldUi(
     EcsUiText *text =
         value_node != 0 ? ecs_get_mut(world, value_node, EcsUiText) : NULL;
     if (text != NULL) {
-        DemoTextInputCopyString(text->text, sizeof(text->text), display);
-        text->role =
+        EcsUiTextRole role =
             field_data->value[0] != '\0' || focused ?
                 ECS_UI_TEXT_BUTTON :
                 ECS_UI_TEXT_CAPTION;
-        ecs_modified(world, value_node, EcsUiText);
+        if (text->role != role || strcmp(text->text, display) != 0) {
+            DemoTextInputCopyString(text->text, sizeof(text->text), display);
+            text->role = role;
+            ecs_modified(world, value_node, EcsUiText);
+        }
     }
 
     ecs_entity_t field_node =
@@ -124,25 +138,28 @@ static void DemoTextInputUpdateFieldUi(
     EcsUiButton *button =
         field_node != 0 ? ecs_get_mut(world, field_node, EcsUiButton) : NULL;
     if (button != NULL) {
-        button->variant =
+        EcsUiButtonVariant variant =
             focused ? ECS_UI_BUTTON_PRIMARY : ECS_UI_BUTTON_SUBTLE;
-        ecs_modified(world, field_node, EcsUiButton);
+        if (button->variant != variant) {
+            button->variant = variant;
+            ecs_modified(world, field_node, EcsUiButton);
+        }
     }
     if (field_node != 0) {
-        ecs_set(
-            world,
-            field_node,
-            EcsUiVisual,
-            {
-                .opacity = 1.0f,
-                .highlight = focused ? 0.22f : 0.0f,
-            });
+        const float highlight = focused ? 0.22f : 0.0f;
+        const EcsUiVisual *visual = ecs_get(world, field_node, EcsUiVisual);
+        if (visual == NULL || visual->opacity != 1.0f ||
+            visual->highlight != highlight) {
+            ecs_set(
+                world,
+                field_node,
+                EcsUiVisual,
+                {
+                    .opacity = 1.0f,
+                    .highlight = highlight,
+                });
+        }
     }
-}
-
-static void DemoTextInputRefreshFieldUi(ecs_world_t *world)
-{
-    DemoTextInputUpdateFieldUi(world, DemoTextInputAddItemNameField(world));
 }
 
 ecs_entity_t DemoTextInputBuildAddItemNameField(
@@ -178,6 +195,12 @@ ecs_entity_t DemoTextInputBuildAddItemNameField(
     EcsUiEnd(builder);
 
     if (EcsUiBuilderOk(builder) && field_node != 0) {
+        /*
+         * The field entity owns links to its rendered button/text nodes, and
+         * the button points back to the field. Event handling needs the reverse
+         * link for clicks; projection systems need the forward links for visual
+         * refresh.
+         */
         ecs_add_pair(world, field, DemoTextFieldUiNode, field_node);
         ecs_add_pair(world, field_node, DemoUiForTextField, field);
         if (value_node != 0) {
@@ -194,6 +217,12 @@ void DemoTextInputRequestFocusField(ecs_world_t *world, ecs_entity_t field)
         return;
     }
 
+    /*
+     * Focus, blur, insert, and delete all go through requests so keyboard input
+     * collected at the renderer edge is applied during ECS progress. That keeps
+     * focus relationships exclusive and lets projection systems update visuals
+     * once per frame.
+     */
     (void)ecs_new_w_pair(world, DemoFocusTextFieldRequest, field);
 }
 
@@ -291,6 +320,11 @@ static void DemoTextInputFocusFieldSystem(ecs_iter_t *it)
         ecs_entity_t field =
             ecs_get_target(it->world, it->entities[i], DemoFocusTextFieldRequest, 0);
         if (field != 0 && ecs_has(it->world, field, DemoTextField)) {
+            /*
+             * Focus is represented as an exclusive relationship from the text
+             * input root to one field. A later projection system redraws field
+             * chrome from the resulting ECS state.
+             */
             ecs_add_pair(
                 it->world,
                 DemoTextInputRoot(it->world),
@@ -346,16 +380,16 @@ static void DemoTextInputDeleteSystem(ecs_iter_t *it)
     }
 }
 
-static void DemoTextInputFieldChangedObserver(ecs_iter_t *it)
+static void DemoTextInputProjectFieldsSystem(ecs_iter_t *it)
 {
     for (int32_t i = 0; i < it->count; i += 1) {
+        /*
+         * Value and focus mutations happen in request systems, but visual
+         * mutation is kept here. That mirrors the item-row projection pattern:
+         * data changes first, retained UI nodes are refreshed by systems second.
+         */
         DemoTextInputUpdateFieldUi(it->world, it->entities[i]);
     }
-}
-
-static void DemoTextInputFocusChangedObserver(ecs_iter_t *it)
-{
-    DemoTextInputRefreshFieldUi(it->world);
 }
 
 void DemoTextInputRegister(ecs_world_t *world)
@@ -422,25 +456,14 @@ void DemoTextInputRegister(ecs_world_t *world)
         .callback = DemoTextInputDeleteSystem,
     });
 
-    (void)ecs_observer(world, {
+    (void)ecs_system(world, {
         .entity = ecs_entity(world, {
-            .name = "DemoTextInputFieldChangedObserver",
+            .name = "DemoTextInputProjectFieldsSystem",
+            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
         }),
         .query.terms = {
             {.id = ecs_id(DemoTextField)},
         },
-        .events = {EcsOnSet},
-        .callback = DemoTextInputFieldChangedObserver,
-    });
-
-    (void)ecs_observer(world, {
-        .entity = ecs_entity(world, {
-            .name = "DemoTextInputFocusChangedObserver",
-        }),
-        .query.terms = {
-            {.id = ecs_pair(DemoFocusedField, EcsWildcard)},
-        },
-        .events = {EcsOnAdd, EcsOnRemove},
-        .callback = DemoTextInputFocusChangedObserver,
+        .callback = DemoTextInputProjectFieldsSystem,
     });
 }
