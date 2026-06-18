@@ -6,13 +6,6 @@
 
 #include <raylib.h>
 
-ECS_TAG_DECLARE(DemoRoute);
-ECS_TAG_DECLARE(DemoPresentation);
-ECS_TAG_DECLARE(DemoPresentationRoute);
-ECS_TAG_DECLARE(DemoPresentationUiNode);
-ECS_TAG_DECLARE(DemoActivePresentation);
-ECS_TAG_DECLARE(DemoPresentRouteRequest);
-ECS_TAG_DECLARE(DemoDismissPresentationRequest);
 ECS_COMPONENT_DECLARE(DemoPresentationDrag);
 ECS_TAG_DECLARE(DemoBeginPresentationDragRequest);
 ECS_COMPONENT_DECLARE(DemoUpdatePresentationDragRequest);
@@ -37,36 +30,28 @@ static float DemoNavDragValue(float start_value, float delta_y)
 
 ecs_entity_t DemoNavRoot(ecs_world_t *world)
 {
-    return ecs_entity(world, {.name = "DemoNavigation"});
+    return EcsUiNavRoot(world);
 }
 
 ecs_entity_t DemoNavAddItemRoute(ecs_world_t *world)
 {
-    return ecs_entity(world, {.name = "DemoAddItemRoute"});
+    return EcsUiNavRoute(world, "DemoAddItemRoute");
 }
 
 void DemoNavRequestPresentRoute(ecs_world_t *world, ecs_entity_t route)
 {
-    if (world == NULL || route == 0 || !ecs_has_id(world, route, DemoRoute)) {
-        return;
-    }
-
     /*
      * Navigation follows the same event-to-request pattern as app actions.
      * Routes are durable entities; presentation requests are transient entities
      * that tell the nav system which route should become active during the
      * next ecs_progress() pass.
      */
-    (void)ecs_new_w_pair(world, DemoPresentRouteRequest, route);
+    (void)EcsUiNavRequestPresentRoute(world, route);
 }
 
 void DemoNavRequestDismissPresentation(ecs_world_t *world)
 {
-    if (world == NULL) {
-        return;
-    }
-
-    (void)ecs_new_w_id(world, DemoDismissPresentationRequest);
+    (void)EcsUiNavRequestDismissPresentation(world);
 }
 
 void DemoNavRequestBeginPresentationDrag(ecs_world_t *world)
@@ -116,11 +101,7 @@ void DemoNavRequestEndPresentationDrag(
 
 static ecs_entity_t DemoNavActivePresentationEntity(ecs_world_t *world)
 {
-    return ecs_get_target(
-        world,
-        DemoNavRoot(world),
-        DemoActivePresentation,
-        0);
+    return EcsUiNavActivePresentation(world);
 }
 
 static void DemoNavDeletePresentationUi(
@@ -128,7 +109,7 @@ static void DemoNavDeletePresentationUi(
     ecs_entity_t presentation)
 {
     ecs_entity_t ui =
-        ecs_get_target(world, presentation, DemoPresentationUiNode, 0);
+        EcsUiNavPresentationUiNode(world, presentation);
     if (ui != 0) {
         ecs_delete(world, ui);
     }
@@ -147,7 +128,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
     }
 
     ecs_entity_t existing =
-        ecs_get_target(world, presentation, DemoPresentationUiNode, 0);
+        EcsUiNavPresentationUiNode(world, presentation);
     if (existing != 0) {
         return existing;
     }
@@ -247,7 +228,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
     EcsUiBuilderEnd(&builder);
 
     if (EcsUiBuilderOk(&builder) && sheet != 0) {
-        ecs_add_pair(world, presentation, DemoPresentationUiNode, sheet);
+        (void)EcsUiNavSetPresentationUiNode(world, presentation, sheet);
         return sheet;
     }
     return 0;
@@ -267,7 +248,7 @@ static void DemoNavProjectPresentationUiSystem(ecs_iter_t *it)
          * UI and applies the latest animation value to the retained sheet node.
          */
         ecs_entity_t route =
-            ecs_get_target(it->world, it->entities[i], DemoPresentationRoute, 0);
+            EcsUiNavPresentationRoute(it->world, it->entities[i]);
         ecs_entity_t sheet = 0;
         if (route == DemoNavAddItemRoute(it->world)) {
             sheet = DemoNavCreateAddItemSheet(it->world, it->entities[i], refs);
@@ -283,17 +264,19 @@ static void DemoNavProjectPresentationUiSystem(ecs_iter_t *it)
 
 static void DemoNavPresentRouteSystem(ecs_iter_t *it)
 {
-    ecs_entity_t nav_root = DemoNavRoot(it->world);
     for (int32_t i = 0; i < it->count; i += 1) {
         ecs_entity_t route =
-            ecs_get_target(it->world, it->entities[i], DemoPresentRouteRequest, 0);
-        if (route == 0 || !ecs_has_id(it->world, route, DemoRoute)) {
+            ecs_get_target(
+                it->world,
+                it->entities[i],
+                EcsUiPresentRouteRequest,
+                0);
+        if (!EcsUiNavIsRoute(it->world, route)) {
             ecs_delete(it->world, it->entities[i]);
             continue;
         }
 
-        ecs_entity_t active =
-            ecs_get_target(it->world, nav_root, DemoActivePresentation, 0);
+        ecs_entity_t active = EcsUiNavActivePresentation(it->world);
         if (active != 0) {
             /*
              * Only one presentation is active. Replacing it blurs text input and
@@ -306,8 +289,11 @@ static void DemoNavPresentRouteSystem(ecs_iter_t *it)
         }
 
         ecs_entity_t presentation =
-            ecs_new_w_pair(it->world, EcsChildOf, nav_root);
-        ecs_add_id(it->world, presentation, DemoPresentation);
+            EcsUiNavCreatePresentation(it->world, route);
+        if (presentation == 0) {
+            ecs_delete(it->world, it->entities[i]);
+            continue;
+        }
         DemoAnimStartPresentation(
             it->world,
             presentation,
@@ -315,8 +301,6 @@ static void DemoNavPresentRouteSystem(ecs_iter_t *it)
             1.0f,
             0.22f,
             false);
-        ecs_add_pair(it->world, presentation, DemoPresentationRoute, route);
-        ecs_add_pair(it->world, nav_root, DemoActivePresentation, presentation);
         TraceLog(LOG_INFO, "DEMO: presented route %s", ecs_get_name(it->world, route));
         ecs_delete(it->world, it->entities[i]);
     }
@@ -427,25 +411,15 @@ static void DemoNavEndPresentationDragSystem(ecs_iter_t *it)
 
 void DemoNavRegister(ecs_world_t *world)
 {
-    ECS_TAG_DEFINE(world, DemoRoute);
-    ECS_TAG_DEFINE(world, DemoPresentation);
-    ECS_TAG_DEFINE(world, DemoPresentationRoute);
-    ECS_TAG_DEFINE(world, DemoPresentationUiNode);
-    ECS_TAG_DEFINE(world, DemoActivePresentation);
-    ECS_TAG_DEFINE(world, DemoPresentRouteRequest);
-    ECS_TAG_DEFINE(world, DemoDismissPresentationRequest);
+    EcsUiNavigationImport(world);
+
     ECS_COMPONENT_DEFINE(world, DemoPresentationDrag);
     ECS_TAG_DEFINE(world, DemoBeginPresentationDragRequest);
     ECS_COMPONENT_DEFINE(world, DemoUpdatePresentationDragRequest);
     ECS_COMPONENT_DEFINE(world, DemoEndPresentationDragRequest);
 
-    ecs_add_id(world, DemoPresentationRoute, EcsExclusive);
-    ecs_add_id(world, DemoPresentationUiNode, EcsExclusive);
-    ecs_add_id(world, DemoActivePresentation, EcsExclusive);
-    ecs_add_id(world, DemoPresentRouteRequest, EcsExclusive);
-
     (void)DemoNavRoot(world);
-    ecs_add_id(world, DemoNavAddItemRoute(world), DemoRoute);
+    (void)DemoNavAddItemRoute(world);
 
     (void)ecs_system(world, {
         .entity = ecs_entity(world, {
@@ -453,8 +427,8 @@ void DemoNavRegister(ecs_world_t *world)
             .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
         }),
         .query.terms = {
-            {.id = DemoPresentation},
-            {.id = ecs_pair(DemoPresentationRoute, EcsWildcard)},
+            {.id = EcsUiPresentation},
+            {.id = ecs_pair(EcsUiPresentationRoute, EcsWildcard)},
         },
         .callback = DemoNavProjectPresentationUiSystem,
     });
@@ -465,7 +439,7 @@ void DemoNavRegister(ecs_world_t *world)
             .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
         }),
         .query.terms = {
-            {.id = ecs_pair(DemoPresentRouteRequest, EcsWildcard)},
+            {.id = ecs_pair(EcsUiPresentRouteRequest, EcsWildcard)},
         },
         .callback = DemoNavPresentRouteSystem,
     });
@@ -476,7 +450,7 @@ void DemoNavRegister(ecs_world_t *world)
             .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
         }),
         .query.terms = {
-            {.id = DemoDismissPresentationRequest},
+            {.id = EcsUiDismissPresentationRequest},
         },
         .callback = DemoNavDismissPresentationSystem,
     });

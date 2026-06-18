@@ -2,14 +2,7 @@
 #define ECS_UI_RAYLIB_DEMO_NAV_H
 
 #include "demo_app.h"
-
-extern ECS_TAG_DECLARE(DemoRoute);
-extern ECS_TAG_DECLARE(DemoPresentation);
-extern ECS_TAG_DECLARE(DemoPresentationRoute);
-extern ECS_TAG_DECLARE(DemoPresentationUiNode);
-extern ECS_TAG_DECLARE(DemoActivePresentation);
-extern ECS_TAG_DECLARE(DemoPresentRouteRequest);
-extern ECS_TAG_DECLARE(DemoDismissPresentationRequest);
+#include "ecs_ui/ecs_ui_navigation.h"
 
 typedef struct DemoPresentationDrag {
     float start_value;

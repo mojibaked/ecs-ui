@@ -46,7 +46,7 @@ void DemoAnimApplyPresentationVisual(
     float value)
 {
     ecs_entity_t sheet =
-        ecs_get_target(world, presentation, DemoPresentationUiNode, 0);
+        EcsUiNavPresentationUiNode(world, presentation);
     DemoAnimApplyVisualToNode(world, sheet, value);
 }
 
@@ -129,17 +129,9 @@ static void DemoAnimDeletePresentationAfterExit(
     ecs_world_t *world,
     ecs_entity_t presentation)
 {
-    ecs_entity_t nav_root = DemoNavRoot(world);
-    if (ecs_get_target(world, nav_root, DemoActivePresentation, 0) ==
-        presentation) {
-        ecs_remove_pair(
-            world,
-            nav_root,
-            DemoActivePresentation,
-            EcsWildcard);
-    }
+    (void)EcsUiNavClearActivePresentation(world, presentation);
     ecs_entity_t ui =
-        ecs_get_target(world, presentation, DemoPresentationUiNode, 0);
+        EcsUiNavPresentationUiNode(world, presentation);
     if (ui != 0) {
         ecs_delete(world, ui);
     }
@@ -153,7 +145,7 @@ static void DemoAnimProjectVisualsSystem(ecs_iter_t *it)
 
     for (int32_t i = 0; i < it->count; i += 1) {
         const ecs_entity_t entity = it->entities[i];
-        if (ecs_has_id(it->world, entity, DemoPresentation)) {
+        if (ecs_has_id(it->world, entity, EcsUiPresentation)) {
             DemoAnimApplyPresentationVisual(
                 it->world,
                 entity,
@@ -180,7 +172,7 @@ static void DemoAnimCompleteSystem(ecs_iter_t *it)
     for (int32_t i = 0; i < it->count; i += 1) {
         const ecs_entity_t entity = it->entities[i];
         const bool is_presentation =
-            ecs_has_id(it->world, entity, DemoPresentation);
+            ecs_has_id(it->world, entity, EcsUiPresentation);
         const bool is_row =
             ecs_has_id(it->world, entity, DemoAnimatedRow);
         const bool is_selection =

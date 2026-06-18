@@ -1,6 +1,7 @@
 #include "demo_ui_internal.h"
 
 #include "demo_terminal.h"
+#include "ecs_ui/ecs_ui_navigation.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -114,6 +115,11 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
      * systems. It keeps action tokens plus a few anchor nodes that dynamic
      * projections use as insertion points, avoiding repeated id scans later.
      */
+    ecs_entity_t presentation_host = DemoUiFindNodeById(world, "DemoViewport");
+    if (presentation_host != 0) {
+        ecs_add_id(world, presentation_host, EcsUiPresentationHost);
+    }
+
     ecs_singleton_set(
         world,
         DemoUiRefs,
@@ -128,7 +134,7 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
             .rename_item_action = rename_item_action,
             .move_item_up_action = move_item_up_action,
             .move_item_down_action = move_item_down_action,
-            .presentation_host = DemoUiFindNodeById(world, "DemoViewport"),
+            .presentation_host = presentation_host,
             .item_list = DemoUiFindNodeById(world, "ItemList"),
             .status_text = DemoUiFindNodeById(world, "EventStatus"),
         });

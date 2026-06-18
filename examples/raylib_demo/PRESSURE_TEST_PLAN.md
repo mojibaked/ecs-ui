@@ -10,7 +10,7 @@ entities.
 - UI hierarchy is authored once with `VStack`, `HStack`, `Button`, `Icon`, and
   `Text`.
 - `Button` actions use `(EcsUiOnClick, ActionEntity)`.
-- Clicking `add item` submits `(DemoPresentRouteRequest, DemoAddItemRoute)`.
+- Clicking `add item` submits `(EcsUiPresentRouteRequest, DemoAddItemRoute)`.
 - The add-item route materializes a retained presentation subtree; `create item`
   submits `DemoAddItemRequest` and then dismisses the presentation.
 - A scheduled app system creates `DemoItem` entities.
@@ -22,8 +22,8 @@ entities.
 - App state stores `(DemoSelectedItem, item)` on `DemoSelection`.
 - Selected row styling is projected from `(DemoSelectedItem, item)` onto row UI
   buttons.
-- Navigation state stores `(DemoActivePresentation, presentation)` on
-  `DemoNavigation`; each presentation stores `(DemoPresentationRoute, route)`.
+- Navigation state stores `(EcsUiActivePresentation, presentation)` on
+  `EcsUiNavigation`; each presentation stores `(EcsUiPresentationRoute, route)`.
 
 ## Phase 1: Relationship-Backed Row Actions
 
@@ -230,22 +230,22 @@ general enough for Glowfish and other projects.
 
 - [x] Extract animation primitives into an `ecs-ui-animation` layer that can
   drive `EcsUiVisual` without depending on raylib or Clay.
-- [ ] Extract navigation primitives into an `ecs-ui-navigation` layer for route
+- [x] Extract navigation primitives into an `ecs-ui-navigation` layer for route
   definitions, active presentations, presentation hosts, and present/dismiss
   requests.
 - [ ] Evaluate whether text input belongs in a reusable layer or should remain a
   demo/app integration pattern for now.
-- [ ] Keep renderer adapters separate from app-state libraries.
-- [ ] Update CMake targets so sub-libraries can be adopted independently.
+- [x] Keep renderer adapters separate from app-state libraries.
+- [x] Update CMake targets so sub-libraries can be adopted independently.
 
 Definition of done:
 
-- [ ] The raylib demo consumes extracted navigation and animation APIs instead
+- [x] The raylib demo consumes extracted navigation and animation APIs instead
   of demo-local copies.
-- [ ] Public headers expose renderer-agnostic ECS components, tags, and helper
-  systems.
-- [ ] Demo-specific route names, item state, and UI copy remain in the demo.
-- [ ] `glowfish-mobile` can choose projection/navigation/animation pieces
+- [x] Public headers expose renderer-agnostic ECS components, tags, and helper
+  functions/systems.
+- [x] Demo-specific route names, item state, and UI copy remain in the demo.
+- [x] `glowfish-mobile` can choose projection/navigation/animation pieces
   without taking the raylib demo.
 - [ ] Any feature too broad for this plan is split into a dedicated design doc
   before implementation.

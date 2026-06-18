@@ -1,5 +1,6 @@
 #include "ecs_ui/ecs_ui.h"
 #include "ecs_ui/ecs_ui_animation.h"
+#include "ecs_ui/ecs_ui_navigation.h"
 #include "ecs_ui/ecs_ui_projection.h"
 
 #include <stdio.h>
@@ -188,6 +189,7 @@ int main(void)
 
     EcsUiImport(world);
     EcsUiAnimationImport(world);
+    EcsUiNavigationImport(world);
     EcsUiProjectionImport(world);
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     int result = 0;
@@ -209,6 +211,18 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiLinear1f) != 0,
         "EcsUiLinear1f should be registered");
+    result |= Require(
+        ecs_has_id(world, EcsUiPresentationRoute, EcsExclusive),
+        "EcsUiPresentationRoute should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiPresentationUiNode, EcsExclusive),
+        "EcsUiPresentationUiNode should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiActivePresentation, EcsExclusive),
+        "EcsUiActivePresentation should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiPresentRouteRequest, EcsExclusive),
+        "EcsUiPresentRouteRequest should be exclusive");
 
     ecs_entity_t animation_target =
         ecs_entity(world, {.name = "AnimationTarget"});
@@ -289,6 +303,89 @@ int main(void)
             0.0001f,
             "highlight value mismatch");
     }
+
+    ecs_entity_t nav_root = EcsUiNavRoot(world);
+    ecs_entity_t route = EcsUiNavRoute(world, "TestRoute");
+    result |= Require(nav_root != 0, "navigation root should be created");
+    result |= Require(route != 0, "navigation route should be created");
+    result |= Require(
+        EcsUiNavIsRoute(world, route),
+        "navigation route should be tagged");
+    result |= Require(
+        EcsUiNavRequestPresentRoute(world, 0) == 0,
+        "invalid route should not create present request");
+    ecs_entity_t present_request =
+        EcsUiNavRequestPresentRoute(world, route);
+    result |= Require(
+        present_request != 0 &&
+            ecs_get_target(
+                world,
+                present_request,
+                EcsUiPresentRouteRequest,
+                0) == route,
+        "present request should target route");
+    ecs_entity_t dismiss_request =
+        EcsUiNavRequestDismissPresentation(world);
+    result |= Require(
+        dismiss_request != 0 &&
+            ecs_has_id(world, dismiss_request, EcsUiDismissPresentationRequest),
+        "dismiss request should be tagged");
+
+    ecs_entity_t presentation =
+        EcsUiNavCreatePresentation(world, route);
+    result |= Require(
+        presentation != 0 &&
+            ecs_get_parent(world, presentation) == nav_root,
+        "presentation should be child of nav root");
+    result |= Require(
+        EcsUiNavPresentationRoute(world, presentation) == route,
+        "presentation should target route");
+    result |= Require(
+        EcsUiNavActivePresentation(world) == presentation,
+        "presentation should become active");
+    ecs_entity_t presentation_node =
+        ecs_entity(world, {.name = "PresentationNode"});
+    result |= Require(
+        EcsUiNavSetPresentationUiNode(
+            world,
+            presentation,
+            presentation_node),
+        "presentation UI node link should be set");
+    result |= Require(
+        EcsUiNavPresentationUiNode(world, presentation) == presentation_node,
+        "presentation UI node should round trip");
+    result |= Require(
+        !EcsUiNavSetActivePresentation(world, presentation_node),
+        "non-presentation entity should not become active");
+    result |= Require(
+        EcsUiNavActivePresentation(world) == presentation,
+        "invalid active setter should not replace active presentation");
+    result |= Require(
+        !EcsUiNavClearActivePresentation(world, presentation_node),
+        "clearing non-active presentation should fail");
+    result |= Require(
+        EcsUiNavActivePresentation(world) == presentation,
+        "non-active clear should not clear active presentation");
+    result |= Require(
+        EcsUiNavClearActivePresentation(world, presentation),
+        "active presentation should clear");
+    result |= Require(
+        EcsUiNavActivePresentation(world) == 0,
+        "active presentation should be empty after clear");
+    ecs_defer_begin(world);
+    ecs_entity_t staged_presentation =
+        EcsUiNavCreatePresentation(world, route);
+    ecs_defer_end(world);
+    result |= Require(
+        staged_presentation != 0 &&
+            EcsUiNavActivePresentation(world) == staged_presentation,
+        "deferred presentation should become active after merge");
+    result |= Require(
+        EcsUiNavPresentationRoute(world, staged_presentation) == route,
+        "deferred presentation should keep route after merge");
+    result |= Require(
+        EcsUiNavClearActivePresentation(world, staged_presentation),
+        "deferred active presentation should clear");
 
     ecs_entity_t root = EcsUiRootEntity(world, "Home");
     if (root == 0) {
