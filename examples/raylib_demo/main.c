@@ -1,6 +1,7 @@
 #include "demo_app.h"
 #include "demo_anim.h"
 #include "demo_nav.h"
+#include "demo_terminal.h"
 #include "demo_text_input.h"
 #include "demo_ui.h"
 #include "ecs_ui/ecs_ui_raylib.h"
@@ -16,6 +17,7 @@ int main(void)
     EcsUiImport(world);
     DemoAppRegister(world);
     DemoUiRegister(world);
+    DemoTerminalRegister(world);
     DemoTextInputRegister(world);
     DemoNavRegister(world);
     DemoAnimRegister(world);
@@ -23,6 +25,10 @@ int main(void)
     (void)DemoNavRoot(world);
     ecs_entity_t root = DemoUiBuild(world);
     EcsUiRaylibTheme theme = EcsUiRaylibThemeDefault();
+    EcsUiRaylibDrawOptions draw_options = {
+        .custom_draw = DemoTerminalDrawCustom,
+        .user_data = world,
+    };
 
     while (!WindowShouldClose()) {
         const float margin = 40.0f;
@@ -45,7 +51,7 @@ int main(void)
 
         BeginDrawing();
         ClearBackground(theme.root_background);
-        EcsUiRaylibDrawTree(&tree, bounds, &theme);
+        EcsUiRaylibDrawTreeEx(&tree, bounds, &theme, &draw_options);
         EndDrawing();
     }
 

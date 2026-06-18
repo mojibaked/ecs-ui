@@ -24,11 +24,27 @@ typedef struct EcsUiRaylibTheme {
     float radius;
 } EcsUiRaylibTheme;
 
+typedef void (*EcsUiRaylibCustomDrawFn)(
+    const EcsUiTreeNodeSnapshot *node,
+    Rectangle bounds,
+    float opacity,
+    void *user_data);
+
+typedef struct EcsUiRaylibDrawOptions {
+    EcsUiRaylibCustomDrawFn custom_draw;
+    void *user_data;
+} EcsUiRaylibDrawOptions;
+
 EcsUiRaylibTheme EcsUiRaylibThemeDefault(void);
 void EcsUiRaylibDrawTree(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
     const EcsUiRaylibTheme *theme);
+void EcsUiRaylibDrawTreeEx(
+    const EcsUiTreeSnapshot *tree,
+    Rectangle bounds,
+    const EcsUiRaylibTheme *theme,
+    const EcsUiRaylibDrawOptions *options);
 void EcsUiRaylibCollectEvents(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,

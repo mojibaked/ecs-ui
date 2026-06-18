@@ -1,5 +1,7 @@
 #include "demo_ui_internal.h"
 
+#include "demo_terminal.h"
+
 #include <stdio.h>
 
 ecs_entity_t DemoUiBuild(ecs_world_t *world)
@@ -74,8 +76,9 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                         .id = "InspectorBody",
                         .text = "Click add item, then select, rename, reorder, or delete a row.",
                         .role = ECS_UI_TEXT_CAPTION,
-                    });
+                        });
             }
+            (void)DemoTerminalBuildPreview(world, &builder);
             VStack(&builder, {.id = "ItemList", .gap = 6.0f, .padding = 14.0f}) {
                 Text(
                     &builder,

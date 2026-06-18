@@ -167,16 +167,17 @@ Definition of done:
 
 Glowfish needs widgets that are not just stacks, text, icons, and buttons.
 
-- Add a custom node kind for a fake terminal viewport.
-- Let layout reserve space through normal UI components.
-- Let the raylib renderer dispatch custom drawing based on an ECS component or
-  node kind.
+- [x] Add a custom node kind for a fake terminal viewport.
+- [x] Let layout reserve space through normal UI components.
+- [x] Let the raylib renderer dispatch custom drawing based on an ECS component
+  or node kind.
+- [x] Keep terminal-specific state in the demo, attached to the custom UI node.
 
 Definition of done:
 
-- Custom nodes participate in layout and hit testing.
-- Custom rendering does not leak Glowfish-specific code into core `ecs-ui`.
-- The API shape suggests how `glowfish-mobile` would host terminal viewport and
+- [x] Custom nodes participate in layout and hit testing.
+- [x] Custom rendering does not leak Glowfish-specific code into core `ecs-ui`.
+- [x] The API shape suggests how `glowfish-mobile` would host terminal viewport and
   soft keyboard widgets.
 
 ## Phase 9: Clay Adapter Compatibility

@@ -84,6 +84,14 @@ int main(void)
                     .role = ECS_UI_TEXT_CAPTION,
                 });
         }
+        Custom(
+            &builder,
+            {
+                .id = "TerminalPreview",
+                .kind = "terminal",
+                .preferred_width = 320.0f,
+                .preferred_height = 120.0f,
+            });
     }
     EcsUiBuilderEnd(&builder);
 
@@ -91,7 +99,7 @@ int main(void)
 
     EcsUiTreeSnapshot tree = {0};
     result |= Require(EcsUiReadTree(world, root, &tree), "read tree failed");
-    result |= Require(tree.count == 7u, "unexpected tree count");
+    result |= Require(tree.count == 8u, "unexpected tree count");
     result |= Require(!tree.truncated, "tree truncated");
     result |= RequireNode(&tree, 0u, "Home", ECS_UI_NODE_ROOT);
     result |= RequireNode(&tree, 1u, "HomeStack", ECS_UI_NODE_VSTACK);
@@ -100,6 +108,7 @@ int main(void)
     result |= RequireNode(&tree, 4u, "Footer", ECS_UI_NODE_HSTACK);
     result |= RequireNode(&tree, 5u, "FooterIcon", ECS_UI_NODE_ICON);
     result |= RequireNode(&tree, 6u, "FooterLabel", ECS_UI_NODE_TEXT);
+    result |= RequireNode(&tree, 7u, "TerminalPreview", ECS_UI_NODE_CUSTOM);
 
     result |= Require(
         tree.nodes[1u].first_child == 2u,
@@ -110,6 +119,13 @@ int main(void)
     result |= Require(
         strcmp(tree.nodes[3u].text.text, "add machine") == 0,
         "text payload not copied");
+    result |= Require(
+        strcmp(tree.nodes[7u].custom.kind, "terminal") == 0,
+        "custom kind not copied");
+    result |= Require(
+        tree.nodes[7u].custom.preferred_width == 320.0f &&
+            tree.nodes[7u].custom.preferred_height == 120.0f,
+        "custom preferred size not copied");
     result |= Require(
         tree.nodes[2u].visual.opacity == 1.0f,
         "visual opacity should default to 1");
@@ -137,10 +153,11 @@ int main(void)
         "button snapshot should expose OnClick action");
 
     ecs_entities_t ordered = ecs_get_ordered_children(world, home_stack);
-    result |= Require(ordered.count == 2, "ordered child count mismatch");
+    result |= Require(ordered.count == 3, "ordered child count mismatch");
     result |= Require(
         ordered.ids[0] == tree.nodes[2u].entity &&
-            ordered.ids[1] == tree.nodes[4u].entity,
+            ordered.ids[1] == tree.nodes[4u].entity &&
+            ordered.ids[2] == tree.nodes[7u].entity,
         "ordered children mismatch");
 
     ecs_fini(world);

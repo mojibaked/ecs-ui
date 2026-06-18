@@ -26,6 +26,7 @@ typedef enum EcsUiNodeKind {
     ECS_UI_NODE_BUTTON = 5,
     ECS_UI_NODE_TEXT = 6,
     ECS_UI_NODE_ICON = 7,
+    ECS_UI_NODE_CUSTOM = 8,
 } EcsUiNodeKind;
 
 typedef enum EcsUiAxis {
@@ -91,6 +92,12 @@ typedef struct EcsUiIcon {
     char name[ECS_UI_ID_MAX];
 } EcsUiIcon;
 
+typedef struct EcsUiCustom {
+    char kind[ECS_UI_ID_MAX];
+    float preferred_width;
+    float preferred_height;
+} EcsUiCustom;
+
 typedef struct EcsUiVisual {
     float opacity;
     float offset_x;
@@ -122,6 +129,13 @@ typedef struct EcsUiIconDesc {
     const char *name;
 } EcsUiIconDesc;
 
+typedef struct EcsUiCustomDesc {
+    const char *id;
+    const char *kind;
+    float preferred_width;
+    float preferred_height;
+} EcsUiCustomDesc;
+
 typedef struct EcsUiBuilder {
     ecs_world_t *world;
     ecs_entity_t root;
@@ -144,6 +158,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiButton button;
     EcsUiText text;
     EcsUiIcon icon;
+    EcsUiCustom custom;
     EcsUiVisual visual;
 } EcsUiTreeNodeSnapshot;
 
@@ -183,6 +198,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
 extern ECS_COMPONENT_DECLARE(EcsUiText);
 extern ECS_COMPONENT_DECLARE(EcsUiIcon);
+extern ECS_COMPONENT_DECLARE(EcsUiCustom);
 extern ECS_COMPONENT_DECLARE(EcsUiVisual);
 
 extern ECS_TAG_DECLARE(EcsUiRoot);
@@ -205,6 +221,7 @@ void EcsUiEnd(EcsUiBuilder *builder);
 
 ecs_entity_t EcsUiAddText(EcsUiBuilder *builder, EcsUiTextDesc desc);
 ecs_entity_t EcsUiAddIcon(EcsUiBuilder *builder, EcsUiIconDesc desc);
+ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc);
 
 bool EcsUiReadTree(
     const ecs_world_t *world,
@@ -251,6 +268,9 @@ bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);
 #define EcsUiIconNode(builder, ...) \
     EcsUiAddIcon((builder), (EcsUiIconDesc)__VA_ARGS__)
 
+#define EcsUiCustomNode(builder, ...) \
+    EcsUiAddCustom((builder), (EcsUiCustomDesc)__VA_ARGS__)
+
 #ifndef ECS_UI_NO_SHORT_NAMES
 #define VStack EcsUiVStack
 #define HStack EcsUiHStack
@@ -258,6 +278,7 @@ bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);
 #define Button EcsUiButtonScope
 #define Text EcsUiTextNode
 #define Icon EcsUiIconNode
+#define Custom EcsUiCustomNode
 #endif
 
 #ifdef __cplusplus

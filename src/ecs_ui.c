@@ -9,6 +9,7 @@ ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiButton);
 ECS_COMPONENT_DECLARE(EcsUiText);
 ECS_COMPONENT_DECLARE(EcsUiIcon);
+ECS_COMPONENT_DECLARE(EcsUiCustom);
 ECS_COMPONENT_DECLARE(EcsUiVisual);
 
 ECS_TAG_DECLARE(EcsUiRoot);
@@ -50,6 +51,7 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     ecs_remove(world, entity, EcsUiButton);
     ecs_remove(world, entity, EcsUiText);
     ecs_remove(world, entity, EcsUiIcon);
+    ecs_remove(world, entity, EcsUiCustom);
     ecs_remove_id(world, entity, EcsUiInteractive);
     ecs_remove_pair(world, entity, EcsUiOnClick, EcsWildcard);
 }
@@ -145,6 +147,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
     ECS_COMPONENT_DEFINE(world, EcsUiText);
     ECS_COMPONENT_DEFINE(world, EcsUiIcon);
+    ECS_COMPONENT_DEFINE(world, EcsUiCustom);
     ECS_COMPONENT_DEFINE(world, EcsUiVisual);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
@@ -298,6 +301,23 @@ ecs_entity_t EcsUiAddIcon(EcsUiBuilder *builder, EcsUiIconDesc desc)
     return entity;
 }
 
+ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
+{
+    ecs_entity_t entity =
+        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_CUSTOM, false);
+    if (entity == 0) {
+        return 0;
+    }
+
+    EcsUiCustom custom = {
+        .preferred_width = desc.preferred_width,
+        .preferred_height = desc.preferred_height,
+    };
+    EcsUiCopyString(custom.kind, sizeof(custom.kind), desc.kind);
+    ecs_set_ptr(builder->world, entity, EcsUiCustom, &custom);
+    return entity;
+}
+
 static uint32_t EcsUiReadNode(
     const ecs_world_t *world,
     ecs_entity_t entity,
@@ -358,6 +378,11 @@ static uint32_t EcsUiReadNode(
     const EcsUiIcon *icon = ecs_get(world, entity, EcsUiIcon);
     if (icon != NULL) {
         snapshot->icon = *icon;
+    }
+
+    const EcsUiCustom *custom = ecs_get(world, entity, EcsUiCustom);
+    if (custom != NULL) {
+        snapshot->custom = *custom;
     }
 
     const EcsUiVisual *visual = ecs_get(world, entity, EcsUiVisual);
