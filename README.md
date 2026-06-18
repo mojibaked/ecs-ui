@@ -91,6 +91,10 @@ observers materialize retained item rows and status text under `ItemList` from
 `DemoItem` changes. The static UI shell is authored once; adding an item does
 not rebuild the whole UI tree.
 
+See `examples/raylib_demo/PRESSURE_TEST_PLAN.md` for the phased plan to prove
+out Glowfish-style actions, selection relationships, navigation, animations,
+gestures, text input, and custom widgets.
+
 ## Status
 
 This is an initial scaffold. It covers core UI hierarchy authoring, ordered

@@ -18,11 +18,17 @@ typedef struct DemoItemSequence {
 extern ECS_COMPONENT_DECLARE(DemoItem);
 extern ECS_COMPONENT_DECLARE(DemoItemSequence);
 extern ECS_TAG_DECLARE(DemoAddItemRequest);
+extern ECS_TAG_DECLARE(DemoSelectItemRequest);
+extern ECS_TAG_DECLARE(DemoDeleteItemRequest);
+extern ECS_TAG_DECLARE(DemoSelectedItem);
 extern ECS_TAG_DECLARE(DemoItemUiNode);
-extern ECS_TAG_DECLARE(DemoItemUiFor);
+extern ECS_TAG_DECLARE(DemoUiForItem);
 
 void DemoAppRegister(ecs_world_t *world);
 ecs_entity_t DemoAppItemRoot(ecs_world_t *world);
+ecs_entity_t DemoAppSelectionRoot(ecs_world_t *world);
 void DemoAppRequestAddItem(ecs_world_t *world);
+void DemoAppRequestSelectItem(ecs_world_t *world, ecs_entity_t item);
+void DemoAppRequestDeleteItem(ecs_world_t *world, ecs_entity_t item);
 
 #endif

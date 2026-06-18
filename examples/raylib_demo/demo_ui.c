@@ -34,28 +34,57 @@ static uint32_t DemoUiCountItems(ecs_world_t *world)
     return count;
 }
 
-static void DemoUiSetItemCountStatus(ecs_world_t *world, uint32_t count)
+static void DemoUiSetStatusForItemCount(ecs_world_t *world, uint32_t count)
 {
+    ecs_entity_t selected = ecs_get_target(
+        world,
+        DemoAppSelectionRoot(world),
+        DemoSelectedItem,
+        0);
+    const DemoItem *selected_item =
+        selected != 0 ? ecs_get(world, selected, DemoItem) : NULL;
+
     char status[ECS_UI_TEXT_MAX] = {0};
-    (void)snprintf(status, sizeof(status), "%u items", count);
+    if (selected_item != NULL) {
+        (void)snprintf(
+            status,
+            sizeof(status),
+            "%u items | selected item %u",
+            count,
+            selected_item->id);
+    } else {
+        (void)snprintf(status, sizeof(status), "%u items", count);
+    }
     DemoUiSetStatus(world, status);
+}
+
+static void DemoUiRefreshStatus(ecs_world_t *world)
+{
+    DemoUiSetStatusForItemCount(world, DemoUiCountItems(world));
 }
 
 static void DemoUiCreateItemRow(
     ecs_world_t *world,
     ecs_entity_t item,
     const DemoItem *item_data,
-    ecs_entity_t item_list)
+    ecs_entity_t item_list,
+    ecs_entity_t select_item_action,
+    ecs_entity_t delete_item_action)
 {
-    if (world == NULL || item == 0 || item_data == NULL || item_list == 0) {
+    if (world == NULL || item == 0 || item_data == NULL || item_list == 0 ||
+        select_item_action == 0 || delete_item_action == 0) {
         return;
     }
 
     char row_id[ECS_UI_ID_MAX] = {0};
+    char select_id[ECS_UI_ID_MAX] = {0};
+    char delete_id[ECS_UI_ID_MAX] = {0};
     char label_id[ECS_UI_ID_MAX] = {0};
     char meta_id[ECS_UI_ID_MAX] = {0};
     char meta_text[ECS_UI_TEXT_MAX] = {0};
     (void)snprintf(row_id, sizeof(row_id), "ItemRow%u", item_data->id);
+    (void)snprintf(select_id, sizeof(select_id), "ItemSelect%u", item_data->id);
+    (void)snprintf(delete_id, sizeof(delete_id), "ItemDelete%u", item_data->id);
     (void)snprintf(label_id, sizeof(label_id), "ItemLabel%u", item_data->id);
     (void)snprintf(meta_id, sizeof(meta_id), "ItemMeta%u", item_data->id);
     (void)snprintf(meta_text, sizeof(meta_text), "#%u", item_data->order);
@@ -65,8 +94,15 @@ static void DemoUiCreateItemRow(
         &builder,
         (EcsUiStackDesc){
             .id = row_id,
-            .gap = 10.0f,
-            .padding = 10.0f,
+            .gap = 8.0f,
+            .padding = 6.0f,
+        });
+    ecs_entity_t select_button = EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = select_id,
+            .variant = ECS_UI_BUTTON_SUBTLE,
+            .on_click = select_item_action,
         });
     (void)EcsUiAddText(
         &builder,
@@ -83,18 +119,40 @@ static void DemoUiCreateItemRow(
             .role = ECS_UI_TEXT_CAPTION,
         });
     EcsUiEnd(&builder);
+    ecs_entity_t delete_button = EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = delete_id,
+            .variant = ECS_UI_BUTTON_DANGER,
+            .on_click = delete_item_action,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DeleteLabel",
+            .text = "delete",
+            .role = ECS_UI_TEXT_BUTTON,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
 
     if (EcsUiBuilderOk(&builder) && row != 0) {
         ecs_add_pair(world, item, DemoItemUiNode, row);
-        ecs_add_pair(world, row, DemoItemUiFor, item);
+        if (select_button != 0) {
+            ecs_add_pair(world, select_button, DemoUiForItem, item);
+        }
+        if (delete_button != 0) {
+            ecs_add_pair(world, delete_button, DemoUiForItem, item);
+        }
     }
 }
 
 static void DemoUiMaterializeItemRowObserver(ecs_iter_t *it)
 {
     const DemoUiRefs *refs = ecs_singleton_get(it->world, DemoUiRefs);
-    if (refs == NULL || refs->item_list == 0) {
+    if (refs == NULL || refs->item_list == 0 ||
+        refs->select_item_action == 0 || refs->delete_item_action == 0) {
         return;
     }
 
@@ -107,9 +165,11 @@ static void DemoUiMaterializeItemRowObserver(ecs_iter_t *it)
             it->world,
             it->entities[i],
             &items[i],
-            refs->item_list);
+            refs->item_list,
+            refs->select_item_action,
+            refs->delete_item_action);
     }
-    DemoUiSetItemCountStatus(it->world, DemoUiCountItems(it->world));
+    DemoUiRefreshStatus(it->world);
 }
 
 static void DemoUiRemoveItemRowObserver(ecs_iter_t *it)
@@ -124,7 +184,12 @@ static void DemoUiRemoveItemRowObserver(ecs_iter_t *it)
 
     uint32_t count = DemoUiCountItems(it->world);
     count = count >= (uint32_t)it->count ? count - (uint32_t)it->count : 0u;
-    DemoUiSetItemCountStatus(it->world, count);
+    DemoUiSetStatusForItemCount(it->world, count);
+}
+
+static void DemoUiSelectionStatusObserver(ecs_iter_t *it)
+{
+    DemoUiRefreshStatus(it->world);
 }
 
 void DemoUiRegister(ecs_world_t *world)
@@ -152,12 +217,27 @@ void DemoUiRegister(ecs_world_t *world)
         .events = {EcsOnRemove},
         .callback = DemoUiRemoveItemRowObserver,
     });
+
+    (void)ecs_observer(world, {
+        .entity = ecs_entity(world, {
+            .name = "DemoUiSelectionStatusObserver",
+        }),
+        .query.terms = {
+            {.id = ecs_pair(DemoSelectedItem, EcsWildcard)},
+        },
+        .events = {EcsOnAdd, EcsOnRemove},
+        .callback = DemoUiSelectionStatusObserver,
+    });
 }
 
 ecs_entity_t DemoUiBuild(ecs_world_t *world)
 {
     ecs_entity_t root = EcsUiRootEntity(world, "RaylibDemo");
     ecs_entity_t add_item_action = ecs_entity(world, {.name = "AddItemAction"});
+    ecs_entity_t select_item_action =
+        ecs_entity(world, {.name = "SelectItemAction"});
+    ecs_entity_t delete_item_action =
+        ecs_entity(world, {.name = "DeleteItemAction"});
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
 
     VStack(&builder, {.id = "DemoStack", .gap = 12.0f, .padding = 24.0f}) {
@@ -205,7 +285,7 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                 &builder,
                 {
                     .id = "InspectorBody",
-                    .text = "Click add item. App state and UI rows are Flecs entities.",
+                    .text = "Click add item, then select or delete a row.",
                     .role = ECS_UI_TEXT_CAPTION,
                 });
         }
@@ -237,6 +317,8 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
         DemoUiRefs,
         {
             .add_item_action = add_item_action,
+            .select_item_action = select_item_action,
+            .delete_item_action = delete_item_action,
             .item_list = DemoUiFindNodeById(world, "ItemList"),
             .status_text = DemoUiFindNodeById(world, "EventStatus"),
         });
@@ -273,11 +355,45 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
             continue;
         }
 
-        if (refs != NULL &&
-            (event->action == refs->add_item_action ||
-             strcmp(event->node_id, "AddItem") == 0)) {
+        if (refs == NULL) {
+            continue;
+        }
+
+        if (event->action == refs->add_item_action) {
             TraceLog(LOG_INFO, "DEMO: add item requested from %s", event->node_id);
             DemoAppRequestAddItem(world);
+            continue;
+        }
+
+        if (event->action == refs->select_item_action) {
+            ecs_entity_t item =
+                ecs_get_target(world, event->node, DemoUiForItem, 0);
+            const DemoItem *item_data =
+                item != 0 ? ecs_get(world, item, DemoItem) : NULL;
+            if (item_data != NULL) {
+                TraceLog(
+                    LOG_INFO,
+                    "DEMO: select item requested from %s for %s",
+                    event->node_id,
+                    item_data->label);
+                DemoAppRequestSelectItem(world, item);
+            }
+            continue;
+        }
+
+        if (event->action == refs->delete_item_action) {
+            ecs_entity_t item =
+                ecs_get_target(world, event->node, DemoUiForItem, 0);
+            const DemoItem *item_data =
+                item != 0 ? ecs_get(world, item, DemoItem) : NULL;
+            if (item_data != NULL) {
+                TraceLog(
+                    LOG_INFO,
+                    "DEMO: delete item requested from %s for %s",
+                    event->node_id,
+                    item_data->label);
+                DemoAppRequestDeleteItem(world, item);
+            }
         }
     }
 }

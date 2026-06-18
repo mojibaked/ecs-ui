@@ -6,6 +6,8 @@
 
 typedef struct DemoUiRefs {
     ecs_entity_t add_item_action;
+    ecs_entity_t select_item_action;
+    ecs_entity_t delete_item_action;
     ecs_entity_t item_list;
     ecs_entity_t status_text;
 } DemoUiRefs;
