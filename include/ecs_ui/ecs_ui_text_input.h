@@ -25,6 +25,8 @@ extern ECS_TAG_DECLARE(EcsUiTextFieldUiNode);
 extern ECS_TAG_DECLARE(EcsUiTextFieldValueUiNode);
 extern ECS_TAG_DECLARE(EcsUiForTextField);
 extern ECS_TAG_DECLARE(EcsUiFocusTextFieldRequest);
+extern ECS_TAG_DECLARE(EcsUiFocusNextTextFieldRequest);
+extern ECS_TAG_DECLARE(EcsUiFocusPreviousTextFieldRequest);
 extern ECS_TAG_DECLARE(EcsUiBlurTextFieldRequest);
 extern ECS_TAG_DECLARE(EcsUiTextDeleteRequest);
 
@@ -44,6 +46,8 @@ bool EcsUiTextInputIsFocused(
 ecs_entity_t EcsUiTextInputRequestFocusField(
     ecs_world_t *world,
     ecs_entity_t field);
+ecs_entity_t EcsUiTextInputRequestFocusNext(ecs_world_t *world);
+ecs_entity_t EcsUiTextInputRequestFocusPrevious(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestBlur(ecs_world_t *world);
 ecs_entity_t EcsUiTextInputRequestInsert(
     ecs_world_t *world,

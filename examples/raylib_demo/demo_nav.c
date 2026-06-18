@@ -180,6 +180,17 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
         world,
         &builder,
         refs->focus_text_field_action);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "AddItemNoteLabel",
+            .text = "note",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    (void)DemoTextInputBuildAddItemNoteField(
+        world,
+        &builder,
+        refs->focus_text_field_action);
     EcsUiBeginHStack(
         &builder,
         (EcsUiStackDesc){

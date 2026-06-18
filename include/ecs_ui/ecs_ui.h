@@ -62,6 +62,8 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_TEXT_DELETE = 8,
     ECS_UI_EVENT_TEXT_SUBMIT = 9,
     ECS_UI_EVENT_TEXT_CANCEL = 10,
+    ECS_UI_EVENT_TEXT_FOCUS_NEXT = 11,
+    ECS_UI_EVENT_TEXT_FOCUS_PREVIOUS = 12,
 } EcsUiEventType;
 
 typedef struct EcsUiNodeId {

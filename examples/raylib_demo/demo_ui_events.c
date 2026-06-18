@@ -66,12 +66,26 @@ void DemoUiApplyEvents(
             continue;
         }
 
+        if (event->type == ECS_UI_EVENT_TEXT_FOCUS_NEXT) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestFocusNext(ui_world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_FOCUS_PREVIOUS) {
+            if (DemoTextInputHasFocusedField(ui_world)) {
+                DemoTextInputRequestFocusPrevious(ui_world);
+            }
+            continue;
+        }
+
         if (event->type == ECS_UI_EVENT_TEXT_SUBMIT) {
             if (DemoTextInputHasFocusedField(ui_world)) {
                 const char *label = DemoTextInputAddItemNameValue(ui_world);
                 TraceLog(LOG_INFO, "DEMO: submit text field requested");
                 DemoAppRequestAddNamedItem(app_world, label);
-                DemoTextInputClearAddItemName(ui_world);
+                DemoTextInputClearAddItemFields(ui_world);
                 DemoTextInputRequestBlur(ui_world);
                 DemoNavRequestDismissPresentation(ui_world);
             }
@@ -164,7 +178,7 @@ void DemoUiApplyEvents(
             DemoAppRequestAddNamedItem(
                 app_world,
                 DemoTextInputAddItemNameValue(ui_world));
-            DemoTextInputClearAddItemName(ui_world);
+            DemoTextInputClearAddItemFields(ui_world);
             DemoTextInputRequestBlur(ui_world);
             DemoNavRequestDismissPresentation(ui_world);
             continue;

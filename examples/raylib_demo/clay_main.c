@@ -60,6 +60,16 @@ static void DemoClayCollectKeyboardEvents(EcsUiEventList *events)
     if (IsKeyPressed(KEY_ESCAPE)) {
         DemoClayPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_CANCEL, 0u);
     }
+    if (IsKeyPressed(KEY_TAB)) {
+        const bool shift_down =
+            IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        DemoClayPushKeyboardEvent(
+            events,
+            shift_down ?
+                ECS_UI_EVENT_TEXT_FOCUS_PREVIOUS :
+                ECS_UI_EVENT_TEXT_FOCUS_NEXT,
+            0u);
+    }
 }
 
 static Clay_RenderCommandArray DemoClayEmitRenderCommands(

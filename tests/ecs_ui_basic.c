@@ -240,6 +240,10 @@ int main(void)
     result |= Require(
         ecs_has_id(world, EcsUiFocusTextFieldRequest, EcsExclusive),
         "EcsUiFocusTextFieldRequest should be exclusive");
+    result |= Require(
+        EcsUiFocusNextTextFieldRequest != 0 &&
+            EcsUiFocusPreviousTextFieldRequest != 0,
+        "text traversal request tags should be registered");
 
     ecs_entity_t animation_target =
         ecs_entity(world, {.name = "AnimationTarget"});
@@ -489,6 +493,36 @@ int main(void)
     result |= Require(
         strcmp(text_display, "second") == 0,
         "blurred empty text field display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestFocusNext(world) != 0,
+        "focus next request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "focus next should focus first field when none is focused");
+    result |= Require(
+        EcsUiTextInputRequestFocusNext(world) != 0,
+        "second focus next request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_b,
+        "focus next should advance to second field");
+    result |= Require(
+        EcsUiTextInputRequestFocusNext(world) != 0,
+        "third focus next request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "focus next should wrap to first field");
+    result |= Require(
+        EcsUiTextInputRequestFocusPrevious(world) != 0,
+        "focus previous request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_b,
+        "focus previous should wrap to second field");
+    (void)EcsUiTextInputRequestBlur(world);
+    (void)ecs_progress(world, 0.0f);
     ecs_entity_t text_field_node =
         ecs_entity(world, {.name = "TextFieldNode"});
     ecs_entity_t text_value_node =

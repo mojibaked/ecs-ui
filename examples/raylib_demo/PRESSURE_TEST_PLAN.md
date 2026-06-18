@@ -297,3 +297,22 @@ Definition of done:
 - [x] Delete-to-zero does not call Flecs ordered-child APIs with an empty child
   array.
 - [x] The helper stays renderer-agnostic and app-agnostic.
+
+## Phase 14: Text Field Traversal
+
+Move the first richer text-input affordance into the reusable text-input layer.
+
+- [x] Add focus-next and focus-previous request tags to `ecs-ui-text-input`.
+- [x] Traverse ordered text fields under the text-input root, wrapping at both
+  ends.
+- [x] Emit focus traversal events from raylib Tab and Shift+Tab.
+- [x] Keep traversal renderer-agnostic and route/app-submit behavior demo-owned.
+- [x] Add a second field to the add-item sheet so traversal is visible in the
+  demo.
+
+Definition of done:
+
+- [x] Unit tests cover next/previous traversal and wraparound.
+- [x] The raylib demo can move focus between two sheet fields with Tab and
+  Shift+Tab.
+- [x] Existing create-item submit behavior still uses the item-name field only.

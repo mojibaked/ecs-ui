@@ -17,6 +17,11 @@ ecs_entity_t DemoTextInputAddItemNameField(ecs_world_t *world)
     return EcsUiTextInputField(world, "AddItemNameField", "item name");
 }
 
+ecs_entity_t DemoTextInputAddItemNoteField(ecs_world_t *world)
+{
+    return EcsUiTextInputField(world, "AddItemNoteField", "optional note");
+}
+
 static void DemoTextInputUpdateFieldUi(
     ecs_world_t *world,
     ecs_entity_t field)
@@ -87,16 +92,18 @@ static void DemoTextInputUpdateFieldUi(
     }
 }
 
-ecs_entity_t DemoTextInputBuildAddItemNameField(
+static ecs_entity_t DemoTextInputBuildField(
     ecs_world_t *world,
     EcsUiBuilder *builder,
-    ecs_entity_t focus_action)
+    ecs_entity_t focus_action,
+    ecs_entity_t field,
+    const char *field_node_id,
+    const char *value_node_id)
 {
     if (world == NULL || builder == NULL || focus_action == 0) {
         return 0;
     }
 
-    ecs_entity_t field = DemoTextInputAddItemNameField(world);
     if (field == 0) {
         return 0;
     }
@@ -104,7 +111,7 @@ ecs_entity_t DemoTextInputBuildAddItemNameField(
     ecs_entity_t field_node = EcsUiBeginButton(
         builder,
         (EcsUiButtonDesc){
-            .id = "AddItemNameInput",
+            .id = field_node_id,
             .variant = EcsUiTextInputIsFocused(world, field) ?
                 ECS_UI_BUTTON_PRIMARY :
                 ECS_UI_BUTTON_SUBTLE,
@@ -113,7 +120,7 @@ ecs_entity_t DemoTextInputBuildAddItemNameField(
     ecs_entity_t value_node = EcsUiAddText(
         builder,
         (EcsUiTextDesc){
-            .id = "AddItemNameValue",
+            .id = value_node_id,
             .text = "",
             .role = ECS_UI_TEXT_CAPTION,
         });
@@ -131,9 +138,47 @@ ecs_entity_t DemoTextInputBuildAddItemNameField(
     return field_node;
 }
 
+ecs_entity_t DemoTextInputBuildAddItemNameField(
+    ecs_world_t *world,
+    EcsUiBuilder *builder,
+    ecs_entity_t focus_action)
+{
+    return DemoTextInputBuildField(
+        world,
+        builder,
+        focus_action,
+        DemoTextInputAddItemNameField(world),
+        "AddItemNameInput",
+        "AddItemNameValue");
+}
+
+ecs_entity_t DemoTextInputBuildAddItemNoteField(
+    ecs_world_t *world,
+    EcsUiBuilder *builder,
+    ecs_entity_t focus_action)
+{
+    return DemoTextInputBuildField(
+        world,
+        builder,
+        focus_action,
+        DemoTextInputAddItemNoteField(world),
+        "AddItemNoteInput",
+        "AddItemNoteValue");
+}
+
 void DemoTextInputRequestFocusField(ecs_world_t *world, ecs_entity_t field)
 {
     (void)EcsUiTextInputRequestFocusField(world, field);
+}
+
+void DemoTextInputRequestFocusNext(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestFocusNext(world);
+}
+
+void DemoTextInputRequestFocusPrevious(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestFocusPrevious(world);
 }
 
 void DemoTextInputRequestBlur(ecs_world_t *world)
@@ -161,9 +206,15 @@ const char *DemoTextInputAddItemNameValue(ecs_world_t *world)
     return EcsUiTextInputValue(world, DemoTextInputAddItemNameField(world));
 }
 
-void DemoTextInputClearAddItemName(ecs_world_t *world)
+void DemoTextInputClearAddItemFields(ecs_world_t *world)
 {
     (void)EcsUiTextInputClear(world, DemoTextInputAddItemNameField(world));
+    (void)EcsUiTextInputClear(world, DemoTextInputAddItemNoteField(world));
+}
+
+void DemoTextInputClearAddItemName(ecs_world_t *world)
+{
+    DemoTextInputClearAddItemFields(world);
 }
 
 static void DemoTextInputProjectFieldsSystem(ecs_iter_t *it)
@@ -181,6 +232,7 @@ void DemoTextInputRegister(ecs_world_t *world)
 {
     EcsUiTextInputImport(world);
     (void)DemoTextInputAddItemNameField(world);
+    (void)DemoTextInputAddItemNoteField(world);
 
     (void)ecs_system(world, {
         .entity = ecs_entity(world, {
