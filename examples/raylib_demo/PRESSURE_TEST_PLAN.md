@@ -184,12 +184,15 @@ Definition of done:
 
 The raylib demo should not become a renderer-only design.
 
-- Keep the UI tree snapshot expressive enough for the Clay adapter.
-- Add at least one pressure-test path that emits Clay from the same ECS UI tree.
-- Avoid raylib-only state in core components.
+- [x] Keep the UI tree snapshot expressive enough for the Clay adapter.
+- [x] Add a Clay raylib executable that emits from the same ECS UI tree.
+- [x] Collect Clay pointer events at the adapter edge and feed the existing demo
+  event bridge.
+- [x] Represent custom nodes in Clay without leaking renderer-only state into
+  core components.
 
 Definition of done:
 
-- A retained ECS UI tree can be read by both raylib and Clay-oriented code.
-- Renderer-specific event data stays at the edge.
-- Core `ecs-ui` remains reusable by Glowfish and other projects.
+- [x] A retained ECS UI tree can be read by both raylib and Clay-oriented code.
+- [x] Renderer-specific event data stays at the edge.
+- [x] Core `ecs-ui` remains reusable by Glowfish and other projects.

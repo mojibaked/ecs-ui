@@ -20,14 +20,25 @@ typedef struct EcsUiClayTheme {
     Clay_Color text_inverse;
 } EcsUiClayTheme;
 
+typedef struct EcsUiClayPointerState {
+    float x;
+    float y;
+    bool down;
+    bool pressed;
+    bool released;
+} EcsUiClayPointerState;
+
 EcsUiClayTheme EcsUiClayThemeDefault(void);
 void EcsUiClayEmitTree(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme);
+void EcsUiClayCollectEvents(
+    const EcsUiTreeSnapshot *tree,
+    EcsUiClayPointerState pointer,
+    EcsUiEventList *events);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-

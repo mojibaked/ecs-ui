@@ -1,5 +1,6 @@
 #include "ecs_ui/ecs_ui_clay.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static Clay_String EcsUiClayString(const char *text)
@@ -68,6 +69,14 @@ static Clay_Color EcsUiClayButtonColor(
     }
 }
 
+static float EcsUiClayCustomHeight(const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || node->custom.preferred_height <= 0.0f) {
+        return 96.0f;
+    }
+    return node->custom.preferred_height;
+}
+
 static void EcsUiClayEmitNode(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme,
@@ -113,6 +122,62 @@ static void EcsUiClayEmitStack(
     }
 }
 
+static void EcsUiClayEmitZStack(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiClayTheme *theme,
+    uint32_t index)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+
+    CLAY(CLAY_SID(EcsUiClayString(node->id)), {
+        .layout = {
+            .sizing = {
+                .width = CLAY_SIZING_GROW(0),
+                .height = CLAY_SIZING_GROW(0),
+            },
+            .padding = CLAY_PADDING_ALL(EcsUiClayU16(node->stack.padding)),
+        },
+        .backgroundColor = theme->surface,
+    }) {
+        uint32_t child = node->first_child;
+        int16_t z_index = 1;
+        bool first = true;
+        while (child != ECS_UI_TREE_INVALID_INDEX) {
+            if (first) {
+                EcsUiClayEmitNode(tree, theme, child);
+                first = false;
+            } else {
+                char floating_id[ECS_UI_ID_MAX * 2u] = {0};
+                (void)snprintf(
+                    floating_id,
+                    sizeof(floating_id),
+                    "%sFloating",
+                    tree->nodes[child].id);
+                CLAY(CLAY_SID(EcsUiClayString(floating_id)), {
+                    .layout = {
+                        .sizing = {
+                            .width = CLAY_SIZING_GROW(0),
+                            .height = CLAY_SIZING_GROW(0),
+                        },
+                    },
+                    .floating = {
+                        .zIndex = z_index,
+                        .attachPoints = {
+                            .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                            .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                        },
+                        .attachTo = CLAY_ATTACH_TO_PARENT,
+                    },
+                }) {
+                    EcsUiClayEmitNode(tree, theme, child);
+                }
+                z_index += 1;
+            }
+            child = tree->nodes[child].next_sibling;
+        }
+    }
+}
+
 static void EcsUiClayEmitNode(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme,
@@ -126,14 +191,16 @@ static void EcsUiClayEmitNode(
         break;
     case ECS_UI_NODE_VSTACK:
     case ECS_UI_NODE_HSTACK:
-    case ECS_UI_NODE_ZSTACK:
         EcsUiClayEmitStack(tree, theme, index, theme->surface);
+        break;
+    case ECS_UI_NODE_ZSTACK:
+        EcsUiClayEmitZStack(tree, theme, index);
         break;
     case ECS_UI_NODE_BUTTON:
         CLAY(CLAY_SID(EcsUiClayString(node->id)), {
             .layout = {
                 .sizing = {
-                    .width = CLAY_SIZING_FIT(0),
+                    .width = CLAY_SIZING_GROW(0),
                     .height = CLAY_SIZING_FIXED(44.0f),
                 },
                 .padding = {
@@ -162,6 +229,25 @@ static void EcsUiClayEmitNode(
         CLAY_TEXT(
             EcsUiClayString(node->icon.name),
             EcsUiClayTextConfig(theme, ECS_UI_TEXT_LABEL));
+        break;
+    case ECS_UI_NODE_CUSTOM:
+        CLAY(CLAY_SID(EcsUiClayString(node->id)), {
+            .layout = {
+                .sizing = {
+                    .width = CLAY_SIZING_GROW(0),
+                    .height = CLAY_SIZING_FIXED(EcsUiClayCustomHeight(node)),
+                },
+                .padding = CLAY_PADDING_ALL(12),
+                .childAlignment = {
+                    .y = CLAY_ALIGN_Y_CENTER,
+                },
+            },
+            .backgroundColor = theme->button_subtle,
+        }) {
+            CLAY_TEXT(
+                EcsUiClayString(node->custom.kind),
+                EcsUiClayTextConfig(theme, ECS_UI_TEXT_CAPTION));
+        }
         break;
     case ECS_UI_NODE_NONE:
     default:
@@ -193,3 +279,85 @@ void EcsUiClayEmitTree(
     EcsUiClayEmitNode(tree, theme, 0u);
 }
 
+static bool EcsUiClayPointerOverNode(const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || node->id[0] == '\0') {
+        return false;
+    }
+    return Clay_PointerOver(Clay_GetElementId(EcsUiClayString(node->id)));
+}
+
+static void EcsUiClayPushPointerEvent(
+    EcsUiEventList *events,
+    const EcsUiTreeNodeSnapshot *node,
+    EcsUiEventType type,
+    EcsUiClayPointerState pointer)
+{
+    if (events == NULL || node == NULL) {
+        return;
+    }
+
+    EcsUiEvent event = {
+        .type = type,
+        .node = node->entity,
+        .action = node->on_click,
+        .x = pointer.x,
+        .y = pointer.y,
+        .start_x = pointer.x,
+        .start_y = pointer.y,
+    };
+    (void)snprintf(event.node_id, sizeof(event.node_id), "%s", node->id);
+    (void)EcsUiEventListPush(events, &event);
+}
+
+void EcsUiClayCollectEvents(
+    const EcsUiTreeSnapshot *tree,
+    EcsUiClayPointerState pointer,
+    EcsUiEventList *events)
+{
+    if (tree == NULL || tree->count == 0u || events == NULL) {
+        return;
+    }
+    EcsUiEventListClear(events);
+
+    Clay_SetPointerState(
+        (Clay_Vector2){
+            .x = pointer.x,
+            .y = pointer.y,
+        },
+        pointer.down);
+
+    const EcsUiTreeNodeSnapshot *hit = NULL;
+    for (uint32_t i = tree->count; i > 0u; i -= 1u) {
+        const EcsUiTreeNodeSnapshot *node = &tree->nodes[i - 1u];
+        if (node->on_click == 0 || !EcsUiClayPointerOverNode(node)) {
+            continue;
+        }
+        hit = node;
+        break;
+    }
+
+    if (hit == NULL) {
+        return;
+    }
+
+    EcsUiClayPushPointerEvent(
+        events,
+        hit,
+        ECS_UI_EVENT_HOVERED,
+        pointer);
+    if (pointer.pressed) {
+        EcsUiClayPushPointerEvent(
+            events,
+            hit,
+            ECS_UI_EVENT_PRESSED,
+            pointer);
+    }
+    if (pointer.released) {
+        EcsUiClayPushPointerEvent(
+            events,
+            hit,
+            ECS_UI_EVENT_CLICKED,
+            pointer);
+    }
+}

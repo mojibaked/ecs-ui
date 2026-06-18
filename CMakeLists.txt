@@ -25,6 +25,16 @@ set(ECS_UI_RAYLIB_SOURCE
     ""
     CACHE PATH
     "Path to a raylib source checkout containing CMakeLists.txt")
+set(ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE
+    ""
+    CACHE PATH
+    "Path to Clay's raylib renderer directory containing clay_renderer_raylib.c")
+
+if(NOT ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE AND
+        EXISTS "$ENV{HOME}/source/clay/renderers/raylib/clay_renderer_raylib.c")
+    set(ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE
+        "$ENV{HOME}/source/clay/renderers/raylib")
+endif()
 
 include(cmake/EcsUiWarnings.cmake)
 
@@ -136,21 +146,42 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
     ecs_ui_enable_warnings(ecs_ui_raylib)
 
     if(ECS_UI_BUILD_RAYLIB_DEMO)
-        add_executable(ecs_ui_raylib_demo
+        set(ECS_UI_RAYLIB_DEMO_COMMON_SOURCES
             examples/raylib_demo/demo_anim.c
             examples/raylib_demo/demo_app.c
             examples/raylib_demo/demo_nav.c
             examples/raylib_demo/demo_terminal.c
+            examples/raylib_demo/demo_text_input.c
             examples/raylib_demo/demo_ui.c
             examples/raylib_demo/demo_ui_build.c
             examples/raylib_demo/demo_ui_events.c
             examples/raylib_demo/demo_ui_item_rows.c
-            examples/raylib_demo/demo_ui_items.c
-            examples/raylib_demo/demo_text_input.c
+            examples/raylib_demo/demo_ui_items.c)
+
+        add_executable(ecs_ui_raylib_demo
+            ${ECS_UI_RAYLIB_DEMO_COMMON_SOURCES}
             examples/raylib_demo/main.c)
         target_link_libraries(ecs_ui_raylib_demo
             PRIVATE ecs_ui_raylib)
         ecs_ui_enable_warnings(ecs_ui_raylib_demo)
+
+        if(TARGET ecs_ui_clay AND
+                ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE AND
+                EXISTS "${ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE}/clay_renderer_raylib.c")
+            add_executable(ecs_ui_clay_raylib_demo
+                ${ECS_UI_RAYLIB_DEMO_COMMON_SOURCES}
+                examples/raylib_demo/clay_main.c
+                examples/raylib_demo/clay_raylib_bridge.c)
+            target_include_directories(ecs_ui_clay_raylib_demo
+                PRIVATE "${ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE}")
+            target_link_libraries(ecs_ui_clay_raylib_demo
+                PRIVATE ecs_ui_clay ${ECS_UI_RAYLIB_TARGET})
+        else()
+            message(STATUS
+                "Clay raylib renderer not found; skipping "
+                "ecs_ui_clay_raylib_demo. Pass "
+                "-DECS_UI_CLAY_RAYLIB_RENDERER_SOURCE=/path/to/clay/renderers/raylib.")
+        endif()
     endif()
 endif()
 
