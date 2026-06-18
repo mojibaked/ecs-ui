@@ -252,8 +252,22 @@ extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);
 extern ECS_TAG_DECLARE(EcsUiOnClick);
 extern ECS_TAG_DECLARE(EcsUiUsesStyle);
+extern ECS_TAG_DECLARE(EcsUiTheme);
+extern ECS_TAG_DECLARE(EcsUiActiveTheme);
+extern ECS_TAG_DECLARE(EcsUiThemeStyle);
 
 void EcsUiImport(ecs_world_t *world);
+
+ecs_entity_t EcsUiThemeRoot(ecs_world_t *world);
+ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id);
+bool EcsUiSetActiveTheme(ecs_world_t *world, ecs_entity_t theme);
+ecs_entity_t EcsUiGetActiveTheme(const ecs_world_t *world);
+bool EcsUiThemeSetBoxStyle(
+    ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token,
+    EcsUiBoxStyle style);
+bool EcsUiThemeApply(ecs_world_t *world);
 
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id);
 

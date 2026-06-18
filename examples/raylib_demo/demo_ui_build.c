@@ -1,6 +1,7 @@
 #include "demo_ui_internal.h"
 
 #include "demo_terminal.h"
+#include "demo_theme.h"
 #include "ecs_ui/ecs_ui_navigation.h"
 
 #include <stdio.h>
@@ -33,6 +34,9 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
         ecs_entity(world, {.name = "MoveItemUpAction"});
     ecs_entity_t move_item_down_action =
         ecs_entity(world, {.name = "MoveItemDownAction"});
+    ecs_entity_t toggle_theme_action =
+        ecs_entity(world, {.name = "ToggleThemeAction"});
+    ecs_entity_t theme_text = 0;
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
 
     ZStack(&builder, {.id = "DemoViewport", .gap = 0.0f, .padding = 0.0f}) {
@@ -65,6 +69,21 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                         {
                             .id = "AddItemLabel",
                             .text = "add item",
+                            .role = ECS_UI_TEXT_BUTTON,
+                        });
+                }
+                Button(
+                    &builder,
+                    {
+                        .id = "ToggleTheme",
+                        .variant = ECS_UI_BUTTON_SUBTLE,
+                        .on_click = toggle_theme_action,
+                    }) {
+                    theme_text = Text(
+                        &builder,
+                        {
+                            .id = "ThemeModeLabel",
+                            .text = DemoThemeName(world),
                             .role = ECS_UI_TEXT_BUTTON,
                         });
                 }
@@ -134,9 +153,11 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
             .rename_item_action = rename_item_action,
             .move_item_up_action = move_item_up_action,
             .move_item_down_action = move_item_down_action,
+            .toggle_theme_action = toggle_theme_action,
             .presentation_host = presentation_host,
             .item_list = DemoUiFindNodeById(world, "ItemList"),
             .status_text = DemoUiFindNodeById(world, "EventStatus"),
+            .theme_text = theme_text,
         });
     return root;
 }
@@ -162,4 +183,24 @@ void DemoUiSetStatus(ecs_world_t *world, const char *message)
     (void)snprintf(text->text, sizeof(text->text), "%s", next_message);
     text->role = ECS_UI_TEXT_CAPTION;
     ecs_modified(world, status, EcsUiText);
+}
+
+void DemoUiRefreshThemeLabel(ecs_world_t *world)
+{
+    const DemoUiRefs *refs = ecs_singleton_get(world, DemoUiRefs);
+    ecs_entity_t label = refs != NULL ? refs->theme_text : 0;
+    EcsUiText *text =
+        label != 0 ? ecs_get_mut(world, label, EcsUiText) : NULL;
+    if (text == NULL) {
+        return;
+    }
+
+    const char *mode = DemoThemeName(world);
+    if (text->role == ECS_UI_TEXT_BUTTON && strcmp(text->text, mode) == 0) {
+        return;
+    }
+
+    (void)snprintf(text->text, sizeof(text->text), "%s", mode);
+    text->role = ECS_UI_TEXT_BUTTON;
+    ecs_modified(world, label, EcsUiText);
 }

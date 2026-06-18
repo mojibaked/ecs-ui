@@ -1,5 +1,7 @@
 #include "demo_text_input.h"
 
+#include "demo_theme.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -20,33 +22,6 @@ ecs_entity_t DemoTextInputAddItemNameField(ecs_world_t *world)
 ecs_entity_t DemoTextInputAddItemNoteField(ecs_world_t *world)
 {
     return EcsUiTextInputField(world, "AddItemNoteField", "optional note");
-}
-
-static ecs_entity_t DemoTextInputFieldStyleToken(ecs_world_t *world)
-{
-    if (world == NULL) {
-        return 0;
-    }
-
-    ecs_entity_t token = ecs_entity(world, {
-        .name = "DemoTextInputFieldStyle",
-        .sep = "",
-    });
-    if (token != 0 && !ecs_has(world, token, EcsUiBoxStyle)) {
-        ecs_set(
-            world,
-            token,
-            EcsUiBoxStyle,
-            {
-                .background = {35u, 52u, 56u, 255u},
-                .hover_background = {42u, 68u, 72u, 255u},
-                .disabled_background = {60u, 68u, 72u, 255u},
-                .highlight_background = {49u, 211u, 186u, 255u},
-                .radius = 0.08f,
-                .padding = 12.0f,
-            });
-    }
-    return token;
 }
 
 static void DemoTextInputUpdateFieldUi(
@@ -146,7 +121,7 @@ static ecs_entity_t DemoTextInputBuildField(
             field_node,
             value_node);
         (void)EcsUiTextInputSetUiField(world, field_node, field);
-        ecs_entity_t style_token = DemoTextInputFieldStyleToken(world);
+        ecs_entity_t style_token = DemoThemeTextInputFieldStyleToken(world);
         if (style_token != 0) {
             ecs_add_pair(world, field_node, EcsUiUsesStyle, style_token);
         }
@@ -313,7 +288,7 @@ void DemoTextInputRegister(ecs_world_t *world)
     EcsUiTextInputImport(world);
     (void)DemoTextInputAddItemNameField(world);
     (void)DemoTextInputAddItemNoteField(world);
-    (void)DemoTextInputFieldStyleToken(world);
+    (void)DemoThemeTextInputFieldStyleToken(world);
 
     (void)ecs_system(world, {
         .entity = ecs_entity(world, {

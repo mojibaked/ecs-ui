@@ -174,6 +174,7 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
             examples/raylib_demo/demo_nav.c
             examples/raylib_demo/demo_terminal.c
             examples/raylib_demo/demo_text_input.c
+            examples/raylib_demo/demo_theme.c
             examples/raylib_demo/demo_ui.c
             examples/raylib_demo/demo_ui_build.c
             examples/raylib_demo/demo_ui_events.c

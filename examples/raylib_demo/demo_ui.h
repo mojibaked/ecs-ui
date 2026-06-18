@@ -15,9 +15,11 @@ typedef struct DemoUiRefs {
     ecs_entity_t rename_item_action;
     ecs_entity_t move_item_up_action;
     ecs_entity_t move_item_down_action;
+    ecs_entity_t toggle_theme_action;
     ecs_entity_t presentation_host;
     ecs_entity_t item_list;
     ecs_entity_t status_text;
+    ecs_entity_t theme_text;
 } DemoUiRefs;
 
 extern ECS_COMPONENT_DECLARE(DemoUiRefs);
@@ -30,5 +32,6 @@ void DemoUiApplyEvents(
     const EcsUiEventList *events);
 void DemoUiSyncProjection(ecs_world_t *ui_world, ecs_world_t *app_world);
 void DemoUiSetStatus(ecs_world_t *world, const char *message);
+void DemoUiRefreshThemeLabel(ecs_world_t *world);
 
 #endif

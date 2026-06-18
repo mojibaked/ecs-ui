@@ -4,6 +4,7 @@
 #include "demo_nav.h"
 #include "demo_terminal.h"
 #include "demo_text_input.h"
+#include "demo_theme.h"
 #include "demo_ui.h"
 #include "ecs_ui/ecs_ui_clay.h"
 
@@ -21,6 +22,37 @@ static void DemoClayHandleErrors(Clay_ErrorData error_data)
         message[i] = error_data.errorText.chars[i];
     }
     TraceLog(LOG_WARNING, "CLAY: %s", message);
+}
+
+static EcsUiClayTheme DemoClayTheme(const ecs_world_t *ui_world)
+{
+    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    if (!DemoThemeIsLight(ui_world)) {
+        return theme;
+    }
+
+    theme.root_background = (Clay_Color){239.0f, 244.0f, 242.0f, 255.0f};
+    theme.surface = (Clay_Color){251.0f, 253.0f, 252.0f, 255.0f};
+    theme.button = (Clay_Color){218.0f, 232.0f, 229.0f, 255.0f};
+    theme.button_primary = (Clay_Color){25.0f, 171.0f, 151.0f, 255.0f};
+    theme.button_subtle = (Clay_Color){207.0f, 221.0f, 219.0f, 255.0f};
+    theme.button_danger = (Clay_Color){218.0f, 82.0f, 62.0f, 255.0f};
+    theme.text = (Clay_Color){20.0f, 31.0f, 34.0f, 255.0f};
+    theme.text_inverse = (Clay_Color){245.0f, 252.0f, 250.0f, 255.0f};
+    return theme;
+}
+
+static Color DemoClayClearColor(const EcsUiClayTheme *theme)
+{
+    if (theme == NULL) {
+        return BLACK;
+    }
+    return (Color){
+        (unsigned char)theme->root_background.r,
+        (unsigned char)theme->root_background.g,
+        (unsigned char)theme->root_background.b,
+        (unsigned char)theme->root_background.a,
+    };
 }
 
 static void DemoClayPushKeyboardEvent(
@@ -180,6 +212,7 @@ int main(void)
 
     ecs_world_t *ui_world = ecs_init();
     EcsUiImport(ui_world);
+    DemoThemeRegister(ui_world);
     DemoUiRegister(ui_world);
     DemoTerminalRegister(ui_world);
     DemoTextInputRegister(ui_world);
@@ -187,9 +220,9 @@ int main(void)
     DemoAnimRegister(ui_world);
     (void)DemoNavRoot(ui_world);
     ecs_entity_t root = DemoUiBuild(ui_world);
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
 
     while (!WindowShouldClose()) {
+        EcsUiClayTheme theme = DemoClayTheme(ui_world);
         Clay_SetLayoutDimensions((Clay_Dimensions){
             .width = (float)GetScreenWidth(),
             .height = (float)GetScreenHeight(),
@@ -241,11 +274,12 @@ int main(void)
             (void)EcsUiReadTree(ui_world, root, &tree);
         }
 
+        theme = DemoClayTheme(ui_world);
         Clay_RenderCommandArray render_commands =
             DemoClayEmitRenderCommands(&tree, &theme);
 
         BeginDrawing();
-        ClearBackground(BLACK);
+        ClearBackground(DemoClayClearColor(&theme));
         Clay_Raylib_Render(render_commands, fonts);
         EndDrawing();
     }

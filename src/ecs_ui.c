@@ -18,6 +18,9 @@ ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
 ECS_TAG_DECLARE(EcsUiOnClick);
 ECS_TAG_DECLARE(EcsUiUsesStyle);
+ECS_TAG_DECLARE(EcsUiTheme);
+ECS_TAG_DECLARE(EcsUiActiveTheme);
+ECS_TAG_DECLARE(EcsUiThemeStyle);
 
 static void EcsUiCopyString(char *out, size_t out_size, const char *value)
 {
@@ -76,6 +79,44 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     ecs_remove(world, entity, EcsUiCustom);
     ecs_remove_id(world, entity, EcsUiInteractive);
     ecs_remove_pair(world, entity, EcsUiOnClick, EcsWildcard);
+    ecs_remove_pair(world, entity, EcsUiUsesStyle, EcsWildcard);
+}
+
+static bool EcsUiThemeReady(void)
+{
+    return EcsUiTheme != 0 && EcsUiActiveTheme != 0 &&
+        EcsUiThemeStyle != 0;
+}
+
+static ecs_entity_t EcsUiThemeRootEntity(const ecs_world_t *world)
+{
+    if (world == NULL) {
+        return 0;
+    }
+    return ecs_lookup(world, "EcsUiThemes");
+}
+
+static ecs_entity_t EcsUiFindThemeStyleSource(
+    const ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token)
+{
+    if (world == NULL || theme == 0 || style_token == 0 ||
+        !EcsUiThemeReady()) {
+        return 0;
+    }
+
+    ecs_iter_t it = ecs_children(world, theme);
+    while (ecs_children_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            ecs_entity_t child = it.entities[i];
+            if (ecs_get_target(world, child, EcsUiThemeStyle, 0) ==
+                style_token) {
+                return child;
+            }
+        }
+    }
+    return 0;
 }
 
 static ecs_entity_t EcsUiCreateNode(
@@ -178,8 +219,133 @@ void EcsUiImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiInteractive);
     ECS_TAG_DEFINE(world, EcsUiOnClick);
     ECS_TAG_DEFINE(world, EcsUiUsesStyle);
+    ECS_TAG_DEFINE(world, EcsUiTheme);
+    ECS_TAG_DEFINE(world, EcsUiActiveTheme);
+    ECS_TAG_DEFINE(world, EcsUiThemeStyle);
     ecs_add_id(world, EcsUiOnClick, EcsExclusive);
     ecs_add_id(world, EcsUiUsesStyle, EcsExclusive);
+    ecs_add_id(world, EcsUiActiveTheme, EcsExclusive);
+    ecs_add_id(world, EcsUiThemeStyle, EcsExclusive);
+}
+
+ecs_entity_t EcsUiThemeRoot(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiThemeReady()) {
+        return 0;
+    }
+
+    ecs_entity_t root = ecs_entity(world, {
+        .name = "EcsUiThemes",
+        .sep = "",
+    });
+    if (root != 0) {
+        ecs_add_id(world, root, EcsOrderedChildren);
+    }
+    return root;
+}
+
+ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id)
+{
+    if (world == NULL || !EcsUiThemeReady()) {
+        return 0;
+    }
+
+    ecs_entity_t root = EcsUiThemeRoot(world);
+    if (root == 0) {
+        return 0;
+    }
+
+    ecs_entity_t theme = ecs_entity(world, {
+        .parent = root,
+        .name = id != NULL && id[0] != '\0' ? id : "EcsUiTheme",
+        .sep = "",
+    });
+    if (theme != 0) {
+        ecs_add_id(world, theme, EcsUiTheme);
+        ecs_add_id(world, theme, EcsOrderedChildren);
+    }
+    return theme;
+}
+
+bool EcsUiSetActiveTheme(ecs_world_t *world, ecs_entity_t theme)
+{
+    if (world == NULL || theme == 0 || !EcsUiThemeReady() ||
+        !ecs_has_id(world, theme, EcsUiTheme)) {
+        return false;
+    }
+
+    ecs_entity_t root = EcsUiThemeRoot(world);
+    if (root == 0) {
+        return false;
+    }
+
+    ecs_add_pair(world, root, EcsUiActiveTheme, theme);
+    return true;
+}
+
+ecs_entity_t EcsUiGetActiveTheme(const ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiThemeReady()) {
+        return 0;
+    }
+
+    ecs_entity_t root = EcsUiThemeRootEntity(world);
+    if (root == 0) {
+        return 0;
+    }
+    return ecs_get_target(world, root, EcsUiActiveTheme, 0);
+}
+
+bool EcsUiThemeSetBoxStyle(
+    ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token,
+    EcsUiBoxStyle style)
+{
+    if (world == NULL || theme == 0 || style_token == 0 ||
+        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiTheme)) {
+        return false;
+    }
+
+    ecs_entity_t source =
+        EcsUiFindThemeStyleSource(world, theme, style_token);
+    if (source == 0) {
+        source = ecs_new_w_pair(world, EcsChildOf, theme);
+        if (source == 0) {
+            return false;
+        }
+        ecs_add_pair(world, source, EcsUiThemeStyle, style_token);
+    }
+    ecs_set_ptr(world, source, EcsUiBoxStyle, &style);
+    return true;
+}
+
+bool EcsUiThemeApply(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiThemeReady()) {
+        return false;
+    }
+
+    ecs_entity_t active = EcsUiGetActiveTheme(world);
+    if (active == 0) {
+        return false;
+    }
+
+    ecs_iter_t it = ecs_children(world, active);
+    while (ecs_children_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            ecs_entity_t source = it.entities[i];
+            ecs_entity_t style_token =
+                ecs_get_target(world, source, EcsUiThemeStyle, 0);
+            const EcsUiBoxStyle *box_style =
+                ecs_get(world, source, EcsUiBoxStyle);
+            if (style_token == 0 || box_style == NULL) {
+                continue;
+            }
+            ecs_set_ptr(world, style_token, EcsUiBoxStyle, box_style);
+        }
+    }
+    return true;
 }
 
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id)

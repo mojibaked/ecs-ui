@@ -201,6 +201,13 @@ int main(void)
     result |= Require(
         ecs_has_id(world, EcsUiUsesStyle, EcsExclusive),
         "EcsUiUsesStyle should be exclusive");
+    result |= Require(EcsUiTheme != 0, "EcsUiTheme should be registered");
+    result |= Require(
+        ecs_has_id(world, EcsUiActiveTheme, EcsExclusive),
+        "EcsUiActiveTheme should be exclusive");
+    result |= Require(
+        ecs_has_id(world, EcsUiThemeStyle, EcsExclusive),
+        "EcsUiThemeStyle should be exclusive");
     result |= Require(
         ecs_id(EcsUiPressable) != 0,
         "EcsUiPressable should be registered");
@@ -826,17 +833,45 @@ int main(void)
         ecs_entity(world, {.name = "PresentAddMachineAction"});
     ecs_entity_t search_style_token =
         ecs_entity(world, {.name = "SearchStyleToken"});
-    ecs_set(
-        world,
-        search_style_token,
-        EcsUiBoxStyle,
-        {
-            .background = {10u, 20u, 30u, 255u},
-            .hover_background = {20u, 30u, 40u, 255u},
-            .highlight_background = {50u, 60u, 70u, 255u},
-            .radius = 0.1f,
-            .padding = 9.0f,
-        });
+    ecs_entity_t light_theme = EcsUiThemeEntity(world, "LightTheme");
+    ecs_entity_t dark_theme = EcsUiThemeEntity(world, "DarkTheme");
+    result |= Require(light_theme != 0, "light theme should be created");
+    result |= Require(dark_theme != 0, "dark theme should be created");
+    result |= Require(
+        EcsUiThemeSetBoxStyle(
+            world,
+            light_theme,
+            search_style_token,
+            (EcsUiBoxStyle){
+                .background = {10u, 20u, 30u, 255u},
+                .hover_background = {20u, 30u, 40u, 255u},
+                .highlight_background = {50u, 60u, 70u, 255u},
+                .radius = 0.1f,
+                .padding = 9.0f,
+            }),
+        "light theme should store token box style");
+    result |= Require(
+        EcsUiThemeSetBoxStyle(
+            world,
+            dark_theme,
+            search_style_token,
+            (EcsUiBoxStyle){
+                .background = {210u, 220u, 230u, 255u},
+                .hover_background = {200u, 210u, 220u, 255u},
+                .highlight_background = {180u, 190u, 200u, 255u},
+                .radius = 0.3f,
+                .padding = 11.0f,
+            }),
+        "dark theme should store token box style");
+    result |= Require(
+        EcsUiSetActiveTheme(world, light_theme),
+        "light theme should become active");
+    result |= Require(
+        EcsUiGetActiveTheme(world) == light_theme,
+        "active theme should round trip");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "active theme should apply to style token");
 
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
     VStack(&builder, {.id = "HomeStack", .gap = 10.0f, .padding = 16.0f}) {
@@ -1026,6 +1061,35 @@ int main(void)
             tree.nodes[9u].box_style.background.b == 70u &&
             tree.nodes[9u].box_style.background.a == 255u,
         "direct box style should override style token");
+    result |= Require(
+        EcsUiSetActiveTheme(world, dark_theme),
+        "dark theme should become active");
+    result |= Require(
+        EcsUiGetActiveTheme(world) == dark_theme,
+        "dark active theme should round trip");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "dark theme should apply to style token");
+    result |= Require(EcsUiReadTree(world, root, &tree), "reread tree failed");
+    result |= Require(
+        tree.nodes[7u].has_box_style &&
+            tree.nodes[7u].box_style.background.r == 210u &&
+            tree.nodes[7u].box_style.background.g == 220u &&
+            tree.nodes[7u].box_style.background.b == 230u &&
+            tree.nodes[7u].box_style.background.a == 255u,
+        "theme switch should update token box style");
+    result |= RequireNear(
+        tree.nodes[7u].box_style.padding,
+        11.0f,
+        0.0001f,
+        "theme switch should update token padding");
+    result |= Require(
+        tree.nodes[9u].has_box_style &&
+            tree.nodes[9u].box_style.background.r == 90u &&
+            tree.nodes[9u].box_style.background.g == 80u &&
+            tree.nodes[9u].box_style.background.b == 70u &&
+            tree.nodes[9u].box_style.background.a == 255u,
+        "direct box style should still override switched style token");
 
     ecs_entities_t ordered = ecs_get_ordered_children(world, home_stack);
     result |= Require(ordered.count == 5, "ordered child count mismatch");

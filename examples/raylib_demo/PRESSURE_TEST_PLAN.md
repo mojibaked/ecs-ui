@@ -434,3 +434,26 @@ Definition of done:
 - [x] Existing direct style components keep working.
 - [x] Active light/dark theme switching remains a later slice built on the same
   token lookup shape.
+
+## Phase 21: Active Theme Switching
+
+Use style tokens as stable handles while active themes provide the current token
+values.
+
+- [x] Add ECS theme entities and an exclusive `EcsUiActiveTheme` relationship.
+- [x] Store theme-provided `EcsUiBoxStyle` records as child entities that point
+  at stable style tokens with `EcsUiThemeStyle`.
+- [x] Add `EcsUiThemeApply` so switching active theme updates token components
+  without rebuilding UI nodes.
+- [x] Move demo text-field colors into dark/light theme definitions.
+- [x] Add a demo theme toggle action and update renderer fallback palettes from
+  UI-world theme state.
+
+Definition of done:
+
+- [x] Unit tests cover active theme registration, token updates after theme
+  switch, and direct-style precedence.
+- [x] The raylib and Clay demos can toggle light/dark mode without recreating
+  the retained UI tree.
+- [x] Theme switching remains token-based so widgets can opt into semantic
+  styles instead of hard-coded colors.

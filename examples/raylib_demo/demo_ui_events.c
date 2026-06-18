@@ -1,6 +1,7 @@
 #include "demo_ui_internal.h"
 
 #include "demo_nav.h"
+#include "demo_theme.h"
 #include "demo_text_input.h"
 
 #include <raylib.h>
@@ -228,6 +229,16 @@ void DemoUiApplyEvents(
             DemoNavRequestPresentRoute(
                 ui_world,
                 DemoNavAddItemRoute(ui_world));
+            continue;
+        }
+
+        if (event->action == refs->toggle_theme_action) {
+            DemoThemeToggle(ui_world);
+            DemoUiRefreshThemeLabel(ui_world);
+            TraceLog(
+                LOG_INFO,
+                "DEMO: theme switched to %s",
+                DemoThemeName(ui_world));
             continue;
         }
 
