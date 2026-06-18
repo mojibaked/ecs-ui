@@ -1,6 +1,7 @@
 #include "demo_ui_internal.h"
 
 #include "demo_nav.h"
+#include "demo_text_input.h"
 
 #include <raylib.h>
 
@@ -14,6 +15,39 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
     for (uint32_t i = 0u; i < events->count; i += 1u) {
         const EcsUiEvent *event = &events->events[i];
         if (refs == NULL) {
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_INPUT) {
+            if (DemoTextInputHasFocusedField(world)) {
+                DemoTextInputRequestInsert(world, event->codepoint);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_DELETE) {
+            if (DemoTextInputHasFocusedField(world)) {
+                DemoTextInputRequestDelete(world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_CANCEL) {
+            if (DemoTextInputHasFocusedField(world)) {
+                DemoTextInputRequestBlur(world);
+            }
+            continue;
+        }
+
+        if (event->type == ECS_UI_EVENT_TEXT_SUBMIT) {
+            if (DemoTextInputHasFocusedField(world)) {
+                const char *label = DemoTextInputAddItemNameValue(world);
+                TraceLog(LOG_INFO, "DEMO: submit text field requested");
+                DemoAppRequestAddNamedItem(world, label);
+                DemoTextInputClearAddItemName(world);
+                DemoTextInputRequestBlur(world);
+                DemoNavRequestDismissPresentation(world);
+            }
             continue;
         }
 
@@ -49,6 +83,19 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
             continue;
         }
 
+        if (event->action == refs->focus_text_field_action) {
+            ecs_entity_t field =
+                ecs_get_target(world, event->node, DemoUiForTextField, 0);
+            if (field != 0) {
+                TraceLog(
+                    LOG_INFO,
+                    "DEMO: focus text field requested from %s",
+                    event->node_id);
+                DemoTextInputRequestFocusField(world, field);
+            }
+            continue;
+        }
+
         if (event->action == refs->present_add_item_action) {
             TraceLog(
                 LOG_INFO,
@@ -63,6 +110,7 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
                 LOG_INFO,
                 "DEMO: dismiss presentation requested from %s",
                 event->node_id);
+            DemoTextInputRequestBlur(world);
             DemoNavRequestDismissPresentation(world);
             continue;
         }
@@ -72,7 +120,11 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
                 LOG_INFO,
                 "DEMO: add item requested from %s",
                 event->node_id);
-            DemoAppRequestAddItem(world);
+            DemoAppRequestAddNamedItem(
+                world,
+                DemoTextInputAddItemNameValue(world));
+            DemoTextInputClearAddItemName(world);
+            DemoTextInputRequestBlur(world);
             DemoNavRequestDismissPresentation(world);
             continue;
         }

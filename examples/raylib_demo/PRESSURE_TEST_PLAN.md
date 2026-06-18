@@ -150,17 +150,18 @@ Definition of done:
 
 Prove text fields can map to Glowfish's focus and request patterns.
 
-- Add a text field to the sheet.
-- Use ECS relationships for focus, for example `(DemoFocusedField,
+- [x] Add a text field to the sheet.
+- [x] Use ECS relationships for focus, for example `(DemoFocusedField,
   text_field_entity)`.
-- Submit insert/delete/focus/blur requests from input events.
-- Update text nodes through observers when field state changes.
+- [x] Submit insert/delete/focus/blur requests from input events.
+- [x] Update text nodes through observers when field state changes.
+- [x] Use the text field value to create named demo items.
 
 Definition of done:
 
-- Focus, blur, typing, and deletion are represented in ECS.
-- Field visuals are driven by focus/editing state.
-- The event bridge remains renderer-agnostic.
+- [x] Focus, blur, typing, and deletion are represented in ECS.
+- [x] Field visuals are driven by focus/editing state.
+- [x] The event bridge remains renderer-agnostic.
 
 ## Phase 8: Custom Widget Escape Hatch
 

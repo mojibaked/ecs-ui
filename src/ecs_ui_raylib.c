@@ -642,42 +642,50 @@ static void EcsUiRaylibPushCapturedPointerEvent(
     (void)EcsUiEventListPush(events, &event);
 }
 
-EcsUiRaylibTheme EcsUiRaylibThemeDefault(void)
+static void EcsUiRaylibPushKeyboardEvent(
+    EcsUiEventList *events,
+    EcsUiEventType type,
+    uint32_t codepoint)
 {
-    return (EcsUiRaylibTheme){
-        .root_background = {16, 20, 25, 255},
-        .surface = {24, 32, 37, 255},
-        .surface_subtle = {18, 27, 31, 255},
-        .button = {38, 72, 76, 255},
-        .button_primary = {49, 211, 186, 255},
-        .button_subtle = {88, 111, 116, 255},
-        .button_danger = {255, 125, 95, 255},
-        .button_disabled = {70, 78, 82, 255},
-        .text = {243, 247, 247, 255},
-        .text_muted = {142, 161, 164, 255},
-        .text_inverse = {16, 20, 25, 255},
-        .radius = 0.12f,
-    };
-}
-
-void EcsUiRaylibDrawTree(
-    const EcsUiTreeSnapshot *tree,
-    Rectangle bounds,
-    const EcsUiRaylibTheme *theme)
-{
-    if (tree == NULL || tree->count == 0u || theme == NULL) {
+    if (events == NULL) {
         return;
     }
 
-    EcsUiRaylibDrawNode(tree, theme, 0u, bounds, false, 1.0f);
+    EcsUiEvent event = {
+        .type = type,
+        .codepoint = codepoint,
+    };
+    (void)EcsUiEventListPush(events, &event);
 }
 
-void EcsUiRaylibCollectEvents(
+static void EcsUiRaylibCollectKeyboardEvents(EcsUiEventList *events)
+{
+    if (events == NULL) {
+        return;
+    }
+
+    for (int key = GetCharPressed(); key > 0; key = GetCharPressed()) {
+        EcsUiRaylibPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_INPUT,
+            (uint32_t)key);
+    }
+    if (IsKeyPressed(KEY_BACKSPACE)) {
+        EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_DELETE, 0u);
+    }
+    if (IsKeyPressed(KEY_ENTER)) {
+        EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_SUBMIT, 0u);
+    }
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        EcsUiRaylibPushKeyboardEvent(events, ECS_UI_EVENT_TEXT_CANCEL, 0u);
+    }
+}
+
+static void EcsUiRaylibCollectPointerEvents(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
     EcsUiEventList *events)
 {
-    EcsUiEventListClear(events);
     if (tree == NULL || tree->count == 0u || events == NULL) {
         return;
     }
@@ -727,4 +735,48 @@ void EcsUiRaylibCollectEvents(
             ECS_UI_EVENT_DRAG_STARTED,
             point);
     }
+}
+
+EcsUiRaylibTheme EcsUiRaylibThemeDefault(void)
+{
+    return (EcsUiRaylibTheme){
+        .root_background = {16, 20, 25, 255},
+        .surface = {24, 32, 37, 255},
+        .surface_subtle = {18, 27, 31, 255},
+        .button = {38, 72, 76, 255},
+        .button_primary = {49, 211, 186, 255},
+        .button_subtle = {88, 111, 116, 255},
+        .button_danger = {255, 125, 95, 255},
+        .button_disabled = {70, 78, 82, 255},
+        .text = {243, 247, 247, 255},
+        .text_muted = {142, 161, 164, 255},
+        .text_inverse = {16, 20, 25, 255},
+        .radius = 0.12f,
+    };
+}
+
+void EcsUiRaylibDrawTree(
+    const EcsUiTreeSnapshot *tree,
+    Rectangle bounds,
+    const EcsUiRaylibTheme *theme)
+{
+    if (tree == NULL || tree->count == 0u || theme == NULL) {
+        return;
+    }
+
+    EcsUiRaylibDrawNode(tree, theme, 0u, bounds, false, 1.0f);
+}
+
+void EcsUiRaylibCollectEvents(
+    const EcsUiTreeSnapshot *tree,
+    Rectangle bounds,
+    EcsUiEventList *events)
+{
+    EcsUiEventListClear(events);
+    if (events == NULL) {
+        return;
+    }
+
+    EcsUiRaylibCollectPointerEvents(tree, bounds, events);
+    EcsUiRaylibCollectKeyboardEvents(events);
 }

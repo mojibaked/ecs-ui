@@ -5,7 +5,7 @@
 
 ECS_COMPONENT_DECLARE(DemoItem);
 ECS_COMPONENT_DECLARE(DemoItemSequence);
-ECS_TAG_DECLARE(DemoAddItemRequest);
+ECS_COMPONENT_DECLARE(DemoAddItemRequest);
 ECS_TAG_DECLARE(DemoSelectItemRequest);
 ECS_TAG_DECLARE(DemoDeleteItemRequest);
 ECS_TAG_DECLARE(DemoRenameItemRequest);
@@ -33,11 +33,34 @@ ecs_entity_t DemoAppSelectionRoot(ecs_world_t *world)
 
 void DemoAppRequestAddItem(ecs_world_t *world)
 {
+    DemoAppRequestAddNamedItem(world, NULL);
+}
+
+void DemoAppRequestAddNamedItem(ecs_world_t *world, const char *label)
+{
     if (world == NULL) {
         return;
     }
 
-    (void)ecs_new_w_id(world, DemoAddItemRequest);
+    ecs_entity_t request = ecs_new(world);
+    ecs_set(
+        world,
+        request,
+        DemoAddItemRequest,
+        {
+            .label = {0},
+        });
+
+    if (label != NULL && label[0] != '\0') {
+        DemoAddItemRequest *request_data =
+            ecs_get_mut(world, request, DemoAddItemRequest);
+        (void)snprintf(
+            request_data->label,
+            sizeof(request_data->label),
+            "%s",
+            label);
+        ecs_modified(world, request, DemoAddItemRequest);
+    }
 }
 
 void DemoAppRequestSelectItem(ecs_world_t *world, ecs_entity_t item)
@@ -141,6 +164,7 @@ static void DemoAppAddItemSystem(ecs_iter_t *it)
         return;
     }
 
+    const DemoAddItemRequest *requests = ecs_field(it, DemoAddItemRequest, 0);
     ecs_entity_t item_root = DemoAppItemRoot(it->world);
     for (int32_t i = 0; i < it->count; i += 1) {
         const uint32_t item_id = sequence->next_item_id;
@@ -159,11 +183,19 @@ static void DemoAppAddItemSystem(ecs_iter_t *it)
             .id = item_id,
             .rename_count = 0u,
         };
-        (void)snprintf(
-            item_data.label,
-            sizeof(item_data.label),
-            "item %u",
-            item_id);
+        if (requests[i].label[0] != '\0') {
+            (void)snprintf(
+                item_data.label,
+                sizeof(item_data.label),
+                "%s",
+                requests[i].label);
+        } else {
+            (void)snprintf(
+                item_data.label,
+                sizeof(item_data.label),
+                "item %u",
+                item_id);
+        }
         ecs_set_ptr(it->world, item, DemoItem, &item_data);
         ecs_delete(it->world, it->entities[i]);
         DemoAppMarkItemOrderDirty(it->world);
@@ -274,7 +306,7 @@ void DemoAppRegister(ecs_world_t *world)
 {
     ECS_COMPONENT_DEFINE(world, DemoItem);
     ECS_COMPONENT_DEFINE(world, DemoItemSequence);
-    ECS_TAG_DEFINE(world, DemoAddItemRequest);
+    ECS_COMPONENT_DEFINE(world, DemoAddItemRequest);
     ECS_TAG_DEFINE(world, DemoSelectItemRequest);
     ECS_TAG_DEFINE(world, DemoDeleteItemRequest);
     ECS_TAG_DEFINE(world, DemoRenameItemRequest);
@@ -312,7 +344,7 @@ void DemoAppRegister(ecs_world_t *world)
             .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
         }),
         .query.terms = {
-            {.id = DemoAddItemRequest},
+            {.id = ecs_id(DemoAddItemRequest)},
         },
         .callback = DemoAppAddItemSystem,
     });

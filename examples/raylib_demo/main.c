@@ -1,6 +1,7 @@
 #include "demo_app.h"
 #include "demo_anim.h"
 #include "demo_nav.h"
+#include "demo_text_input.h"
 #include "demo_ui.h"
 #include "ecs_ui/ecs_ui_raylib.h"
 
@@ -15,6 +16,7 @@ int main(void)
     EcsUiImport(world);
     DemoAppRegister(world);
     DemoUiRegister(world);
+    DemoTextInputRegister(world);
     DemoNavRegister(world);
     DemoAnimRegister(world);
     (void)DemoAppItemRoot(world);

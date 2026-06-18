@@ -15,9 +15,13 @@ typedef struct DemoItemSequence {
     uint32_t next_item_id;
 } DemoItemSequence;
 
+typedef struct DemoAddItemRequest {
+    char label[ECS_UI_TEXT_MAX];
+} DemoAddItemRequest;
+
 extern ECS_COMPONENT_DECLARE(DemoItem);
 extern ECS_COMPONENT_DECLARE(DemoItemSequence);
-extern ECS_TAG_DECLARE(DemoAddItemRequest);
+extern ECS_COMPONENT_DECLARE(DemoAddItemRequest);
 extern ECS_TAG_DECLARE(DemoSelectItemRequest);
 extern ECS_TAG_DECLARE(DemoDeleteItemRequest);
 extern ECS_TAG_DECLARE(DemoRenameItemRequest);
@@ -35,6 +39,7 @@ void DemoAppRegister(ecs_world_t *world);
 ecs_entity_t DemoAppItemRoot(ecs_world_t *world);
 ecs_entity_t DemoAppSelectionRoot(ecs_world_t *world);
 void DemoAppRequestAddItem(ecs_world_t *world);
+void DemoAppRequestAddNamedItem(ecs_world_t *world, const char *label);
 void DemoAppRequestSelectItem(ecs_world_t *world, ecs_entity_t item);
 void DemoAppRequestDeleteItem(ecs_world_t *world, ecs_entity_t item);
 void DemoAppRequestRenameItem(ecs_world_t *world, ecs_entity_t item);

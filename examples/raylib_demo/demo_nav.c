@@ -1,6 +1,7 @@
 #include "demo_nav.h"
 
 #include "demo_anim.h"
+#include "demo_text_input.h"
 #include "demo_ui.h"
 
 #include <raylib.h>
@@ -134,7 +135,8 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
 {
     if (world == NULL || presentation == 0 || refs == NULL ||
         refs->presentation_host == 0 || refs->add_item_action == 0 ||
-        refs->dismiss_presentation_action == 0) {
+        refs->dismiss_presentation_action == 0 ||
+        refs->focus_text_field_action == 0) {
         return 0;
     }
 
@@ -178,9 +180,20 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
         &builder,
         (EcsUiTextDesc){
             .id = "AddItemSheetBody",
-            .text = "This presentation is created from ECS navigation state.",
+            .text = "Name an item, then create it from ECS text field state.",
             .role = ECS_UI_TEXT_CAPTION,
         });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "AddItemNameLabel",
+            .text = "item name",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    (void)DemoTextInputBuildAddItemNameField(
+        world,
+        &builder,
+        refs->focus_text_field_action);
     EcsUiBeginHStack(
         &builder,
         (EcsUiStackDesc){
@@ -279,6 +292,7 @@ static void DemoNavPresentRouteSystem(ecs_iter_t *it)
         ecs_entity_t active =
             ecs_get_target(it->world, nav_root, DemoActivePresentation, 0);
         if (active != 0) {
+            DemoTextInputRequestBlur(it->world);
             DemoNavDeletePresentationUi(it->world, active);
             ecs_delete(it->world, active);
         }
@@ -305,6 +319,7 @@ static void DemoNavDismissPresentationSystem(ecs_iter_t *it)
     for (int32_t i = 0; i < it->count; i += 1) {
         ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
         if (active != 0) {
+            DemoTextInputRequestBlur(it->world);
             DemoAnimStartPresentation(
                 it->world,
                 active,
@@ -373,6 +388,9 @@ static void DemoNavEndPresentationDragSystem(ecs_iter_t *it)
                 requests[i].velocity_y > 900.0f ||
                 current < 0.52f;
             ecs_remove(it->world, active, DemoPresentationDrag);
+            if (should_dismiss) {
+                DemoTextInputRequestBlur(it->world);
+            }
             DemoAnimStartPresentation(
                 it->world,
                 active,
