@@ -1,0 +1,158 @@
+cmake_minimum_required(VERSION 3.24)
+
+project(ecs_ui LANGUAGES C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+option(ECS_UI_BUILD_TESTS "Build ecs-ui tests" ON)
+option(ECS_UI_BUILD_CLAY_ADAPTER "Build the optional Clay adapter" ON)
+option(ECS_UI_BUILD_RAYLIB_RENDERER "Build the optional raylib renderer" OFF)
+option(ECS_UI_BUILD_RAYLIB_DEMO "Build the raylib demo executable" OFF)
+option(ECS_UI_FETCH_RAYLIB "Fetch raylib with CMake FetchContent when needed" ON)
+
+set(ECS_UI_FLECS_SOURCE
+    ""
+    CACHE PATH
+    "Path to a Flecs single-file distribution directory containing flecs.c and flecs.h")
+set(ECS_UI_CLAY_SOURCE
+    ""
+    CACHE PATH
+    "Path to a Clay header directory containing clay.h")
+set(ECS_UI_RAYLIB_SOURCE
+    ""
+    CACHE PATH
+    "Path to a raylib source checkout containing CMakeLists.txt")
+
+include(cmake/EcsUiWarnings.cmake)
+
+if(TARGET flecs)
+    set(ECS_UI_FLECS_TARGET flecs)
+elseif(ECS_UI_FLECS_SOURCE AND EXISTS "${ECS_UI_FLECS_SOURCE}/flecs.c")
+    add_library(ecs_ui_flecs STATIC
+        "${ECS_UI_FLECS_SOURCE}/flecs.c")
+    target_include_directories(ecs_ui_flecs
+        PUBLIC "${ECS_UI_FLECS_SOURCE}")
+    target_compile_definitions(ecs_ui_flecs
+        PUBLIC
+            FLECS_STATIC
+            FLECS_TERM_COUNT_MAX=64)
+    if(NOT MSVC)
+        set_target_properties(ecs_ui_flecs PROPERTIES C_EXTENSIONS ON)
+    endif()
+    set(ECS_UI_FLECS_TARGET ecs_ui_flecs)
+else()
+    find_package(flecs CONFIG QUIET)
+    if(TARGET flecs::flecs)
+        set(ECS_UI_FLECS_TARGET flecs::flecs)
+    elseif(TARGET flecs_static)
+        set(ECS_UI_FLECS_TARGET flecs_static)
+    else()
+        message(FATAL_ERROR
+            "Flecs not found. Pass -DECS_UI_FLECS_SOURCE=/path/to/flecs "
+            "or provide an existing flecs/flecs::flecs target.")
+    endif()
+endif()
+
+add_library(ecs_ui STATIC
+    src/ecs_ui.c)
+add_library(ecs_ui::ecs_ui ALIAS ecs_ui)
+target_include_directories(ecs_ui
+    PUBLIC
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+        "$<INSTALL_INTERFACE:include>")
+target_link_libraries(ecs_ui
+    PUBLIC ${ECS_UI_FLECS_TARGET})
+ecs_ui_enable_warnings(ecs_ui)
+
+if(ECS_UI_BUILD_CLAY_ADAPTER)
+    if(TARGET clay)
+        set(ECS_UI_CLAY_TARGET clay)
+    elseif(ECS_UI_CLAY_SOURCE AND EXISTS "${ECS_UI_CLAY_SOURCE}/clay.h")
+        add_library(ecs_ui_clay_headers INTERFACE)
+        target_include_directories(ecs_ui_clay_headers
+            INTERFACE "${ECS_UI_CLAY_SOURCE}")
+        set(ECS_UI_CLAY_TARGET ecs_ui_clay_headers)
+    else()
+        message(STATUS
+            "Clay not found; skipping ecs_ui_clay. "
+            "Pass -DECS_UI_CLAY_SOURCE=/path/to/clay to build it.")
+        set(ECS_UI_CLAY_TARGET "")
+    endif()
+
+    if(ECS_UI_CLAY_TARGET)
+        add_library(ecs_ui_clay STATIC
+            src/ecs_ui_clay.c)
+        add_library(ecs_ui::clay ALIAS ecs_ui_clay)
+        target_link_libraries(ecs_ui_clay
+            PUBLIC ecs_ui ${ECS_UI_CLAY_TARGET})
+        ecs_ui_enable_warnings(ecs_ui_clay)
+    endif()
+endif()
+
+if(ECS_UI_BUILD_RAYLIB_DEMO)
+    set(ECS_UI_BUILD_RAYLIB_RENDERER ON)
+endif()
+
+if(ECS_UI_BUILD_RAYLIB_RENDERER)
+    if(TARGET raylib)
+        set(ECS_UI_RAYLIB_TARGET raylib)
+    elseif(ECS_UI_RAYLIB_SOURCE AND EXISTS "${ECS_UI_RAYLIB_SOURCE}/CMakeLists.txt")
+        set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+        add_subdirectory("${ECS_UI_RAYLIB_SOURCE}" "${CMAKE_BINARY_DIR}/raylib")
+        set(ECS_UI_RAYLIB_TARGET raylib)
+    elseif(ECS_UI_FETCH_RAYLIB)
+        include(FetchContent)
+        set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(
+            raylib
+            GIT_REPOSITORY https://github.com/raysan5/raylib.git
+            GIT_TAG 6.0
+            GIT_SHALLOW TRUE)
+        FetchContent_MakeAvailable(raylib)
+        set(ECS_UI_RAYLIB_TARGET raylib)
+    else()
+        find_package(raylib CONFIG QUIET)
+        if(TARGET raylib)
+            set(ECS_UI_RAYLIB_TARGET raylib)
+        elseif(TARGET raylib::raylib)
+            set(ECS_UI_RAYLIB_TARGET raylib::raylib)
+        else()
+            message(FATAL_ERROR
+                "raylib not found. Pass -DECS_UI_RAYLIB_SOURCE=/path/to/raylib "
+                "or enable -DECS_UI_FETCH_RAYLIB=ON.")
+        endif()
+    endif()
+
+    add_library(ecs_ui_raylib STATIC
+        src/ecs_ui_raylib.c)
+    add_library(ecs_ui::raylib ALIAS ecs_ui_raylib)
+    target_link_libraries(ecs_ui_raylib
+        PUBLIC ecs_ui ${ECS_UI_RAYLIB_TARGET})
+    ecs_ui_enable_warnings(ecs_ui_raylib)
+
+    if(ECS_UI_BUILD_RAYLIB_DEMO)
+        add_executable(ecs_ui_raylib_demo
+            examples/raylib_demo/demo_app.c
+            examples/raylib_demo/demo_ui.c
+            examples/raylib_demo/main.c)
+        target_link_libraries(ecs_ui_raylib_demo
+            PRIVATE ecs_ui_raylib)
+        ecs_ui_enable_warnings(ecs_ui_raylib_demo)
+    endif()
+endif()
+
+if(ECS_UI_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(ecs_ui_basic
+        tests/ecs_ui_basic.c)
+    target_link_libraries(ecs_ui_basic
+        PRIVATE ecs_ui)
+    ecs_ui_enable_warnings(ecs_ui_basic)
+    add_test(NAME ecs_ui_basic COMMAND ecs_ui_basic)
+endif()

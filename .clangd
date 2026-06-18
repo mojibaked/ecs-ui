@@ -1,0 +1,4 @@
+CompileFlags:
+  # Use the raylib build's compile DB — it covers every source file
+  # plus examples/, flecs, and raylib.
+  CompilationDatabase: build-raylib
