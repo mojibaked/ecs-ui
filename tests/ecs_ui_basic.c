@@ -110,6 +110,13 @@ int main(void)
     result |= Require(
         strcmp(tree.nodes[3u].text.text, "add machine") == 0,
         "text payload not copied");
+    result |= Require(
+        tree.nodes[2u].visual.opacity == 1.0f,
+        "visual opacity should default to 1");
+    result |= Require(
+        tree.nodes[2u].visual.offset_x == 0.0f &&
+            tree.nodes[2u].visual.offset_y == 0.0f,
+        "visual offset should default to 0");
 
     ecs_entity_t home_stack = tree.nodes[1u].entity;
     result |= Require(

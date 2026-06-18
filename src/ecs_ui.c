@@ -9,6 +9,7 @@ ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiButton);
 ECS_COMPONENT_DECLARE(EcsUiText);
 ECS_COMPONENT_DECLARE(EcsUiIcon);
+ECS_COMPONENT_DECLARE(EcsUiVisual);
 
 ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
@@ -144,6 +145,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
     ECS_COMPONENT_DEFINE(world, EcsUiText);
     ECS_COMPONENT_DEFINE(world, EcsUiIcon);
+    ECS_COMPONENT_DEFINE(world, EcsUiVisual);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
     ECS_TAG_DEFINE(world, EcsUiInteractive);
@@ -331,6 +333,7 @@ static uint32_t EcsUiReadNode(
     snapshot->parent_index = parent_index;
     snapshot->first_child = ECS_UI_TREE_INVALID_INDEX;
     snapshot->next_sibling = ECS_UI_TREE_INVALID_INDEX;
+    snapshot->visual.opacity = 1.0f;
 
     const EcsUiNodeId *node_id = ecs_get(world, entity, EcsUiNodeId);
     if (node_id != NULL) {
@@ -355,6 +358,11 @@ static uint32_t EcsUiReadNode(
     const EcsUiIcon *icon = ecs_get(world, entity, EcsUiIcon);
     if (icon != NULL) {
         snapshot->icon = *icon;
+    }
+
+    const EcsUiVisual *visual = ecs_get(world, entity, EcsUiVisual);
+    if (visual != NULL) {
+        snapshot->visual = *visual;
     }
 
     uint32_t previous_child = ECS_UI_TREE_INVALID_INDEX;

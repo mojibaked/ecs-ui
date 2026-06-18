@@ -84,6 +84,12 @@ typedef struct EcsUiIcon {
     char name[ECS_UI_ID_MAX];
 } EcsUiIcon;
 
+typedef struct EcsUiVisual {
+    float opacity;
+    float offset_x;
+    float offset_y;
+} EcsUiVisual;
+
 typedef struct EcsUiStackDesc {
     const char *id;
     float gap;
@@ -130,6 +136,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiButton button;
     EcsUiText text;
     EcsUiIcon icon;
+    EcsUiVisual visual;
 } EcsUiTreeNodeSnapshot;
 
 typedef struct EcsUiTreeSnapshot {
@@ -160,6 +167,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
 extern ECS_COMPONENT_DECLARE(EcsUiText);
 extern ECS_COMPONENT_DECLARE(EcsUiIcon);
+extern ECS_COMPONENT_DECLARE(EcsUiVisual);
 
 extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);

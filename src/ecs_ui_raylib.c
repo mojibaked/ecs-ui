@@ -13,6 +13,24 @@ static float EcsUiRaylibClampPositive(float value)
     return value > 0.0f ? value : 0.0f;
 }
 
+static float EcsUiRaylibClamp01(float value)
+{
+    if (value < 0.0f) {
+        return 0.0f;
+    }
+    if (value > 1.0f) {
+        return 1.0f;
+    }
+    return value;
+}
+
+static Rectangle EcsUiRaylibOffset(Rectangle bounds, EcsUiVisual visual)
+{
+    bounds.x += visual.offset_x;
+    bounds.y += visual.offset_y;
+    return bounds;
+}
+
 static Rectangle EcsUiRaylibInset(Rectangle bounds, float amount)
 {
     const float inset = EcsUiRaylibClampPositive(amount);
@@ -24,6 +42,12 @@ static Rectangle EcsUiRaylibInset(Rectangle bounds, float amount)
         .width = EcsUiRaylibClampPositive(width),
         .height = EcsUiRaylibClampPositive(height),
     };
+}
+
+static Color EcsUiRaylibApplyOpacity(Color color, float opacity)
+{
+    color.a = (unsigned char)((float)color.a * EcsUiRaylibClamp01(opacity));
+    return color;
 }
 
 static uint32_t EcsUiRaylibChildCount(
@@ -165,14 +189,16 @@ static void EcsUiRaylibDrawNode(
     const EcsUiRaylibTheme *theme,
     uint32_t index,
     Rectangle bounds,
-    bool inverse_text);
+    bool inverse_text,
+    float opacity);
 
 static void EcsUiRaylibDrawChildrenVertical(
     const EcsUiTreeSnapshot *tree,
     const EcsUiRaylibTheme *theme,
     uint32_t index,
     Rectangle bounds,
-    bool inverse_text)
+    bool inverse_text,
+    float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     const float gap = EcsUiRaylibClampPositive(node->stack.gap);
@@ -191,7 +217,13 @@ static void EcsUiRaylibDrawChildrenVertical(
             .width = bounds.width,
             .height = preferred_height < remaining ? preferred_height : remaining,
         };
-        EcsUiRaylibDrawNode(tree, theme, child, child_bounds, inverse_text);
+        EcsUiRaylibDrawNode(
+            tree,
+            theme,
+            child,
+            child_bounds,
+            inverse_text,
+            opacity);
         y += child_bounds.height + gap;
         child = tree->nodes[child].next_sibling;
     }
@@ -202,7 +234,8 @@ static void EcsUiRaylibDrawChildrenHorizontal(
     const EcsUiRaylibTheme *theme,
     uint32_t index,
     Rectangle bounds,
-    bool inverse_text)
+    bool inverse_text,
+    float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     const uint32_t child_count = EcsUiRaylibChildCount(tree, index);
@@ -224,7 +257,13 @@ static void EcsUiRaylibDrawChildrenHorizontal(
             .width = child_width,
             .height = bounds.height,
         };
-        EcsUiRaylibDrawNode(tree, theme, child, child_bounds, inverse_text);
+        EcsUiRaylibDrawNode(
+            tree,
+            theme,
+            child,
+            child_bounds,
+            inverse_text,
+            opacity);
         x += child_width + gap;
         child = tree->nodes[child].next_sibling;
     }
@@ -235,44 +274,75 @@ static void EcsUiRaylibDrawNode(
     const EcsUiRaylibTheme *theme,
     uint32_t index,
     Rectangle bounds,
-    bool inverse_text)
+    bool inverse_text,
+    float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const float node_opacity =
+        opacity * EcsUiRaylibClamp01(node->visual.opacity);
+    if (node_opacity <= 0.01f) {
+        return;
+    }
+
+    Rectangle node_bounds = EcsUiRaylibOffset(bounds, node->visual);
 
     switch (node->kind) {
     case ECS_UI_NODE_ROOT:
-        DrawRectangleRec(bounds, theme->root_background);
+        DrawRectangleRec(
+            node_bounds,
+            EcsUiRaylibApplyOpacity(theme->root_background, node_opacity));
         EcsUiRaylibDrawChildrenVertical(
             tree,
             theme,
             index,
-            EcsUiRaylibInset(bounds, node->stack.padding),
-            inverse_text);
+            EcsUiRaylibInset(node_bounds, node->stack.padding),
+            inverse_text,
+            node_opacity);
         break;
     case ECS_UI_NODE_VSTACK:
-        DrawRectangleRounded(bounds, theme->radius, 8, theme->surface);
+        DrawRectangleRounded(
+            node_bounds,
+            theme->radius,
+            8,
+            EcsUiRaylibApplyOpacity(theme->surface, node_opacity));
         EcsUiRaylibDrawChildrenVertical(
             tree,
             theme,
             index,
-            EcsUiRaylibInset(bounds, node->stack.padding),
-            inverse_text);
+            EcsUiRaylibInset(node_bounds, node->stack.padding),
+            inverse_text,
+            node_opacity);
         break;
     case ECS_UI_NODE_HSTACK:
-        DrawRectangleRounded(bounds, theme->radius, 8, theme->surface_subtle);
+        DrawRectangleRounded(
+            node_bounds,
+            theme->radius,
+            8,
+            EcsUiRaylibApplyOpacity(theme->surface_subtle, node_opacity));
         EcsUiRaylibDrawChildrenHorizontal(
             tree,
             theme,
             index,
-            EcsUiRaylibInset(bounds, node->stack.padding),
-            inverse_text);
+            EcsUiRaylibInset(node_bounds, node->stack.padding),
+            inverse_text,
+            node_opacity);
         break;
     case ECS_UI_NODE_ZSTACK: {
-        DrawRectangleRounded(bounds, theme->radius, 8, theme->surface);
-        Rectangle inner = EcsUiRaylibInset(bounds, node->stack.padding);
+        DrawRectangleRounded(
+            node_bounds,
+            theme->radius,
+            8,
+            EcsUiRaylibApplyOpacity(theme->surface, node_opacity));
+        Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
         uint32_t child = node->first_child;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
-            EcsUiRaylibDrawNode(tree, theme, child, inner, inverse_text);
+            EcsUiRaylibDrawNode(
+                tree,
+                theme,
+                child,
+                inner,
+                inverse_text,
+                node_opacity);
             child = tree->nodes[child].next_sibling;
         }
         break;
@@ -280,34 +350,43 @@ static void EcsUiRaylibDrawNode(
     case ECS_UI_NODE_BUTTON: {
         const bool hovered =
             !node->button.disabled &&
-            CheckCollisionPointRec(GetMousePosition(), bounds);
+            CheckCollisionPointRec(GetMousePosition(), node_bounds);
         Color fill = EcsUiRaylibButtonColor(theme, node->button);
         if (hovered) {
             fill = ColorAlpha(fill, 0.86f);
         }
-        DrawRectangleRounded(bounds, theme->radius, 8, fill);
-        Rectangle inner = EcsUiRaylibInset(bounds, 12.0f);
+        DrawRectangleRounded(
+            node_bounds,
+            theme->radius,
+            8,
+            EcsUiRaylibApplyOpacity(fill, node_opacity));
+        Rectangle inner = EcsUiRaylibInset(node_bounds, 12.0f);
         EcsUiRaylibDrawChildrenHorizontal(
             tree,
             theme,
             index,
             inner,
-            node->button.variant == ECS_UI_BUTTON_PRIMARY);
+            node->button.variant == ECS_UI_BUTTON_PRIMARY,
+            node_opacity);
         break;
     }
     case ECS_UI_NODE_TEXT:
         EcsUiRaylibDrawTextLine(
             node->text.text,
-            bounds,
+            node_bounds,
             EcsUiRaylibTextSize(node->text.role),
-            EcsUiRaylibTextColor(theme, node->text.role, inverse_text));
+            EcsUiRaylibApplyOpacity(
+                EcsUiRaylibTextColor(theme, node->text.role, inverse_text),
+                node_opacity));
         break;
     case ECS_UI_NODE_ICON:
         EcsUiRaylibDrawTextLine(
             node->icon.name,
-            bounds,
+            node_bounds,
             18.0f,
-            EcsUiRaylibTextColor(theme, ECS_UI_TEXT_LABEL, inverse_text));
+            EcsUiRaylibApplyOpacity(
+                EcsUiRaylibTextColor(theme, ECS_UI_TEXT_LABEL, inverse_text),
+                node_opacity));
         break;
     case ECS_UI_NODE_NONE:
     default:
@@ -399,6 +478,10 @@ static void EcsUiRaylibHitNode(
     EcsUiRaylibHit *hit)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    Rectangle node_bounds = EcsUiRaylibOffset(bounds, node->visual);
+    if (EcsUiRaylibClamp01(node->visual.opacity) <= 0.01f) {
+        return;
+    }
 
     switch (node->kind) {
     case ECS_UI_NODE_ROOT:
@@ -406,7 +489,7 @@ static void EcsUiRaylibHitNode(
         EcsUiRaylibHitChildrenVertical(
             tree,
             index,
-            EcsUiRaylibInset(bounds, node->stack.padding),
+            EcsUiRaylibInset(node_bounds, node->stack.padding),
             point,
             hit);
         break;
@@ -414,12 +497,12 @@ static void EcsUiRaylibHitNode(
         EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
-            EcsUiRaylibInset(bounds, node->stack.padding),
+            EcsUiRaylibInset(node_bounds, node->stack.padding),
             point,
             hit);
         break;
     case ECS_UI_NODE_ZSTACK: {
-        Rectangle inner = EcsUiRaylibInset(bounds, node->stack.padding);
+        Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
         uint32_t child = node->first_child;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
             EcsUiRaylibHitNode(tree, child, inner, point, hit);
@@ -428,15 +511,15 @@ static void EcsUiRaylibHitNode(
         break;
     }
     case ECS_UI_NODE_BUTTON:
-        if (!node->button.disabled && CheckCollisionPointRec(point, bounds)) {
+        if (!node->button.disabled && CheckCollisionPointRec(point, node_bounds)) {
             hit->found = true;
             hit->index = index;
-            hit->bounds = bounds;
+            hit->bounds = node_bounds;
         }
         EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
-            EcsUiRaylibInset(bounds, 12.0f),
+            EcsUiRaylibInset(node_bounds, 12.0f),
             point,
             hit);
         break;
@@ -496,7 +579,7 @@ void EcsUiRaylibDrawTree(
         return;
     }
 
-    EcsUiRaylibDrawNode(tree, theme, 0u, bounds, false);
+    EcsUiRaylibDrawNode(tree, theme, 0u, bounds, false, 1.0f);
 }
 
 void EcsUiRaylibCollectEvents(

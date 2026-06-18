@@ -10,7 +10,9 @@ entities.
 - UI hierarchy is authored once with `VStack`, `HStack`, `Button`, `Icon`, and
   `Text`.
 - `Button` actions use `(EcsUiOnClick, ActionEntity)`.
-- Clicking `add item` submits `DemoAddItemRequest`.
+- Clicking `add item` submits `(DemoPresentRouteRequest, DemoAddItemRoute)`.
+- The add-item route materializes a retained presentation subtree; `create item`
+  submits `DemoAddItemRequest` and then dismisses the presentation.
 - A scheduled app system creates `DemoItem` entities.
 - UI observers materialize retained item rows from `DemoItem` changes.
 - Item row buttons carry `(EcsUiOnClick, SelectItemAction)` plus
@@ -20,6 +22,8 @@ entities.
 - App state stores `(DemoSelectedItem, item)` on `DemoSelection`.
 - Selected row styling is projected from `(DemoSelectedItem, item)` onto row UI
   buttons.
+- Navigation state stores `(DemoActivePresentation, presentation)` on
+  `DemoNavigation`; each presentation stores `(DemoPresentationRoute, route)`.
 
 ## Phase 1: Relationship-Backed Row Actions
 
@@ -96,9 +100,9 @@ Model a small Glowfish-like route surface.
 
 Definition of done:
 
-- Opening and dismissing a sheet changes ECS navigation state first.
-- UI observers/materializers project navigation state into retained UI nodes.
-- Dismissing a presentation removes its UI subtree cleanly.
+- [x] Opening and dismissing a sheet changes ECS navigation state first.
+- [x] UI observers/materializers project navigation state into retained UI nodes.
+- [x] Dismissing a presentation removes its UI subtree cleanly.
 
 ## Phase 5: Animation Channels
 
@@ -110,6 +114,14 @@ Prove the demo can consume Glowfish-style animated values from ECS.
   opacity/height.
 - Let the renderer read animated values from the UI snapshot or from linked ECS
   entities.
+
+Current progress:
+
+- [x] `DemoAnimatedFloat` and `DemoLinear1f` advance from `ecs_progress`.
+- [x] Presentation sheet offset and opacity are projected through `EcsUiVisual`.
+- [x] Exit animation completion deletes the presentation and retained UI subtree.
+- [ ] Scrim opacity, selected-row highlight, and row insert animation remain to
+  pressure-test.
 
 Definition of done:
 

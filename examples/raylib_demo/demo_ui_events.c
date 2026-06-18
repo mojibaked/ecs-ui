@@ -1,5 +1,7 @@
 #include "demo_ui_internal.h"
 
+#include "demo_nav.h"
+
 #include <raylib.h>
 
 void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
@@ -19,9 +21,31 @@ void DemoUiApplyEvents(ecs_world_t *world, const EcsUiEventList *events)
             continue;
         }
 
+        if (event->action == refs->present_add_item_action) {
+            TraceLog(
+                LOG_INFO,
+                "DEMO: present add item requested from %s",
+                event->node_id);
+            DemoNavRequestPresentRoute(world, DemoNavAddItemRoute(world));
+            continue;
+        }
+
+        if (event->action == refs->dismiss_presentation_action) {
+            TraceLog(
+                LOG_INFO,
+                "DEMO: dismiss presentation requested from %s",
+                event->node_id);
+            DemoNavRequestDismissPresentation(world);
+            continue;
+        }
+
         if (event->action == refs->add_item_action) {
-            TraceLog(LOG_INFO, "DEMO: add item requested from %s", event->node_id);
+            TraceLog(
+                LOG_INFO,
+                "DEMO: add item requested from %s",
+                event->node_id);
             DemoAppRequestAddItem(world);
+            DemoNavRequestDismissPresentation(world);
             continue;
         }
 

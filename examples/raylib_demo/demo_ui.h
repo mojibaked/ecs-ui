@@ -6,11 +6,14 @@
 
 typedef struct DemoUiRefs {
     ecs_entity_t add_item_action;
+    ecs_entity_t present_add_item_action;
+    ecs_entity_t dismiss_presentation_action;
     ecs_entity_t select_item_action;
     ecs_entity_t delete_item_action;
     ecs_entity_t rename_item_action;
     ecs_entity_t move_item_up_action;
     ecs_entity_t move_item_down_action;
+    ecs_entity_t presentation_host;
     ecs_entity_t item_list;
     ecs_entity_t status_text;
 } DemoUiRefs;
