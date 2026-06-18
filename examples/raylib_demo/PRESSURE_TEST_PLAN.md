@@ -395,3 +395,23 @@ Definition of done:
   child ordering, and click action readback.
 - [x] Existing button authoring and tests continue to pass.
 - [x] Text field UI no longer depends on `EcsUiButton`.
+
+## Phase 19: Box Style Component
+
+Move the first visual styling data into renderer-agnostic ECS components.
+
+- [x] Add `EcsUiColor` and `EcsUiBoxStyle` to core `ecs-ui`.
+- [x] Include box style data in tree snapshots for renderer adapters.
+- [x] Let raylib pressables resolve background, hover, highlight, radius, and
+  padding from `EcsUiBoxStyle`.
+- [x] Let Clay pressables resolve background and padding from `EcsUiBoxStyle`.
+- [x] Style demo text fields with `EcsUiBoxStyle` instead of renderer button
+  theme colors.
+
+Definition of done:
+
+- [x] Unit tests cover box style registration and snapshot readback.
+- [x] Pressables still render with theme fallbacks when no style component is
+  present.
+- [x] Text field styling is carried by ECS state, not hard-coded as a button
+  variant.

@@ -202,6 +202,9 @@ int main(void)
         ecs_id(EcsUiPressable) != 0,
         "EcsUiPressable should be registered");
     result |= Require(
+        ecs_id(EcsUiBoxStyle) != 0,
+        "EcsUiBoxStyle should be registered");
+    result |= Require(
         ecs_has_id(world, EcsUiProjectionRoot, EcsExclusive),
         "EcsUiProjectionRoot should be exclusive");
     result |= Require(
@@ -846,20 +849,31 @@ int main(void)
                     .role = ECS_UI_TEXT_CAPTION,
                 });
         }
-        Pressable(
+        ecs_entity_t search_field = EcsUiBeginPressable(
             &builder,
-            {
+            (EcsUiPressableDesc){
                 .id = "SearchField",
                 .on_click = present_add_machine_action,
-            }) {
-            Text(
-                &builder,
-                {
-                    .id = "SearchText",
-                    .text = "search",
-                    .role = ECS_UI_TEXT_BODY,
-                });
-        }
+            });
+        Text(
+            &builder,
+            {
+                .id = "SearchText",
+                .text = "search",
+                .role = ECS_UI_TEXT_BODY,
+            });
+        EcsUiEnd(&builder);
+        ecs_set(
+            world,
+            search_field,
+            EcsUiBoxStyle,
+            {
+                .background = {10u, 20u, 30u, 255u},
+                .hover_background = {20u, 30u, 40u, 255u},
+                .highlight_background = {50u, 60u, 70u, 255u},
+                .radius = 0.1f,
+                .padding = 9.0f,
+            });
         Custom(
             &builder,
             {
@@ -948,6 +962,23 @@ int main(void)
     result |= Require(
         tree.nodes[7u].on_click == present_add_machine_action,
         "pressable snapshot should expose OnClick action");
+    result |= Require(
+        tree.nodes[7u].has_box_style &&
+            tree.nodes[7u].box_style.background.r == 10u &&
+            tree.nodes[7u].box_style.background.g == 20u &&
+            tree.nodes[7u].box_style.background.b == 30u &&
+            tree.nodes[7u].box_style.background.a == 255u,
+        "pressable box style color should be copied");
+    result |= RequireNear(
+        tree.nodes[7u].box_style.padding,
+        9.0f,
+        0.0001f,
+        "pressable box style padding should be copied");
+    result |= RequireNear(
+        tree.nodes[7u].box_style.radius,
+        0.1f,
+        0.0001f,
+        "pressable box style radius should be copied");
 
     ecs_entities_t ordered = ecs_get_ordered_children(world, home_stack);
     result |= Require(ordered.count == 4, "ordered child count mismatch");

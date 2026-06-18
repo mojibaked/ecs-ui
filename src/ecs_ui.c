@@ -6,6 +6,7 @@
 ECS_COMPONENT_DECLARE(EcsUiNodeId);
 ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
+ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
 ECS_COMPONENT_DECLARE(EcsUiButton);
 ECS_COMPONENT_DECLARE(EcsUiPressable);
 ECS_COMPONENT_DECLARE(EcsUiText);
@@ -49,6 +50,7 @@ static ecs_entity_t EcsUiCurrentParent(EcsUiBuilder *builder)
 static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 {
     ecs_remove(world, entity, EcsUiStack);
+    ecs_remove(world, entity, EcsUiBoxStyle);
     ecs_remove(world, entity, EcsUiButton);
     ecs_remove(world, entity, EcsUiPressable);
     ecs_remove(world, entity, EcsUiText);
@@ -146,6 +148,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiNodeId);
     ECS_COMPONENT_DEFINE(world, EcsUiNode);
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
+    ECS_COMPONENT_DEFINE(world, EcsUiBoxStyle);
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
     ECS_COMPONENT_DEFINE(world, EcsUiPressable);
     ECS_COMPONENT_DEFINE(world, EcsUiText);
@@ -392,6 +395,12 @@ static uint32_t EcsUiReadNode(
     const EcsUiStack *stack = ecs_get(world, entity, EcsUiStack);
     if (stack != NULL) {
         snapshot->stack = *stack;
+    }
+
+    const EcsUiBoxStyle *box_style = ecs_get(world, entity, EcsUiBoxStyle);
+    if (box_style != NULL) {
+        snapshot->box_style = *box_style;
+        snapshot->has_box_style = true;
     }
 
     const EcsUiButton *button = ecs_get(world, entity, EcsUiButton);

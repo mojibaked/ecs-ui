@@ -23,6 +23,23 @@ static uint16_t EcsUiClayU16(float value)
     return (uint16_t)value;
 }
 
+static Clay_Color EcsUiClayColor(EcsUiColor color)
+{
+    return (Clay_Color){
+        .r = (float)color.r,
+        .g = (float)color.g,
+        .b = (float)color.b,
+        .a = (float)color.a,
+    };
+}
+
+static Clay_Color EcsUiClayStyleColorOr(
+    EcsUiColor color,
+    Clay_Color fallback)
+{
+    return color.a != 0u ? EcsUiClayColor(color) : fallback;
+}
+
 static Clay_TextElementConfig *EcsUiClayTextConfig(
     const EcsUiClayTheme *theme,
     EcsUiTextRole role)
@@ -75,6 +92,36 @@ static float EcsUiClayCustomHeight(const EcsUiTreeNodeSnapshot *node)
         return 96.0f;
     }
     return node->custom.preferred_height;
+}
+
+static float EcsUiClayBoxPadding(
+    const EcsUiTreeNodeSnapshot *node,
+    float fallback)
+{
+    if (node != NULL && node->has_box_style && node->box_style.padding > 0.0f) {
+        return node->box_style.padding;
+    }
+    return fallback;
+}
+
+static Clay_Color EcsUiClayPressableColor(
+    const EcsUiClayTheme *theme,
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || !node->has_box_style) {
+        return theme->button_subtle;
+    }
+    if (node->pressable.disabled) {
+        return EcsUiClayStyleColorOr(
+            node->box_style.disabled_background,
+            EcsUiClayColor(node->box_style.background));
+    }
+    if (node->visual.highlight > 0.0f) {
+        return EcsUiClayStyleColorOr(
+            node->box_style.highlight_background,
+            EcsUiClayColor(node->box_style.background));
+    }
+    return EcsUiClayColor(node->box_style.background);
 }
 
 static void EcsUiClayEmitNode(
@@ -228,8 +275,8 @@ static void EcsUiClayEmitNode(
                     .height = CLAY_SIZING_FIXED(44.0f),
                 },
                 .padding = {
-                    .left = 14u,
-                    .right = 14u,
+                    .left = EcsUiClayU16(EcsUiClayBoxPadding(node, 14.0f)),
+                    .right = EcsUiClayU16(EcsUiClayBoxPadding(node, 14.0f)),
                 },
                 .layoutDirection = CLAY_LEFT_TO_RIGHT,
                 .childGap = 8u,
@@ -237,7 +284,7 @@ static void EcsUiClayEmitNode(
                     .y = CLAY_ALIGN_Y_CENTER,
                 },
             },
-            .backgroundColor = theme->button_subtle,
+            .backgroundColor = EcsUiClayPressableColor(theme, node),
         }) {
             EcsUiClayEmitChildren(tree, theme, index);
         }

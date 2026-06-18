@@ -92,6 +92,22 @@ typedef struct EcsUiStack {
     float padding;
 } EcsUiStack;
 
+typedef struct EcsUiColor {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+} EcsUiColor;
+
+typedef struct EcsUiBoxStyle {
+    EcsUiColor background;
+    EcsUiColor hover_background;
+    EcsUiColor disabled_background;
+    EcsUiColor highlight_background;
+    float radius;
+    float padding;
+} EcsUiBoxStyle;
+
 typedef struct EcsUiButton {
     EcsUiButtonVariant variant;
     bool disabled;
@@ -180,12 +196,14 @@ typedef struct EcsUiTreeNodeSnapshot {
     uint32_t first_child;
     uint32_t next_sibling;
     EcsUiStack stack;
+    EcsUiBoxStyle box_style;
     EcsUiButton button;
     EcsUiPressable pressable;
     EcsUiText text;
     EcsUiIcon icon;
     EcsUiCustom custom;
     EcsUiVisual visual;
+    bool has_box_style;
 } EcsUiTreeNodeSnapshot;
 
 typedef struct EcsUiTreeSnapshot {
@@ -222,6 +240,7 @@ typedef struct EcsUiEventList {
 extern ECS_COMPONENT_DECLARE(EcsUiNodeId);
 extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
+extern ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
 extern ECS_COMPONENT_DECLARE(EcsUiPressable);
 extern ECS_COMPONENT_DECLARE(EcsUiText);

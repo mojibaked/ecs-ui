@@ -50,6 +50,21 @@ static Color EcsUiRaylibApplyOpacity(Color color, float opacity)
     return color;
 }
 
+static Color EcsUiRaylibColor(EcsUiColor color)
+{
+    return (Color){
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = color.a,
+    };
+}
+
+static Color EcsUiRaylibStyleColorOr(EcsUiColor color, Color fallback)
+{
+    return color.a != 0u ? EcsUiRaylibColor(color) : fallback;
+}
+
 static Color EcsUiRaylibLerpColor(Color from, Color to, float amount)
 {
     const float t = EcsUiRaylibClamp01(amount);
@@ -208,6 +223,61 @@ static Color EcsUiRaylibTextColor(
         return theme->text_muted;
     }
     return theme->text;
+}
+
+static float EcsUiRaylibBoxRadius(
+    const EcsUiTreeNodeSnapshot *node,
+    const EcsUiRaylibTheme *theme)
+{
+    if (node != NULL && node->has_box_style && node->box_style.radius > 0.0f) {
+        return node->box_style.radius;
+    }
+    return theme != NULL ? theme->radius : 0.0f;
+}
+
+static float EcsUiRaylibBoxPadding(
+    const EcsUiTreeNodeSnapshot *node,
+    float fallback)
+{
+    if (node != NULL && node->has_box_style && node->box_style.padding > 0.0f) {
+        return node->box_style.padding;
+    }
+    return fallback;
+}
+
+static Color EcsUiRaylibPressableColor(
+    const EcsUiRaylibTheme *theme,
+    const EcsUiTreeNodeSnapshot *node,
+    bool hovered)
+{
+    Color fill = theme->button_subtle;
+    if (node != NULL && node->has_box_style) {
+        fill = EcsUiRaylibColor(node->box_style.background);
+        if (node->pressable.disabled) {
+            fill = EcsUiRaylibStyleColorOr(
+                node->box_style.disabled_background,
+                fill);
+        } else if (hovered) {
+            fill = EcsUiRaylibStyleColorOr(
+                node->box_style.hover_background,
+                fill);
+        }
+        Color highlight = EcsUiRaylibStyleColorOr(
+            node->box_style.highlight_background,
+            (Color){255, 255, 255, fill.a});
+        return EcsUiRaylibLerpColor(
+            fill,
+            highlight,
+            EcsUiRaylibClamp01(node->visual.highlight));
+    }
+
+    if (hovered) {
+        fill = ColorAlpha(fill, 0.86f);
+    }
+    return EcsUiRaylibLerpColor(
+        fill,
+        (Color){255, 255, 255, fill.a},
+        EcsUiRaylibClamp01(node->visual.highlight) * 0.42f);
 }
 
 static void EcsUiRaylibDrawTextLine(
@@ -430,20 +500,14 @@ static void EcsUiRaylibDrawNode(
         const bool hovered =
             !node->pressable.disabled &&
             CheckCollisionPointRec(GetMousePosition(), node_bounds);
-        Color fill = theme->button_subtle;
-        if (hovered) {
-            fill = ColorAlpha(fill, 0.86f);
-        }
-        fill = EcsUiRaylibLerpColor(
-            fill,
-            (Color){255, 255, 255, fill.a},
-            EcsUiRaylibClamp01(node->visual.highlight) * 0.42f);
+        Color fill = EcsUiRaylibPressableColor(theme, node, hovered);
         DrawRectangleRounded(
             node_bounds,
-            theme->radius,
+            EcsUiRaylibBoxRadius(node, theme),
             8,
             EcsUiRaylibApplyOpacity(fill, node_opacity));
-        Rectangle inner = EcsUiRaylibInset(node_bounds, 12.0f);
+        Rectangle inner =
+            EcsUiRaylibInset(node_bounds, EcsUiRaylibBoxPadding(node, 12.0f));
         EcsUiRaylibDrawChildrenHorizontal(
             tree,
             theme,
@@ -628,7 +692,9 @@ static void EcsUiRaylibHitNode(
         EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
-            EcsUiRaylibInset(node_bounds, 12.0f),
+            EcsUiRaylibInset(
+                node_bounds,
+                EcsUiRaylibBoxPadding(node, 12.0f)),
             point,
             hit);
         break;
