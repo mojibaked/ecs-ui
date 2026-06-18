@@ -743,6 +743,30 @@ static void EcsUiRaylibCollectKeyboardEvents(EcsUiEventList *events)
                 ECS_UI_EVENT_TEXT_FOCUS_NEXT,
             0u);
     }
+    if (IsKeyPressed(KEY_LEFT)) {
+        EcsUiRaylibPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_LEFT,
+            0u);
+    }
+    if (IsKeyPressed(KEY_RIGHT)) {
+        EcsUiRaylibPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_RIGHT,
+            0u);
+    }
+    if (IsKeyPressed(KEY_HOME)) {
+        EcsUiRaylibPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_START,
+            0u);
+    }
+    if (IsKeyPressed(KEY_END)) {
+        EcsUiRaylibPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_END,
+            0u);
+    }
 }
 
 static void EcsUiRaylibCollectPointerEvents(

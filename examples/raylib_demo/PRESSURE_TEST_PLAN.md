@@ -316,3 +316,25 @@ Definition of done:
 - [x] The raylib demo can move focus between two sheet fields with Tab and
   Shift+Tab.
 - [x] Existing create-item submit behavior still uses the item-name field only.
+
+## Phase 15: Text Cursor State
+
+Make cursor position reusable text-input state before adding selection.
+
+- [x] Add an `EcsUiTextEditState` component instead of stuffing cursor data into
+  `EcsUiTextField`.
+- [x] Keep `EcsUiTextField` focused on durable field data: value and
+  placeholder.
+- [x] Add cursor movement requests for left, right, start, and end.
+- [x] Insert text at the cursor and advance the cursor.
+- [x] Delete backward from the cursor instead of always deleting the final
+  character.
+- [x] Emit cursor movement events from raylib and Clay keyboard adapters.
+
+Definition of done:
+
+- [x] Unit tests cover cursor movement, middle insert, backward delete, and
+  display text with caret-at-cursor.
+- [x] The raylib demo can move the caret in a focused field with Left, Right,
+  Home, and End.
+- [x] Selection remains a follow-up built on top of `EcsUiTextEditState`.

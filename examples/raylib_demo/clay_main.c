@@ -70,6 +70,30 @@ static void DemoClayCollectKeyboardEvents(EcsUiEventList *events)
                 ECS_UI_EVENT_TEXT_FOCUS_NEXT,
             0u);
     }
+    if (IsKeyPressed(KEY_LEFT)) {
+        DemoClayPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_LEFT,
+            0u);
+    }
+    if (IsKeyPressed(KEY_RIGHT)) {
+        DemoClayPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_RIGHT,
+            0u);
+    }
+    if (IsKeyPressed(KEY_HOME)) {
+        DemoClayPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_START,
+            0u);
+    }
+    if (IsKeyPressed(KEY_END)) {
+        DemoClayPushKeyboardEvent(
+            events,
+            ECS_UI_EVENT_TEXT_CURSOR_END,
+            0u);
+    }
 }
 
 static Clay_RenderCommandArray DemoClayEmitRenderCommands(

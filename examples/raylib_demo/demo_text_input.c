@@ -196,6 +196,26 @@ void DemoTextInputRequestDelete(ecs_world_t *world)
     (void)EcsUiTextInputRequestDelete(world);
 }
 
+void DemoTextInputRequestMoveCursorLeft(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestMoveCursorLeft(world);
+}
+
+void DemoTextInputRequestMoveCursorRight(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestMoveCursorRight(world);
+}
+
+void DemoTextInputRequestMoveCursorStart(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestMoveCursorStart(world);
+}
+
+void DemoTextInputRequestMoveCursorEnd(ecs_world_t *world)
+{
+    (void)EcsUiTextInputRequestMoveCursorEnd(world);
+}
+
 bool DemoTextInputHasFocusedField(ecs_world_t *world)
 {
     return EcsUiTextInputHasFocusedField(world);

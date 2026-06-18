@@ -229,6 +229,9 @@ int main(void)
         ecs_has_id(world, EcsUiFocusedTextField, EcsExclusive),
         "EcsUiFocusedTextField should be exclusive");
     result |= Require(
+        ecs_id(EcsUiTextEditState) != 0,
+        "EcsUiTextEditState should be registered");
+    result |= Require(
         ecs_has_id(world, EcsUiTextFieldUiNode, EcsExclusive),
         "EcsUiTextFieldUiNode should be exclusive");
     result |= Require(
@@ -244,6 +247,12 @@ int main(void)
         EcsUiFocusNextTextFieldRequest != 0 &&
             EcsUiFocusPreviousTextFieldRequest != 0,
         "text traversal request tags should be registered");
+    result |= Require(
+        EcsUiTextCursorLeftRequest != 0 &&
+            EcsUiTextCursorRightRequest != 0 &&
+            EcsUiTextCursorStartRequest != 0 &&
+            EcsUiTextCursorEndRequest != 0,
+        "text cursor request tags should be registered");
 
     ecs_entity_t animation_target =
         ecs_entity(world, {.name = "AnimationTarget"});
@@ -416,6 +425,10 @@ int main(void)
         text_field_a != 0 && text_field_b != 0,
         "text fields should be created");
     result |= Require(
+        ecs_get(world, text_field_a, EcsUiTextEditState) != NULL &&
+            EcsUiTextInputCursor(world, text_field_a) == 0u,
+        "text field edit state should be created");
+    result |= Require(
         strcmp(EcsUiTextInputPlaceholder(world, text_field_a), "first") == 0,
         "text field placeholder mismatch");
     result |= Require(
@@ -438,13 +451,71 @@ int main(void)
         strcmp(EcsUiTextInputValue(world, text_field_a), "hi") == 0,
         "text field insert mismatch");
     result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 2u,
+        "text field cursor should advance after insert");
+    result |= Require(
+        EcsUiTextInputRequestMoveCursorLeft(world) != 0,
+        "cursor left request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 1u,
+        "cursor should move left");
+    char text_display[ECS_UI_TEXT_MAX] = {0};
+    result |= Require(
+        EcsUiTextInputDisplayText(
+            world,
+            text_field_a,
+            true,
+            text_display,
+            sizeof(text_display)),
+        "text field cursor display should be created");
+    result |= Require(
+        strcmp(text_display, "h|i") == 0,
+        "text field cursor display mismatch");
+    result |= Require(
+        EcsUiTextInputRequestInsert(world, '!') != 0,
+        "middle insert request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "h!i") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 2u,
+        "middle insert should use cursor");
+    result |= Require(
+        EcsUiTextInputRequestDelete(world) != 0,
+        "middle delete request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "hi") == 0 &&
+            EcsUiTextInputCursor(world, text_field_a) == 1u,
+        "delete should remove before cursor");
+    result |= Require(
+        EcsUiTextInputRequestMoveCursorStart(world) != 0,
+        "cursor start request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 0u,
+        "cursor should move to start");
+    result |= Require(
+        EcsUiTextInputRequestMoveCursorRight(world) != 0,
+        "cursor right request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 1u,
+        "cursor should move right");
+    result |= Require(
+        EcsUiTextInputRequestMoveCursorEnd(world) != 0,
+        "cursor end request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputCursor(world, text_field_a) == 2u,
+        "cursor should move to end");
+    result |= Require(
         EcsUiTextInputRequestDelete(world) != 0,
         "delete request should be created");
     (void)ecs_progress(world, 0.0f);
     result |= Require(
         strcmp(EcsUiTextInputValue(world, text_field_a), "h") == 0,
         "text field delete mismatch");
-    char text_display[ECS_UI_TEXT_MAX] = {0};
     result |= Require(
         EcsUiTextInputDisplayText(
             world,
