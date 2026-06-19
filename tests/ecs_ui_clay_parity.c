@@ -58,6 +58,48 @@ static int RequireNear(
     return 0;
 }
 
+static int RequireClayColor(
+    Clay_Color actual,
+    EcsUiColor expected,
+    const char *message)
+{
+    const float epsilon = 0.001f;
+    float r_delta = actual.r - (float)expected.r;
+    float g_delta = actual.g - (float)expected.g;
+    float b_delta = actual.b - (float)expected.b;
+    float a_delta = actual.a - (float)expected.a;
+    if (r_delta < 0.0f) {
+        r_delta = -r_delta;
+    }
+    if (g_delta < 0.0f) {
+        g_delta = -g_delta;
+    }
+    if (b_delta < 0.0f) {
+        b_delta = -b_delta;
+    }
+    if (a_delta < 0.0f) {
+        a_delta = -a_delta;
+    }
+
+    if (r_delta > epsilon || g_delta > epsilon || b_delta > epsilon ||
+        a_delta > epsilon) {
+        (void)fprintf(
+            stderr,
+            "%s: actual={%f,%f,%f,%f} expected={%u,%u,%u,%u}\n",
+            message,
+            actual.r,
+            actual.g,
+            actual.b,
+            actual.a,
+            (unsigned int)expected.r,
+            (unsigned int)expected.g,
+            (unsigned int)expected.b,
+            (unsigned int)expected.a);
+        return 1;
+    }
+    return 0;
+}
+
 static void CopyString(char *out, size_t out_size, const char *value)
 {
     if (out == NULL || out_size == 0u) {
@@ -88,6 +130,22 @@ static void CopyClayString(char *out, size_t out_size, Clay_String value)
         out[i] = value.chars != NULL ? value.chars[i] : '\0';
     }
     out[i] = '\0';
+}
+
+static bool ClayStringSliceEquals(Clay_StringSlice value, const char *expected)
+{
+    if (expected == NULL || value.length < 0) {
+        return false;
+    }
+
+    size_t expected_length = strlen(expected);
+    if ((size_t)value.length != expected_length) {
+        return false;
+    }
+
+    return expected_length == 0u ||
+        (value.chars != NULL &&
+         memcmp(value.chars, expected, expected_length) == 0);
 }
 
 static void TestClayHandleError(Clay_ErrorData error_data)
@@ -154,6 +212,33 @@ static int InitializeClay(void **memory_out)
     Clay_SetDebugModeEnabled(false);
     *memory_out = memory;
     return 0;
+}
+
+static int RequireClayTextColor(
+    Clay_RenderCommandArray *commands,
+    const char *text,
+    EcsUiColor expected,
+    const char *message)
+{
+    if (commands == NULL || text == NULL) {
+        return Require(false, "missing Clay text command inputs");
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_TEXT) {
+            continue;
+        }
+
+        Clay_TextRenderData *text_data = &command->renderData.text;
+        if (ClayStringSliceEquals(text_data->stringContents, text)) {
+            return RequireClayColor(text_data->textColor, expected, message);
+        }
+    }
+
+    (void)fprintf(stderr, "%s: text command not found: %s\n", message, text);
+    return 1;
 }
 
 static void ResetClayErrors(void)
@@ -333,6 +418,153 @@ static int TestDuplicateAuthoredIdsDoNotCollide(void)
             g_clay_errors.last_text);
         result = 1;
     }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestTextStyleInheritanceEmitsClayForegroundColor(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t normal_style_token =
+        EcsUiStyleToken(world, "ClayNormalTextStyle");
+    ecs_entity_t disabled_style_token =
+        EcsUiStyleToken(world, "ClayDisabledTextStyle");
+    ecs_entity_t theme_entity = EcsUiThemeEntity(world, "ClayTextStyleTheme");
+    EcsUiTextStyle normal_style = {
+        .color = {31u, 47u, 83u, 255u},
+        .muted_color = {71u, 87u, 123u, 255u},
+        .disabled_color = {111u, 127u, 163u, 255u},
+    };
+    EcsUiTextStyle disabled_style = {
+        .color = {29u, 67u, 103u, 255u},
+        .muted_color = {69u, 107u, 143u, 255u},
+        .disabled_color = {211u, 97u, 43u, 255u},
+    };
+
+    result |= Require(
+        normal_style_token != 0 && disabled_style_token != 0 &&
+            normal_style_token != disabled_style_token && theme_entity != 0,
+        "text style inheritance setup failed");
+    result |= Require(
+        EcsUiThemeSetTextStyle(
+            world,
+            theme_entity,
+            normal_style_token,
+            normal_style),
+        "normal text style token should store text style");
+    result |= Require(
+        EcsUiThemeSetTextStyle(
+            world,
+            theme_entity,
+            disabled_style_token,
+            disabled_style),
+        "disabled text style token should store text style");
+    result |= Require(
+        EcsUiSetActiveTheme(world, theme_entity),
+        "text style theme should become active");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "text style theme should apply to style tokens");
+
+    ecs_entity_t root = EcsUiRootEntity(world, "TextStyleInheritanceRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(&builder, (EcsUiStackDesc){.id = "TextStyleStack"});
+
+    (void)EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "NormalPressable",
+            .style_token = normal_style_token,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "NormalText",
+            .text = "inherited normal text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "NormalIcon",
+            .name = "normal-symbol",
+        });
+    EcsUiEnd(&builder);
+
+    (void)EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "DisabledPressable",
+            .disabled = true,
+            .style_token = disabled_style_token,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DisabledText",
+            .text = "disabled pressable text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "DisabledIcon",
+            .name = "disabled-symbol",
+        });
+    EcsUiEnd(&builder);
+
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "text style builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "text style tree read failed");
+
+    ResetClayErrors();
+    EcsUiClayTheme clay_theme = EcsUiClayThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(360.0f, 220.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= Require(
+        commands.length > 0,
+        "Clay text style layout should emit render commands");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "Clay text style layout should not emit errors");
+    result |= RequireClayTextColor(
+        &commands,
+        "inherited normal text",
+        normal_style.color,
+        "normal text child should inherit parent text style color");
+    result |= RequireClayTextColor(
+        &commands,
+        "normal-symbol",
+        normal_style.color,
+        "normal icon child should inherit parent text style color");
+    result |= RequireClayTextColor(
+        &commands,
+        "disabled pressable text",
+        disabled_style.disabled_color,
+        "disabled pressable text child should inherit disabled text color");
+    result |= RequireClayTextColor(
+        &commands,
+        "disabled-symbol",
+        disabled_style.disabled_color,
+        "disabled pressable icon child should inherit disabled text color");
 
     ecs_fini(world);
     return result;
@@ -689,6 +921,7 @@ int main(void)
     }
 
     result |= TestDuplicateAuthoredIdsDoNotCollide();
+    result |= TestTextStyleInheritanceEmitsClayForegroundColor();
     result |= TestVisualOpacitySkipsHitTesting();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestPointerCaptureLifecycle();

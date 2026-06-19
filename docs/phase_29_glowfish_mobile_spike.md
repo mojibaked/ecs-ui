@@ -168,20 +168,33 @@ Why this route:
 
 Suggested implementation steps:
 
-1. Add an optional `ecs_world_t *ui_world` and retained root handles inside
+1. Add `ecs-ui` as a direct sibling dependency of Glowfish Mobile.
+2. Add an `ecs_world_t *ui_world` and retained root handles inside
    `GlowfishUiRuntime`.
-2. Import the needed `ecs-ui` modules into that UI world.
-3. Define Glowfish UI style tokens and a minimal dark theme.
-4. Build the static shell and add-machine sheet as retained UI entities.
-5. Project `GlowfishNavigationSnapshot` so the sheet subtree is present only
+3. Import the needed `ecs-ui` modules into that UI world.
+4. Define Glowfish UI style tokens and a minimal dark theme.
+5. Build the static shell and add-machine sheet as retained UI entities.
+6. Project `GlowfishNavigationSnapshot` so the sheet subtree is present only
    when core says the add-machine sheet is visible.
-6. Use `ecs_ui_text_input` for the host field in the UI world.
-7. Translate create/dismiss/focus outcomes into existing `GlowfishUiActionList`
+7. Use `ecs_ui_text_input` for the host field in the UI world.
+8. Translate create/dismiss/focus outcomes into existing `GlowfishUiActionList`
    entries.
-8. Emit through Clay using the existing `GlowfishClayRuntime` context.
+9. Emit through Clay using the existing `GlowfishClayRuntime` context.
 
-Keep the old `ui_shell.c` path available behind a compile flag or a narrow
-test-only entry point until behavior matches.
+Glowfish Mobile is new enough that this should be a direct port, not a
+compile-flagged alternate path. Tests can keep narrow helper entry points where
+useful, but production UI should converge on the ECS path instead of maintaining
+parallel immediate-mode and retained-mode implementations.
+
+Current integration status:
+
+- `GlowfishUiRuntime` owns an imported `ecs-ui` UI world.
+- `glowfish_app` links `ecs-ui` directly through the sibling checkout.
+- `src/app/ecs_ui_bridge.h` defines the Glowfish custom-node kind strings for
+  terminal viewport and soft keyboard nodes.
+- The custom-node bridge decodes Clay custom render commands back into
+  `EcsUiTreeNodeSnapshot` data and resolved bounds. This keeps native terminal
+  surfaces app-owned while letting `ecs-ui` own layout.
 
 ## Acceptance Criteria
 
@@ -222,8 +235,12 @@ Custom nodes:
 
 - terminal viewport requires render-surface emission, resize collection, pan
   collection, and visibility gating.
-- this should be a custom-node bridge after the sheet spike, not part of the
-  first slice.
+- this should remain a custom-node bridge instead of becoming a generic
+  `ecs-ui` terminal widget.
+- the current bridge contract is: `EcsUiCustom.kind` selects the app surface,
+  the Clay adapter provides final bounds through `CLAY_RENDER_COMMAND_TYPE_CUSTOM`,
+  and Glowfish render/input code maps those bounds to existing terminal
+  viewport or soft-keyboard logic.
 
 Performance:
 
