@@ -12,6 +12,19 @@ static float EcsUiGestureMax(float left, float right)
     return left > right ? left : right;
 }
 
+static EcsUiGestureEventType EcsUiGestureCancelEventType(
+    EcsUiGestureKind kind)
+{
+    switch (kind) {
+    case ECS_UI_GESTURE_KIND_PRESS:
+        return ECS_UI_GESTURE_EVENT_PRESS_CANCELLED;
+    case ECS_UI_GESTURE_KIND_PAN:
+    case ECS_UI_GESTURE_KIND_NONE:
+    default:
+        return ECS_UI_GESTURE_EVENT_CANCELLED;
+    }
+}
+
 static float EcsUiGestureThreshold(EcsUiPanRecognizerDesc desc)
 {
     return desc.threshold > 0.0f ? desc.threshold : 6.0f;
@@ -62,6 +75,11 @@ static void EcsUiGestureFillEvent(
         .delta_y = delta_y,
         .frame_delta_x = pointer.x - arena->last_x,
         .frame_delta_y = pointer.y - arena->last_y,
+        .has_local = arena->has_local,
+        .local_x = pointer.x - arena->origin_x,
+        .local_y = pointer.y - arena->origin_y,
+        .start_local_x = arena->start_x - arena->origin_x,
+        .start_local_y = arena->start_y - arena->origin_y,
         .elapsed = elapsed,
         .velocity_x = delta_x / elapsed,
         .velocity_y = delta_y / elapsed,
@@ -72,7 +90,11 @@ static void EcsUiGestureStart(
     EcsUiGestureArena *arena,
     EcsUiPointerSample pointer,
     ecs_entity_t target,
-    bool accepted)
+    bool accepted,
+    EcsUiGestureKind kind,
+    bool has_local,
+    float origin_x,
+    float origin_y)
 {
     if (arena == NULL) {
         return;
@@ -81,7 +103,11 @@ static void EcsUiGestureStart(
     *arena = (EcsUiGestureArena){
         .active = true,
         .accepted = accepted,
+        .kind = kind,
         .target = target,
+        .has_local = has_local,
+        .origin_x = origin_x,
+        .origin_y = origin_y,
         .start_x = pointer.x,
         .start_y = pointer.y,
         .last_x = pointer.x,
@@ -129,7 +155,7 @@ bool EcsUiGestureArenaCancel(
                 .y = arena->last_y,
                 .time = arena->last_time,
             },
-            ECS_UI_GESTURE_EVENT_CANCELLED,
+            EcsUiGestureCancelEventType(arena->kind),
             out);
     }
     const bool emitted = arena->accepted;
@@ -151,7 +177,8 @@ bool EcsUiGestureArenaUpdatePan(
     }
 
     if (arena->active &&
-        (!desc.enabled || desc.target == 0 || desc.target != arena->target)) {
+        (!desc.enabled || desc.target == 0 || desc.target != arena->target ||
+            arena->kind != ECS_UI_GESTURE_KIND_PAN)) {
         return EcsUiGestureArenaCancel(arena, out);
     }
 
@@ -165,7 +192,11 @@ bool EcsUiGestureArenaUpdatePan(
             arena,
             pointer,
             desc.target,
-            EcsUiGestureAcceptsImmediately(desc));
+            EcsUiGestureAcceptsImmediately(desc),
+            ECS_UI_GESTURE_KIND_PAN,
+            false,
+            0.0f,
+            0.0f);
         if (!arena->accepted) {
             return false;
         }
@@ -220,6 +251,74 @@ bool EcsUiGestureArenaUpdatePan(
         arena,
         pointer,
         ECS_UI_GESTURE_EVENT_PAN_UPDATED,
+        out);
+    EcsUiGestureRememberLast(arena, pointer);
+    return true;
+}
+
+bool EcsUiGestureArenaUpdatePress(
+    EcsUiGestureArena *arena,
+    EcsUiPointerSample pointer,
+    EcsUiPressRecognizerDesc desc,
+    EcsUiGestureEvent *out)
+{
+    if (out != NULL) {
+        *out = (EcsUiGestureEvent){0};
+    }
+    if (arena == NULL) {
+        return false;
+    }
+
+    if (arena->active &&
+        (!desc.enabled || desc.target == 0 || desc.target != arena->target ||
+            arena->kind != ECS_UI_GESTURE_KIND_PRESS)) {
+        return EcsUiGestureArenaCancel(arena, out);
+    }
+
+    if (!arena->active) {
+        if (!desc.enabled || desc.target == 0 || !desc.hit ||
+            !pointer.pressed || !pointer.down) {
+            return false;
+        }
+
+        EcsUiGestureStart(
+            arena,
+            pointer,
+            desc.target,
+            true,
+            ECS_UI_GESTURE_KIND_PRESS,
+            desc.has_bounds,
+            desc.x,
+            desc.y);
+        EcsUiGestureFillEvent(
+            arena,
+            pointer,
+            ECS_UI_GESTURE_EVENT_PRESS_STARTED,
+            out);
+        return true;
+    }
+
+    if (!pointer.down || pointer.released) {
+        EcsUiGestureFillEvent(
+            arena,
+            pointer,
+            ECS_UI_GESTURE_EVENT_PRESS_RELEASED,
+            out);
+        *arena = (EcsUiGestureArena){0};
+        return true;
+    }
+
+    const float frame_dx = pointer.x - arena->last_x;
+    const float frame_dy = pointer.y - arena->last_y;
+    if (EcsUiGestureAbs(frame_dx) <= 0.0f &&
+        EcsUiGestureAbs(frame_dy) <= 0.0f) {
+        return false;
+    }
+
+    EcsUiGestureFillEvent(
+        arena,
+        pointer,
+        ECS_UI_GESTURE_EVENT_PRESS_MOVED,
         out);
     EcsUiGestureRememberLast(arena, pointer);
     return true;

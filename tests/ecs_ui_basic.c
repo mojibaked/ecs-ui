@@ -533,6 +533,221 @@ static int TestGestureArenaPanImmediateAndCancel(void)
     return result;
 }
 
+static int TestGestureArenaPressCapture(void)
+{
+    int result = 0;
+    EcsUiGestureArena arena;
+    EcsUiGestureArenaInit(&arena);
+    EcsUiGestureEvent event = {0};
+    const ecs_entity_t target = (ecs_entity_t)789;
+    EcsUiPressRecognizerDesc desc = {
+        .target = target,
+        .enabled = true,
+        .hit = true,
+        .has_bounds = true,
+        .x = 100.0f,
+        .y = 50.0f,
+        .width = 200.0f,
+        .height = 120.0f,
+    };
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 120.0f,
+                .y = 70.0f,
+                .time = 100.0,
+                .down = true,
+                .pressed = true,
+            },
+            desc,
+            &event),
+        "press should start on hit");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PRESS_STARTED &&
+            event.target == target,
+        "press start event mismatch");
+    result |= Require(
+        arena.active && arena.accepted &&
+            arena.kind == ECS_UI_GESTURE_KIND_PRESS,
+        "press should capture arena");
+    result |= Require(
+        event.has_local,
+        "press should expose local coordinates when bounds are supplied");
+    result |= RequireNear(
+        event.local_x,
+        20.0f,
+        0.0001f,
+        "press start local x mismatch");
+    result |= RequireNear(
+        event.start_local_y,
+        20.0f,
+        0.0001f,
+        "press start local y mismatch");
+
+    desc.hit = false;
+    result |= Require(
+        EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 145.0f,
+                .y = 95.0f,
+                .time = 130.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "captured press should move outside hit");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PRESS_MOVED,
+        "captured press move event mismatch");
+    result |= RequireNear(
+        event.frame_delta_x,
+        25.0f,
+        0.0001f,
+        "captured press frame dx mismatch");
+    result |= RequireNear(
+        event.local_y,
+        45.0f,
+        0.0001f,
+        "captured press local y mismatch");
+
+    result |= Require(
+        !EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 145.0f,
+                .y = 95.0f,
+                .time = 140.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "captured press should ignore stationary move");
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 150.0f,
+                .y = 97.0f,
+                .time = 150.0,
+                .released = true,
+            },
+            desc,
+            &event),
+        "captured press should release outside hit");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PRESS_RELEASED,
+        "captured press release event mismatch");
+    result |= RequireNear(
+        event.delta_x,
+        30.0f,
+        0.0001f,
+        "captured press release total dx mismatch");
+    result |= RequireNear(
+        event.frame_delta_y,
+        2.0f,
+        0.0001f,
+        "captured press release frame dy mismatch");
+    result |= Require(!arena.active, "press release should clear arena");
+
+    return result;
+}
+
+static int TestGestureArenaPressCancel(void)
+{
+    int result = 0;
+    EcsUiGestureArena arena;
+    EcsUiGestureArenaInit(&arena);
+    EcsUiGestureEvent event = {0};
+    const ecs_entity_t target = (ecs_entity_t)790;
+    EcsUiPressRecognizerDesc desc = {
+        .target = target,
+        .enabled = true,
+        .hit = true,
+    };
+
+    result |= Require(
+        !EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 8.0f,
+                .y = 9.0f,
+                .time = 10.0,
+                .down = true,
+                .pressed = true,
+            },
+            (EcsUiPressRecognizerDesc){
+                .target = target,
+                .enabled = true,
+                .hit = false,
+            },
+            &event),
+        "press should not start without hit");
+    result |= Require(!arena.active, "missed press should not arm arena");
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 8.0f,
+                .y = 9.0f,
+                .time = 10.0,
+                .down = true,
+                .pressed = true,
+            },
+            desc,
+            &event),
+        "press should start before cancel");
+    desc.enabled = false;
+    result |= Require(
+        EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 11.0f,
+                .y = 12.0f,
+                .time = 20.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "disabled active press should cancel");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PRESS_CANCELLED,
+        "press cancel event type mismatch");
+    result |= RequireNear(
+        event.x,
+        8.0f,
+        0.0001f,
+        "press cancel should use last captured x");
+    result |= Require(!arena.active, "press cancel should clear arena");
+
+    desc.enabled = true;
+    result |= Require(
+        EcsUiGestureArenaUpdatePress(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 8.0f,
+                .y = 9.0f,
+                .time = 10.0,
+                .down = true,
+                .pressed = true,
+            },
+            desc,
+            &event),
+        "press should start before direct cancel");
+    result |= Require(
+        EcsUiGestureArenaCancel(&arena, &event),
+        "direct press cancel should emit");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PRESS_CANCELLED,
+        "direct press cancel event type mismatch");
+
+    return result;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -550,6 +765,8 @@ int main(void)
     int result = 0;
     result |= TestGestureArenaPanThreshold();
     result |= TestGestureArenaPanImmediateAndCancel();
+    result |= TestGestureArenaPressCapture();
+    result |= TestGestureArenaPressCancel();
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
         "EcsUiOnClick should be exclusive");

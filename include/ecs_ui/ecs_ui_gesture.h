@@ -16,7 +16,17 @@ typedef enum EcsUiGestureEventType {
     ECS_UI_GESTURE_EVENT_PAN_UPDATED = 2,
     ECS_UI_GESTURE_EVENT_PAN_ENDED = 3,
     ECS_UI_GESTURE_EVENT_CANCELLED = 4,
+    ECS_UI_GESTURE_EVENT_PRESS_STARTED = 5,
+    ECS_UI_GESTURE_EVENT_PRESS_MOVED = 6,
+    ECS_UI_GESTURE_EVENT_PRESS_RELEASED = 7,
+    ECS_UI_GESTURE_EVENT_PRESS_CANCELLED = 8,
 } EcsUiGestureEventType;
+
+typedef enum EcsUiGestureKind {
+    ECS_UI_GESTURE_KIND_NONE = 0,
+    ECS_UI_GESTURE_KIND_PAN = 1,
+    ECS_UI_GESTURE_KIND_PRESS = 2,
+} EcsUiGestureKind;
 
 typedef struct EcsUiPointerSample {
     float x;
@@ -35,10 +45,25 @@ typedef struct EcsUiPanRecognizerDesc {
     float threshold;
 } EcsUiPanRecognizerDesc;
 
+typedef struct EcsUiPressRecognizerDesc {
+    ecs_entity_t target;
+    bool enabled;
+    bool hit;
+    bool has_bounds;
+    float x;
+    float y;
+    float width;
+    float height;
+} EcsUiPressRecognizerDesc;
+
 typedef struct EcsUiGestureArena {
     bool active;
     bool accepted;
+    EcsUiGestureKind kind;
     ecs_entity_t target;
+    bool has_local;
+    float origin_x;
+    float origin_y;
     float start_x;
     float start_y;
     float last_x;
@@ -58,6 +83,11 @@ typedef struct EcsUiGestureEvent {
     float delta_y;
     float frame_delta_x;
     float frame_delta_y;
+    bool has_local;
+    float local_x;
+    float local_y;
+    float start_local_x;
+    float start_local_y;
     float elapsed;
     float velocity_x;
     float velocity_y;
@@ -71,6 +101,11 @@ bool EcsUiGestureArenaUpdatePan(
     EcsUiGestureArena *arena,
     EcsUiPointerSample pointer,
     EcsUiPanRecognizerDesc desc,
+    EcsUiGestureEvent *out);
+bool EcsUiGestureArenaUpdatePress(
+    EcsUiGestureArena *arena,
+    EcsUiPointerSample pointer,
+    EcsUiPressRecognizerDesc desc,
     EcsUiGestureEvent *out);
 
 #ifdef __cplusplus
