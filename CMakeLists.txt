@@ -230,4 +230,13 @@ if(ECS_UI_BUILD_TESTS)
             ecs_ui_text_input)
     ecs_ui_enable_warnings(ecs_ui_basic)
     add_test(NAME ecs_ui_basic COMMAND ecs_ui_basic)
+
+    if(TARGET ecs_ui_clay)
+        add_executable(ecs_ui_clay_parity
+            tests/ecs_ui_clay_parity.c)
+        target_link_libraries(ecs_ui_clay_parity
+            PRIVATE ecs_ui_clay)
+        ecs_ui_enable_warnings(ecs_ui_clay_parity)
+        add_test(NAME ecs_ui_clay_parity COMMAND ecs_ui_clay_parity)
+    endif()
 endif()

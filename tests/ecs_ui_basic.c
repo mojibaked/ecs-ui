@@ -214,6 +214,41 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiBoxStyle) != 0,
         "EcsUiBoxStyle should be registered");
+    ecs_entity_t style_token_root = EcsUiStyleTokenRoot(world);
+    ecs_entity_t text_field_style_token =
+        EcsUiStyleToken(world, "TextField");
+    ecs_entity_t primary_action_style_token =
+        EcsUiStyleToken(world, "PrimaryAction");
+    result |= Require(
+        style_token_root != 0,
+        "style token root should be created");
+    result |= Require(
+        EcsUiStyleTokenRoot(world) == style_token_root,
+        "style token root should be stable");
+    result |= Require(
+        text_field_style_token != 0 &&
+            EcsUiStyleToken(world, "TextField") == text_field_style_token,
+        "style token identity should be stable");
+    result |= Require(
+        primary_action_style_token != 0 &&
+            primary_action_style_token != text_field_style_token,
+        "style token names should create distinct entities");
+    result |= Require(
+        ecs_has_pair(
+            world,
+            text_field_style_token,
+            EcsChildOf,
+            style_token_root),
+        "style token should live under style token root");
+    ecs_entity_t styled_entity =
+        ecs_entity(world, {.name = "StyleTokenSetterTarget"});
+    result |= Require(
+        EcsUiSetStyleToken(world, styled_entity, text_field_style_token),
+        "style token setter should attach token");
+    result |= Require(
+        ecs_get_target(world, styled_entity, EcsUiUsesStyle, 0) ==
+            text_field_style_token,
+        "style token setter should use EcsUiUsesStyle");
     result |= Require(
         ecs_id(EcsUiHitTest) != 0,
         "EcsUiHitTest should be registered");
@@ -985,8 +1020,6 @@ int main(void)
 
     ecs_entity_t present_add_machine_action =
         ecs_entity(world, {.name = "PresentAddMachineAction"});
-    ecs_entity_t search_style_token =
-        ecs_entity(world, {.name = "SearchStyleToken"});
     ecs_entity_t light_theme = EcsUiThemeEntity(world, "LightTheme");
     ecs_entity_t dark_theme = EcsUiThemeEntity(world, "DarkTheme");
     result |= Require(light_theme != 0, "light theme should be created");
@@ -995,7 +1028,7 @@ int main(void)
         EcsUiThemeSetBoxStyle(
             world,
             light_theme,
-            search_style_token,
+            text_field_style_token,
             (EcsUiBoxStyle){
                 .background = {10u, 20u, 30u, 255u},
                 .hover_background = {20u, 30u, 40u, 255u},
@@ -1008,7 +1041,7 @@ int main(void)
         EcsUiThemeSetBoxStyle(
             world,
             dark_theme,
-            search_style_token,
+            text_field_style_token,
             (EcsUiBoxStyle){
                 .background = {210u, 220u, 230u, 255u},
                 .hover_background = {200u, 210u, 220u, 255u},
@@ -1017,6 +1050,32 @@ int main(void)
                 .padding = 11.0f,
             }),
         "dark theme should store token box style");
+    result |= Require(
+        EcsUiThemeSetBoxStyle(
+            world,
+            light_theme,
+            primary_action_style_token,
+            (EcsUiBoxStyle){
+                .background = {30u, 40u, 50u, 255u},
+                .hover_background = {31u, 41u, 51u, 255u},
+                .highlight_background = {32u, 42u, 52u, 255u},
+                .radius = 0.4f,
+                .padding = 13.0f,
+            }),
+        "light theme should store action token box style");
+    result |= Require(
+        EcsUiThemeSetBoxStyle(
+            world,
+            dark_theme,
+            primary_action_style_token,
+            (EcsUiBoxStyle){
+                .background = {130u, 140u, 150u, 255u},
+                .hover_background = {131u, 141u, 151u, 255u},
+                .highlight_background = {132u, 142u, 152u, 255u},
+                .radius = 0.5f,
+                .padding = 15.0f,
+            }),
+        "dark theme should store action token box style");
     result |= Require(
         EcsUiSetActiveTheme(world, light_theme),
         "light theme should become active");
@@ -1035,6 +1094,7 @@ int main(void)
                 .id = "AddMachine",
                 .variant = ECS_UI_BUTTON_PRIMARY,
                 .on_click = present_add_machine_action,
+                .style_token = primary_action_style_token,
             }) {
             Text(
                 &builder,
@@ -1054,11 +1114,12 @@ int main(void)
                     .role = ECS_UI_TEXT_CAPTION,
                 });
         }
-        ecs_entity_t search_field = EcsUiBeginPressable(
+        EcsUiBeginPressable(
             &builder,
             (EcsUiPressableDesc){
                 .id = "SearchField",
                 .on_click = present_add_machine_action,
+                .style_token = text_field_style_token,
             });
         Text(
             &builder,
@@ -1068,12 +1129,12 @@ int main(void)
                 .role = ECS_UI_TEXT_BODY,
             });
         EcsUiEnd(&builder);
-        ecs_add_pair(world, search_field, EcsUiUsesStyle, search_style_token);
         ecs_entity_t direct_field = EcsUiBeginPressable(
             &builder,
             (EcsUiPressableDesc){
                 .id = "DirectStyleField",
                 .on_click = present_add_machine_action,
+                .style_token = text_field_style_token,
             });
         Text(
             &builder,
@@ -1083,7 +1144,6 @@ int main(void)
                 .role = ECS_UI_TEXT_BODY,
             });
         EcsUiEnd(&builder);
-        ecs_add_pair(world, direct_field, EcsUiUsesStyle, search_style_token);
         ecs_set(
             world,
             direct_field,
@@ -1192,6 +1252,17 @@ int main(void)
         tree.nodes[2u].on_click == present_add_machine_action,
         "button snapshot should expose OnClick action");
     result |= Require(
+        ecs_get_target(world, tree.nodes[2u].entity, EcsUiUsesStyle, 0) ==
+            primary_action_style_token,
+        "button desc should attach style token");
+    result |= Require(
+        tree.nodes[2u].has_box_style &&
+            tree.nodes[2u].box_style.background.r == 30u &&
+            tree.nodes[2u].box_style.background.g == 40u &&
+            tree.nodes[2u].box_style.background.b == 50u &&
+            tree.nodes[2u].box_style.background.a == 255u,
+        "button token box style should be copied");
+    result |= Require(
         ecs_has_pair(
             world,
             tree.nodes[7u].entity,
@@ -1201,6 +1272,10 @@ int main(void)
     result |= Require(
         tree.nodes[7u].on_click == present_add_machine_action,
         "pressable snapshot should expose OnClick action");
+    result |= Require(
+        ecs_get_target(world, tree.nodes[7u].entity, EcsUiUsesStyle, 0) ==
+            text_field_style_token,
+        "pressable desc should attach style token");
     result |= Require(
         tree.nodes[7u].has_box_style &&
             tree.nodes[7u].box_style.background.r == 10u &&
@@ -1235,6 +1310,13 @@ int main(void)
         EcsUiThemeApply(world),
         "dark theme should apply to style token");
     result |= Require(EcsUiReadTree(world, root, &tree), "reread tree failed");
+    result |= Require(
+        tree.nodes[2u].has_box_style &&
+            tree.nodes[2u].box_style.background.r == 130u &&
+            tree.nodes[2u].box_style.background.g == 140u &&
+            tree.nodes[2u].box_style.background.b == 150u &&
+            tree.nodes[2u].box_style.background.a == 255u,
+        "theme switch should update action token box style");
     result |= Require(
         tree.nodes[7u].has_box_style &&
             tree.nodes[7u].box_style.background.r == 210u &&

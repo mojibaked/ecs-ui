@@ -161,12 +161,14 @@ typedef struct EcsUiButtonDesc {
     EcsUiButtonVariant variant;
     ecs_entity_t on_click;
     bool disabled;
+    ecs_entity_t style_token;
 } EcsUiButtonDesc;
 
 typedef struct EcsUiPressableDesc {
     const char *id;
     ecs_entity_t on_click;
     bool disabled;
+    ecs_entity_t style_token;
 } EcsUiPressableDesc;
 
 typedef struct EcsUiTextDesc {
@@ -270,6 +272,13 @@ extern ECS_TAG_DECLARE(EcsUiActiveTheme);
 extern ECS_TAG_DECLARE(EcsUiThemeStyle);
 
 void EcsUiImport(ecs_world_t *world);
+
+ecs_entity_t EcsUiStyleTokenRoot(ecs_world_t *world);
+ecs_entity_t EcsUiStyleToken(ecs_world_t *world, const char *id);
+bool EcsUiSetStyleToken(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t style_token);
 
 ecs_entity_t EcsUiThemeRoot(ecs_world_t *world);
 ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id);

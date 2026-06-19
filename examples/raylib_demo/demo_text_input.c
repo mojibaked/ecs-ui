@@ -42,7 +42,7 @@ static ecs_entity_t DemoTextInputBuildField(
         (EcsUiTextFieldViewDesc){
             .field_id = field_node_id,
             .value_id = value_node_id,
-            .style_token = DemoThemeTextInputFieldStyleToken(world),
+            .style_token = DemoThemeTextFieldStyleToken(world),
         });
 }
 
@@ -106,7 +106,7 @@ void DemoTextInputRegister(ecs_world_t *world)
     EcsUiTextInputImport(world);
     (void)DemoTextInputAddItemNameField(world);
     (void)DemoTextInputAddItemNoteField(world);
-    (void)DemoThemeTextInputFieldStyleToken(world);
+    (void)DemoThemeTextFieldStyleToken(world);
 
     (void)ecs_system(world, {
         .entity = ecs_entity(world, {

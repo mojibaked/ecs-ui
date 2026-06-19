@@ -2,6 +2,7 @@
 
 #include "demo_anim.h"
 #include "demo_text_input.h"
+#include "demo_theme.h"
 #include "demo_ui.h"
 
 #include <raylib.h>
@@ -197,6 +198,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .id = "CreateItem",
             .variant = ECS_UI_BUTTON_PRIMARY,
             .on_click = refs->add_item_action,
+            .style_token = DemoThemePrimaryActionStyleToken(world),
         });
     (void)EcsUiAddIcon(
         &builder,
@@ -218,6 +220,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .id = "DismissPresentation",
             .variant = ECS_UI_BUTTON_SUBTLE,
             .on_click = refs->dismiss_presentation_action,
+            .style_token = DemoThemeSubtleActionStyleToken(world),
         });
     (void)EcsUiAddText(
         &builder,

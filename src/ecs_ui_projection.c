@@ -1,6 +1,7 @@
 #include "ecs_ui/ecs_ui_projection.h"
 
 #include <stdio.h>
+#include <string.h>
 
 ECS_COMPONENT_DECLARE(EcsUiProjectionKey);
 ECS_TAG_DECLARE(EcsUiProjectionRoot);
@@ -224,6 +225,64 @@ bool EcsUiProjectionSyncOrderedChildren(
     return true;
 }
 
+void EcsUiProjectionCollectionBufferInit(
+    EcsUiProjectionCollectionBuffer *buffer,
+    size_t item_size)
+{
+    if (buffer == NULL) {
+        return;
+    }
+
+    *buffer = (EcsUiProjectionCollectionBuffer){
+        .item_size = item_size,
+        .truncated = item_size == 0u ||
+            item_size > (size_t)ECS_UI_PROJECTION_ITEM_MAX,
+    };
+}
+
+bool EcsUiProjectionCollectionBufferPush(
+    EcsUiProjectionCollectionBuffer *buffer,
+    uint64_t key,
+    const void *item)
+{
+    if (buffer == NULL || key == 0u || item == NULL ||
+        buffer->item_size == 0u ||
+        buffer->item_size > (size_t)ECS_UI_PROJECTION_ITEM_MAX) {
+        if (buffer != NULL) {
+            buffer->truncated = true;
+        }
+        return false;
+    }
+
+    if (buffer->item_count >= (uint32_t)ECS_UI_TREE_NODE_MAX) {
+        buffer->truncated = true;
+        return false;
+    }
+
+    unsigned char *storage = buffer->storage[buffer->item_count].bytes;
+    (void)memcpy(storage, item, buffer->item_size);
+    buffer->items[buffer->item_count] = (EcsUiProjectionCollectionSource){
+        .key = key,
+        .data = storage,
+    };
+    buffer->item_count += 1u;
+    return true;
+}
+
+uint32_t EcsUiProjectionCollectionBufferCount(
+    const EcsUiProjectionCollectionBuffer *buffer)
+{
+    return buffer != NULL ? buffer->item_count : 0u;
+}
+
+bool EcsUiProjectionCollectionBufferOk(
+    const EcsUiProjectionCollectionBuffer *buffer)
+{
+    return buffer != NULL && !buffer->truncated &&
+        buffer->item_size > 0u &&
+        buffer->item_size <= (size_t)ECS_UI_PROJECTION_ITEM_MAX;
+}
+
 static bool EcsUiProjectionKeyInItems(
     const EcsUiProjectionCollectionSource *items,
     uint32_t item_count,
@@ -412,5 +471,32 @@ bool EcsUiProjectionSyncCollection(
             .source_filter = desc.source_filter,
             .preserve_unprojected_ui_children =
                 desc.preserve_unprojected_ui_children,
+        });
+}
+
+bool EcsUiProjectionSyncCollectionView(
+    ecs_world_t *world,
+    EcsUiProjectionCollectionViewDesc desc)
+{
+    if (desc.items == NULL ||
+        !EcsUiProjectionCollectionBufferOk(desc.items)) {
+        return false;
+    }
+
+    return EcsUiProjectionSyncCollection(
+        world,
+        (EcsUiProjectionCollectionDesc){
+            .source_parent = desc.source_parent,
+            .ui_parent = desc.ui_parent,
+            .source_filter = desc.source_filter,
+            .items = desc.items->items,
+            .item_count = desc.items->item_count,
+            .preserve_unprojected_ui_children =
+                desc.preserve_unprojected_ui_children,
+            .source_name_prefix = desc.source_name_prefix,
+            .sync_source = desc.sync_source,
+            .build_root = desc.build_root,
+            .update_root = desc.update_root,
+            .ctx = desc.ctx,
         });
 }

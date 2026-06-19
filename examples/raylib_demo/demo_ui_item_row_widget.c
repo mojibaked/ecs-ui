@@ -1,6 +1,7 @@
 #include "demo_ui_internal.h"
 
 #include "demo_anim.h"
+#include "demo_theme.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -28,13 +29,25 @@ void DemoUiApplyItemSelectionStyle(
         item_data->id == selected_item_id ?
             ECS_UI_BUTTON_PRIMARY :
             ECS_UI_BUTTON_SUBTLE;
-    if (button->variant == variant) {
+    const ecs_entity_t style_token =
+        item_data->id == selected_item_id ?
+            DemoThemePrimaryActionStyleToken(world) :
+            DemoThemeSubtleActionStyleToken(world);
+    const ecs_entity_t current_style =
+        ecs_get_target(world, select_button, EcsUiUsesStyle, 0);
+    if (button->variant == variant && current_style == style_token) {
         return;
     }
 
-    button->variant = variant;
-    ecs_modified(world, select_button, EcsUiButton);
-    if (item_data->id == selected_item_id) {
+    const bool variant_changed = button->variant != variant;
+    if (variant_changed) {
+        button->variant = variant;
+        ecs_modified(world, select_button, EcsUiButton);
+    }
+    if (current_style != style_token && style_token != 0) {
+        (void)EcsUiSetStyleToken(world, select_button, style_token);
+    }
+    if (variant_changed && item_data->id == selected_item_id) {
         DemoAnimStartSelectionHighlight(world, select_button);
     }
 }
@@ -213,6 +226,7 @@ ecs_entity_t DemoUiCreateItemRow(
             .id = select_id,
             .variant = ECS_UI_BUTTON_SUBTLE,
             .on_click = refs->select_item_action,
+            .style_token = DemoThemeSubtleActionStyleToken(world),
         });
     ecs_entity_t label_text = EcsUiAddText(
         &builder,
@@ -280,6 +294,7 @@ ecs_entity_t DemoUiCreateItemRow(
             .id = delete_id,
             .variant = ECS_UI_BUTTON_DANGER,
             .on_click = refs->delete_item_action,
+            .style_token = DemoThemeDangerActionStyleToken(world),
         });
     (void)EcsUiAddText(
         &builder,

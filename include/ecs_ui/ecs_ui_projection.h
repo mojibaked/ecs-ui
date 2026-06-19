@@ -3,9 +3,13 @@
 
 #include "ecs_ui/ecs_ui.h"
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define ECS_UI_PROJECTION_ITEM_MAX 512u
 
 typedef void (*EcsUiProjectionOrderVisit)(
     ecs_world_t *world,
@@ -31,6 +35,21 @@ typedef struct EcsUiProjectionCollectionSource {
     uint64_t key;
     const void *data;
 } EcsUiProjectionCollectionSource;
+
+typedef union EcsUiProjectionCollectionItemStorage {
+    uint64_t align_u64;
+    double align_double;
+    void *align_ptr;
+    unsigned char bytes[ECS_UI_PROJECTION_ITEM_MAX];
+} EcsUiProjectionCollectionItemStorage;
+
+typedef struct EcsUiProjectionCollectionBuffer {
+    size_t item_size;
+    uint32_t item_count;
+    bool truncated;
+    EcsUiProjectionCollectionSource items[ECS_UI_TREE_NODE_MAX];
+    EcsUiProjectionCollectionItemStorage storage[ECS_UI_TREE_NODE_MAX];
+} EcsUiProjectionCollectionBuffer;
 
 typedef void (*EcsUiProjectionSyncSource)(
     ecs_world_t *world,
@@ -66,6 +85,19 @@ typedef struct EcsUiProjectionCollectionDesc {
     EcsUiProjectionUpdateRoot update_root;
     void *ctx;
 } EcsUiProjectionCollectionDesc;
+
+typedef struct EcsUiProjectionCollectionViewDesc {
+    ecs_entity_t source_parent;
+    ecs_entity_t ui_parent;
+    ecs_id_t source_filter;
+    const EcsUiProjectionCollectionBuffer *items;
+    bool preserve_unprojected_ui_children;
+    const char *source_name_prefix;
+    EcsUiProjectionSyncSource sync_source;
+    EcsUiProjectionBuildRoot build_root;
+    EcsUiProjectionUpdateRoot update_root;
+    void *ctx;
+} EcsUiProjectionCollectionViewDesc;
 
 extern ECS_COMPONENT_DECLARE(EcsUiProjectionKey);
 extern ECS_TAG_DECLARE(EcsUiProjectionRoot);
@@ -106,9 +138,24 @@ bool EcsUiProjectionSyncOrderedChildren(
     ecs_world_t *world,
     EcsUiProjectionOrderSyncDesc desc);
 
+void EcsUiProjectionCollectionBufferInit(
+    EcsUiProjectionCollectionBuffer *buffer,
+    size_t item_size);
+bool EcsUiProjectionCollectionBufferPush(
+    EcsUiProjectionCollectionBuffer *buffer,
+    uint64_t key,
+    const void *item);
+uint32_t EcsUiProjectionCollectionBufferCount(
+    const EcsUiProjectionCollectionBuffer *buffer);
+bool EcsUiProjectionCollectionBufferOk(
+    const EcsUiProjectionCollectionBuffer *buffer);
+
 bool EcsUiProjectionSyncCollection(
     ecs_world_t *world,
     EcsUiProjectionCollectionDesc desc);
+bool EcsUiProjectionSyncCollectionView(
+    ecs_world_t *world,
+    EcsUiProjectionCollectionViewDesc desc);
 
 #ifdef __cplusplus
 }

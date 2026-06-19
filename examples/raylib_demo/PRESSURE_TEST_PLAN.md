@@ -501,3 +501,68 @@ Definition of done:
 - [x] The demo app event bridge delegates common text/focus events to core
   text-input routing.
 - [x] Text-field nodes no longer need app-owned focus action tokens.
+
+## Phase 24: Clay Parity Regression Coverage
+
+Move Clay adapter parity from manual-only validation into non-GUI tests.
+
+- [x] Add a Clay parity test target when the Clay adapter is available.
+- [x] Cover duplicate authored UI ids by emitting repeated row-like children
+  without Clay duplicate-id errors.
+- [x] Cover visual opacity skipping pointer events.
+- [x] Cover visual offsets affecting pointer hit testing.
+- [x] Cover pointer capture drag lifecycle events.
+- [x] Cover ZStack capture preventing background fallthrough.
+
+Definition of done:
+
+- [x] Clay parity behavior can be verified without launching raylib windows.
+- [x] The tests exercise the adapter through snapshots and synthetic pointer
+  state rather than private demo assumptions.
+- [x] The existing raylib demo remains the manual visual parity surface.
+
+## Phase 25: Reusable Style-Token Conventions
+
+Make common widget styling less ad hoc without introducing a semantic widget
+library.
+
+- [x] Add `EcsUiStyleTokenRoot` and `EcsUiStyleToken` so app code can create
+  stable named style-token entities under `EcsUiStyleTokens`.
+- [x] Add `EcsUiSetStyleToken` and optional `style_token` desc fields for
+  button and pressable authoring.
+- [x] Define demo semantic tokens for `TextField`, `PrimaryAction`,
+  `SubtleAction`, and `DangerAction`.
+- [x] Keep demo text-field views on the text-field token and attach action
+  tokens where button variants already imply primary, subtle, or danger
+  semantics.
+- [x] Document that current button renderers still draw from button variants;
+  action tokens are stable semantic handles until button rendering consumes box
+  style tokens directly.
+
+Definition of done:
+
+- [x] Unit tests cover stable token identity, theme application through token
+  styles, desc/setter token attachment, and direct `EcsUiBoxStyle` precedence.
+- [x] Existing direct style components keep priority over token-provided styles.
+- [x] The demo keeps its current visual behavior while app-authored style names
+  become reusable conventions.
+
+## Phase 26: Projection Bridge Ergonomics
+
+Reduce app-world-to-ui-world collection bridge boilerplate without replacing
+the retained projection reconciler.
+
+- [x] Add an `EcsUiProjectionCollectionBuffer` for stable-keyed DTO snapshots.
+- [x] Add `EcsUiProjectionSyncCollectionView` as a small wrapper around the
+  existing collection reconciler.
+- [x] Convert the demo item-list bridge from parallel DTO/source arrays to the
+  projection buffer.
+- [x] Keep app policy in the demo: reading app entities, row construction,
+  selection styling, and status text remain app-owned.
+
+Definition of done:
+
+- [x] The demo no longer hand-builds a parallel
+  `EcsUiProjectionCollectionSource` array.
+- [x] The core reconciler still owns retained row lifecycle and ordering.
+- [x] The bridge shape is clearer for future Glowfish app-state projections.

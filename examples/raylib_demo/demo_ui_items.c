@@ -8,37 +8,37 @@ typedef struct DemoUiItemProjectionContext {
     uint32_t selected_item_id;
 } DemoUiItemProjectionContext;
 
-static uint32_t DemoUiReadAppItems(
+static void DemoUiReadAppItems(
     ecs_world_t *app_world,
-    DemoUiItemSource *out_items,
-    uint32_t max_items)
+    EcsUiProjectionCollectionBuffer *out_items)
 {
-    if (app_world == NULL || out_items == NULL || max_items == 0u) {
-        return 0u;
+    if (app_world == NULL || out_items == NULL) {
+        return;
     }
 
-    uint32_t count = 0u;
     ecs_entities_t children =
         ecs_get_ordered_children(app_world, DemoAppItemRoot(app_world));
-    for (int32_t i = 0; i < children.count && count < max_items; i += 1) {
+    for (int32_t i = 0; i < children.count; i += 1) {
         const DemoItem *item =
             ecs_get(app_world, children.ids[i], DemoItem);
         if (item == NULL) {
             continue;
         }
 
-        out_items[count] = (DemoUiItemSource){
+        DemoUiItemSource next = {
             .id = item->id,
             .rename_count = item->rename_count,
         };
         (void)snprintf(
-            out_items[count].label,
-            sizeof(out_items[count].label),
+            next.label,
+            sizeof(next.label),
             "%s",
             item->label);
-        count += 1u;
+        (void)EcsUiProjectionCollectionBufferPush(
+            out_items,
+            next.id,
+            &next);
     }
-    return count;
 }
 
 static void DemoUiSetStatusForItemCount(
@@ -161,29 +161,21 @@ void DemoUiSyncProjection(ecs_world_t *ui_world, ecs_world_t *app_world)
         return;
     }
 
-    DemoUiItemSource items[ECS_UI_TREE_NODE_MAX] = {0};
-    EcsUiProjectionCollectionSource projection_items[ECS_UI_TREE_NODE_MAX] = {0};
-    const uint32_t item_count =
-        DemoUiReadAppItems(app_world, items, ECS_UI_TREE_NODE_MAX);
-    for (uint32_t i = 0u; i < item_count; i += 1u) {
-        projection_items[i] = (EcsUiProjectionCollectionSource){
-            .key = items[i].id,
-            .data = &items[i],
-        };
-    }
+    EcsUiProjectionCollectionBuffer items = {0};
+    EcsUiProjectionCollectionBufferInit(&items, sizeof(DemoUiItemSource));
+    DemoUiReadAppItems(app_world, &items);
 
     DemoUiItemProjectionContext ctx = {
         .refs = refs,
         .selected_item_id = DemoAppSelectedItemId(app_world),
     };
-    (void)EcsUiProjectionSyncCollection(
+    (void)EcsUiProjectionSyncCollectionView(
         ui_world,
-        (EcsUiProjectionCollectionDesc){
+        (EcsUiProjectionCollectionViewDesc){
             .source_parent = DemoUiItemSourceRoot(ui_world),
             .ui_parent = refs->item_list,
             .source_filter = ecs_id(DemoUiItemSource),
-            .items = projection_items,
-            .item_count = item_count,
+            .items = &items,
             .preserve_unprojected_ui_children = true,
             .source_name_prefix = "ItemSource",
             .sync_source = DemoUiSyncItemSource,
@@ -196,5 +188,8 @@ void DemoUiSyncProjection(ecs_world_t *ui_world, ecs_world_t *app_world)
     if (ecs_has_id(app_world, item_root, DemoItemOrderDirty)) {
         ecs_remove_id(app_world, item_root, DemoItemOrderDirty);
     }
-    DemoUiSetStatusForItemCount(ui_world, item_count, ctx.selected_item_id);
+    DemoUiSetStatusForItemCount(
+        ui_world,
+        EcsUiProjectionCollectionBufferCount(&items),
+        ctx.selected_item_id);
 }

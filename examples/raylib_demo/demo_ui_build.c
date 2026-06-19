@@ -61,6 +61,7 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                         .id = "AddItem",
                         .variant = ECS_UI_BUTTON_PRIMARY,
                         .on_click = present_add_item_action,
+                        .style_token = DemoThemePrimaryActionStyleToken(world),
                     }) {
                     Icon(&builder, {.id = "AddItemIcon", .name = "+"});
                     Text(
@@ -77,6 +78,7 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                         .id = "ToggleTheme",
                         .variant = ECS_UI_BUTTON_SUBTLE,
                         .on_click = toggle_theme_action,
+                        .style_token = DemoThemeSubtleActionStyleToken(world),
                     }) {
                     theme_text = Text(
                         &builder,

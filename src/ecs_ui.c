@@ -246,6 +246,54 @@ ecs_entity_t EcsUiThemeRoot(ecs_world_t *world)
     return root;
 }
 
+ecs_entity_t EcsUiStyleTokenRoot(ecs_world_t *world)
+{
+    if (world == NULL) {
+        return 0;
+    }
+
+    ecs_entity_t root = ecs_entity(world, {
+        .name = "EcsUiStyleTokens",
+        .sep = "",
+    });
+    if (root != 0) {
+        ecs_add_id(world, root, EcsOrderedChildren);
+    }
+    return root;
+}
+
+ecs_entity_t EcsUiStyleToken(ecs_world_t *world, const char *id)
+{
+    if (world == NULL || id == NULL || id[0] == '\0') {
+        return 0;
+    }
+
+    ecs_entity_t root = EcsUiStyleTokenRoot(world);
+    if (root == 0) {
+        return 0;
+    }
+
+    return ecs_entity(world, {
+        .parent = root,
+        .name = id,
+        .sep = "",
+    });
+}
+
+bool EcsUiSetStyleToken(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t style_token)
+{
+    if (world == NULL || entity == 0 || style_token == 0 ||
+        EcsUiUsesStyle == 0) {
+        return false;
+    }
+
+    ecs_add_pair(world, entity, EcsUiUsesStyle, style_token);
+    return true;
+}
+
 ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id)
 {
     if (world == NULL || !EcsUiThemeReady()) {
@@ -448,6 +496,10 @@ ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
     if (desc.on_click != 0) {
         ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
     }
+    if (desc.style_token != 0 &&
+        !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
+        builder->failed = true;
+    }
     EcsUiPushParent(builder, entity);
     return entity;
 }
@@ -469,6 +521,10 @@ ecs_entity_t EcsUiBeginPressable(
     ecs_add_id(builder->world, entity, EcsUiInteractive);
     if (desc.on_click != 0) {
         ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
+    }
+    if (desc.style_token != 0 &&
+        !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
+        builder->failed = true;
     }
     EcsUiPushParent(builder, entity);
     return entity;

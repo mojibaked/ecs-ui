@@ -53,6 +53,39 @@ ecs_add_pair(world, button, EcsUiOnClick, present_add_machine);
 Renderer/input adapters return generic events with the clicked node and action
 entity. Application code decides what the action entity means.
 
+## Style Tokens
+
+Shared widget styling uses stable token entities:
+
+```c
+ecs_entity_t text_field_style = EcsUiStyleToken(world, "TextField");
+ecs_entity_t theme = EcsUiThemeEntity(world, "LightTheme");
+
+EcsUiThemeSetBoxStyle(world, theme, text_field_style, (EcsUiBoxStyle){
+    .background = {236, 245, 243, 255},
+    .hover_background = {224, 238, 235, 255},
+    .padding = 12.0f,
+});
+
+Pressable(&builder, {
+    .id = "SearchField",
+    .style_token = text_field_style,
+}) {
+    Text(&builder, {.id = "SearchText", .text = "search"});
+}
+```
+
+`EcsUiStyleToken` creates or reuses named children under `EcsUiStyleTokens`, so
+apps can standardize semantic names such as `TextField`, `PrimaryAction`,
+`SubtleAction`, and `DangerAction`. Nodes can opt in through
+`EcsUiSetStyleToken` or the `style_token` field on button and pressable descs.
+When both are present, a direct `EcsUiBoxStyle` component on the node still wins
+over the token style.
+
+The current action tokens are semantic handles in snapshots. Existing button
+renderers still draw from `EcsUiButtonVariant` palettes; pressables and
+text-field views consume box-style token values today.
+
 ## Text Input
 
 `ecs_ui_text_input` provides reusable field state, focus relationships, cursor
