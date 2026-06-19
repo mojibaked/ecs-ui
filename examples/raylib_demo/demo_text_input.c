@@ -2,9 +2,6 @@
 
 #include "demo_theme.h"
 
-#include <stdio.h>
-#include <string.h>
-
 ecs_entity_t DemoTextInputRoot(ecs_world_t *world)
 {
     return EcsUiTextInputRoot(world);
@@ -24,74 +21,14 @@ ecs_entity_t DemoTextInputAddItemNoteField(ecs_world_t *world)
     return EcsUiTextInputField(world, "AddItemNoteField", "optional note");
 }
 
-static void DemoTextInputUpdateFieldUi(
-    ecs_world_t *world,
-    ecs_entity_t field)
-{
-    const EcsUiTextField *field_data =
-        field != 0 ? ecs_get(world, field, EcsUiTextField) : NULL;
-    if (world == NULL || field_data == NULL) {
-        return;
-    }
-
-    /*
-     * The reusable text-input layer owns focus and value. The demo owns this
-     * particular projection: focused fields show a simple caret marker and a
-     * pressable highlight, while empty unfocused fields show placeholder text.
-     */
-    const bool focused = EcsUiTextInputIsFocused(world, field);
-    char display[ECS_UI_TEXT_MAX] = {0};
-    (void)EcsUiTextInputDisplayText(
-        world,
-        field,
-        true,
-        display,
-        sizeof(display));
-
-    ecs_entity_t value_node =
-        EcsUiTextInputFieldValueUiNode(world, field);
-    EcsUiText *text =
-        value_node != 0 ? ecs_get_mut(world, value_node, EcsUiText) : NULL;
-    if (text != NULL) {
-        EcsUiTextRole role =
-            field_data->value[0] != '\0' || focused ?
-                ECS_UI_TEXT_BUTTON :
-                ECS_UI_TEXT_CAPTION;
-        if (text->role != role || strcmp(text->text, display) != 0) {
-            (void)snprintf(text->text, sizeof(text->text), "%s", display);
-            text->role = role;
-            ecs_modified(world, value_node, EcsUiText);
-        }
-    }
-
-    ecs_entity_t field_node =
-        EcsUiTextInputFieldUiNode(world, field);
-    if (field_node != 0) {
-        const float highlight = focused ? 0.22f : 0.0f;
-        const EcsUiVisual *visual = ecs_get(world, field_node, EcsUiVisual);
-        if (visual == NULL || visual->opacity != 1.0f ||
-            visual->highlight != highlight) {
-            ecs_set(
-                world,
-                field_node,
-                EcsUiVisual,
-                {
-                    .opacity = 1.0f,
-                    .highlight = highlight,
-                });
-        }
-    }
-}
-
 static ecs_entity_t DemoTextInputBuildField(
     ecs_world_t *world,
     EcsUiBuilder *builder,
-    ecs_entity_t focus_action,
     ecs_entity_t field,
     const char *field_node_id,
     const char *value_node_id)
 {
-    if (world == NULL || builder == NULL || focus_action == 0) {
+    if (world == NULL || builder == NULL) {
         return 0;
     }
 
@@ -99,46 +36,23 @@ static ecs_entity_t DemoTextInputBuildField(
         return 0;
     }
 
-    ecs_entity_t field_node = EcsUiBeginPressable(
+    return EcsUiTextInputBuildFieldView(
         builder,
-        (EcsUiPressableDesc){
-            .id = field_node_id,
-            .on_click = focus_action,
+        field,
+        (EcsUiTextFieldViewDesc){
+            .field_id = field_node_id,
+            .value_id = value_node_id,
+            .style_token = DemoThemeTextInputFieldStyleToken(world),
         });
-    ecs_entity_t value_node = EcsUiAddText(
-        builder,
-        (EcsUiTextDesc){
-            .id = value_node_id,
-            .text = "",
-            .role = ECS_UI_TEXT_CAPTION,
-        });
-    EcsUiEnd(builder);
-
-    if (EcsUiBuilderOk(builder) && field_node != 0) {
-        (void)EcsUiTextInputSetFieldUiNodes(
-            world,
-            field,
-            field_node,
-            value_node);
-        (void)EcsUiTextInputSetUiField(world, field_node, field);
-        ecs_entity_t style_token = DemoThemeTextInputFieldStyleToken(world);
-        if (style_token != 0) {
-            ecs_add_pair(world, field_node, EcsUiUsesStyle, style_token);
-        }
-        DemoTextInputUpdateFieldUi(world, field);
-    }
-    return field_node;
 }
 
 ecs_entity_t DemoTextInputBuildAddItemNameField(
     ecs_world_t *world,
-    EcsUiBuilder *builder,
-    ecs_entity_t focus_action)
+    EcsUiBuilder *builder)
 {
     return DemoTextInputBuildField(
         world,
         builder,
-        focus_action,
         DemoTextInputAddItemNameField(world),
         "AddItemNameInput",
         "AddItemNameValue");
@@ -146,106 +60,14 @@ ecs_entity_t DemoTextInputBuildAddItemNameField(
 
 ecs_entity_t DemoTextInputBuildAddItemNoteField(
     ecs_world_t *world,
-    EcsUiBuilder *builder,
-    ecs_entity_t focus_action)
+    EcsUiBuilder *builder)
 {
     return DemoTextInputBuildField(
         world,
         builder,
-        focus_action,
         DemoTextInputAddItemNoteField(world),
         "AddItemNoteInput",
         "AddItemNoteValue");
-}
-
-void DemoTextInputRequestFocusField(ecs_world_t *world, ecs_entity_t field)
-{
-    (void)EcsUiTextInputRequestFocusField(world, field);
-}
-
-void DemoTextInputRequestFocusNext(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestFocusNext(world);
-}
-
-void DemoTextInputRequestFocusPrevious(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestFocusPrevious(world);
-}
-
-void DemoTextInputRequestBlur(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestBlur(world);
-}
-
-void DemoTextInputRequestInsert(ecs_world_t *world, uint32_t codepoint)
-{
-    (void)EcsUiTextInputRequestInsert(world, codepoint);
-}
-
-void DemoTextInputRequestDelete(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestDelete(world);
-}
-
-void DemoTextInputRequestMoveCursorLeft(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestMoveCursorLeft(world);
-}
-
-void DemoTextInputRequestMoveCursorRight(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestMoveCursorRight(world);
-}
-
-void DemoTextInputRequestMoveCursorStart(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestMoveCursorStart(world);
-}
-
-void DemoTextInputRequestMoveCursorEnd(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestMoveCursorEnd(world);
-}
-
-void DemoTextInputRequestSelectLeft(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestSelectLeft(world);
-}
-
-void DemoTextInputRequestSelectRight(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestSelectRight(world);
-}
-
-void DemoTextInputRequestSelectStart(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestSelectStart(world);
-}
-
-void DemoTextInputRequestSelectEnd(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestSelectEnd(world);
-}
-
-void DemoTextInputRequestCopy(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestCopy(world);
-}
-
-void DemoTextInputRequestCut(ecs_world_t *world)
-{
-    (void)EcsUiTextInputRequestCut(world);
-}
-
-void DemoTextInputRequestPaste(ecs_world_t *world, const char *text)
-{
-    (void)EcsUiTextInputRequestPaste(world, text);
-}
-
-bool DemoTextInputHasFocusedField(ecs_world_t *world)
-{
-    return EcsUiTextInputHasFocusedField(world);
 }
 
 const char *DemoTextInputAddItemNameValue(ecs_world_t *world)
@@ -275,11 +97,7 @@ bool DemoTextInputPopClipboardWrite(
 static void DemoTextInputProjectFieldsSystem(ecs_iter_t *it)
 {
     for (int32_t i = 0; i < it->count; i += 1) {
-        /*
-         * Value and focus mutations happen in the reusable text-input systems,
-         * while this demo projection keeps the retained field UI in sync.
-         */
-        DemoTextInputUpdateFieldUi(it->world, it->entities[i]);
+        (void)EcsUiTextInputProjectFieldView(it->world, it->entities[i]);
     }
 }
 

@@ -480,3 +480,24 @@ Definition of done:
 - [x] Unit tests cover hit-test component registration and snapshot readback.
 - [x] Raylib and Clay event paths share the same ECS hit policy.
 - [x] Background actions cannot fire through a captured presentation layer.
+
+## Phase 23: Text Input Event Routing
+
+Move common text/focus event routing out of demo glue and into the reusable
+text-input layer.
+
+- [x] Add `EcsUiTextInputApplyEvent` and `EcsUiTextInputApplyEvents`.
+- [x] Focus text fields through `EcsUiForTextField` instead of a demo-specific
+  click action token.
+- [x] Keep outside-click blur non-consuming so app actions can still handle the
+  same click.
+- [x] Let raylib and Clay hit-test actionless text-field pressables.
+- [x] Remove demo text-input forwarding wrappers for insert, delete, cursor,
+  selection, focus traversal, clipboard, and blur requests.
+
+Definition of done:
+
+- [x] Unit tests cover router focus, typed input, and non-consuming outside blur.
+- [x] The demo app event bridge delegates common text/focus events to core
+  text-input routing.
+- [x] Text-field nodes no longer need app-owned focus action tokens.

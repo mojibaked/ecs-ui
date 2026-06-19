@@ -32,6 +32,12 @@ typedef struct EcsUiTextClipboardWriteRequest {
     char text[ECS_UI_TEXT_MAX];
 } EcsUiTextClipboardWriteRequest;
 
+typedef struct EcsUiTextFieldViewDesc {
+    const char *field_id;
+    const char *value_id;
+    ecs_entity_t style_token;
+} EcsUiTextFieldViewDesc;
+
 extern ECS_COMPONENT_DECLARE(EcsUiTextField);
 extern ECS_COMPONENT_DECLARE(EcsUiTextEditState);
 extern ECS_COMPONENT_DECLARE(EcsUiTextInsertRequest);
@@ -136,10 +142,39 @@ bool EcsUiTextInputDisplayText(
     bool include_caret,
     char *out,
     size_t out_size);
+
+/*
+ * Route renderer-neutral UI events into reusable text-input requests.
+ *
+ * Returns true when the event is fully consumed by text input. Clicking a node
+ * linked with EcsUiForTextField focuses that field and is consumed. Clicking
+ * outside a focused field enqueues blur but returns false so application action
+ * handlers can still process the click. ECS_UI_EVENT_TEXT_SUBMIT is also left
+ * to the application because submit policy is app-specific.
+ */
+bool EcsUiTextInputApplyEvent(
+    ecs_world_t *world,
+    const EcsUiEvent *event);
+uint32_t EcsUiTextInputApplyEvents(
+    ecs_world_t *world,
+    const EcsUiEventList *events);
 bool EcsUiTextInputPopClipboardWrite(
     ecs_world_t *world,
     char *out,
     size_t out_size);
+
+/*
+ * Build and maintain a basic pressable text-field view. The field node is
+ * linked to the field with EcsUiForTextField so EcsUiTextInputApplyEvent can
+ * focus it without an app-owned action token.
+ */
+ecs_entity_t EcsUiTextInputBuildFieldView(
+    EcsUiBuilder *builder,
+    ecs_entity_t field,
+    EcsUiTextFieldViewDesc desc);
+bool EcsUiTextInputProjectFieldView(
+    ecs_world_t *world,
+    ecs_entity_t field);
 
 bool EcsUiTextInputSetFieldUiNodes(
     ecs_world_t *world,

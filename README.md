@@ -53,6 +53,23 @@ ecs_add_pair(world, button, EcsUiOnClick, present_add_machine);
 Renderer/input adapters return generic events with the clicked node and action
 entity. Application code decides what the action entity means.
 
+## Text Input
+
+`ecs_ui_text_input` provides reusable field state, focus relationships, cursor
+and selection state, clipboard requests, and renderer-neutral event routing.
+Apps link a UI node to a field with `EcsUiTextInputSetUiField`, then feed
+adapter events through `EcsUiTextInputApplyEvent` before handling app-specific
+actions. For the common case, `EcsUiTextInputBuildFieldView` creates a basic
+pressable field view and `EcsUiTextInputProjectFieldView` keeps its text,
+placeholder, caret, and focus highlight synchronized with field state.
+
+The text-input router consumes field focus clicks and keyboard editing events.
+Outside clicks enqueue blur but are not consumed, so the same click can still
+trigger an application action. Submit is deliberately not consumed because each
+app decides what Enter means for the focused field. Apps that need a custom
+field widget can still keep their own projection and only use the lower-level
+state/request APIs.
+
 ## Build
 
 Pass a Flecs single-file distribution directory:
@@ -93,12 +110,13 @@ not rebuild the whole UI tree.
 
 See `examples/raylib_demo/PRESSURE_TEST_PLAN.md` for the phased plan to prove
 out Glowfish-style actions, selection relationships, navigation, animations,
-gestures, text input, and custom widgets.
+gestures, text input, theming, and custom widgets.
 
 ## Status
 
-This is an initial scaffold. It covers core UI hierarchy authoring, ordered
-children, text/button/icon/stack nodes, pair-based click action targets,
-snapshot export, a minimal Clay emitter, and a simple raylib renderer/demo.
-Theming, style entities, richer event routing, pruning stale authored nodes, and
-install/package rules are intentionally left for follow-up slices.
+This is still experimental. It covers core UI hierarchy authoring, ordered
+children, text/button/icon/stack/pressable nodes, pair-based click action
+targets, snapshot export, projection helpers, navigation, animation, style
+tokens, active themes, text-input state/routing, a Clay adapter, and a raylib
+renderer/demo. Install/package rules and renderer parity hardening are still
+follow-up work.

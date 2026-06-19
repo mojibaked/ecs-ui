@@ -10,30 +10,10 @@ ecs_entity_t DemoTextInputAddItemNameField(ecs_world_t *world);
 ecs_entity_t DemoTextInputAddItemNoteField(ecs_world_t *world);
 ecs_entity_t DemoTextInputBuildAddItemNameField(
     ecs_world_t *world,
-    EcsUiBuilder *builder,
-    ecs_entity_t focus_action);
+    EcsUiBuilder *builder);
 ecs_entity_t DemoTextInputBuildAddItemNoteField(
     ecs_world_t *world,
-    EcsUiBuilder *builder,
-    ecs_entity_t focus_action);
-void DemoTextInputRequestFocusField(ecs_world_t *world, ecs_entity_t field);
-void DemoTextInputRequestFocusNext(ecs_world_t *world);
-void DemoTextInputRequestFocusPrevious(ecs_world_t *world);
-void DemoTextInputRequestBlur(ecs_world_t *world);
-void DemoTextInputRequestInsert(ecs_world_t *world, uint32_t codepoint);
-void DemoTextInputRequestDelete(ecs_world_t *world);
-void DemoTextInputRequestMoveCursorLeft(ecs_world_t *world);
-void DemoTextInputRequestMoveCursorRight(ecs_world_t *world);
-void DemoTextInputRequestMoveCursorStart(ecs_world_t *world);
-void DemoTextInputRequestMoveCursorEnd(ecs_world_t *world);
-void DemoTextInputRequestSelectLeft(ecs_world_t *world);
-void DemoTextInputRequestSelectRight(ecs_world_t *world);
-void DemoTextInputRequestSelectStart(ecs_world_t *world);
-void DemoTextInputRequestSelectEnd(ecs_world_t *world);
-void DemoTextInputRequestCopy(ecs_world_t *world);
-void DemoTextInputRequestCut(ecs_world_t *world);
-void DemoTextInputRequestPaste(ecs_world_t *world, const char *text);
-bool DemoTextInputHasFocusedField(ecs_world_t *world);
+    EcsUiBuilder *builder);
 const char *DemoTextInputAddItemNameValue(ecs_world_t *world);
 void DemoTextInputClearAddItemFields(ecs_world_t *world);
 void DemoTextInputClearAddItemName(ecs_world_t *world);

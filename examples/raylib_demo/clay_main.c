@@ -33,11 +33,14 @@ static EcsUiClayTheme DemoClayTheme(const ecs_world_t *ui_world)
 
     theme.root_background = (Clay_Color){239.0f, 244.0f, 242.0f, 255.0f};
     theme.surface = (Clay_Color){251.0f, 253.0f, 252.0f, 255.0f};
+    theme.surface_subtle = (Clay_Color){232.0f, 240.0f, 238.0f, 255.0f};
     theme.button = (Clay_Color){218.0f, 232.0f, 229.0f, 255.0f};
     theme.button_primary = (Clay_Color){25.0f, 171.0f, 151.0f, 255.0f};
     theme.button_subtle = (Clay_Color){207.0f, 221.0f, 219.0f, 255.0f};
     theme.button_danger = (Clay_Color){218.0f, 82.0f, 62.0f, 255.0f};
+    theme.button_disabled = (Clay_Color){204.0f, 211.0f, 211.0f, 255.0f};
     theme.text = (Clay_Color){20.0f, 31.0f, 34.0f, 255.0f};
+    theme.text_muted = (Clay_Color){80.0f, 99.0f, 102.0f, 255.0f};
     theme.text_inverse = (Clay_Color){245.0f, 252.0f, 250.0f, 255.0f};
     return theme;
 }
@@ -169,12 +172,26 @@ static void DemoClayCollectKeyboardEvents(EcsUiEventList *events)
     }
 }
 
+static EcsUiClayLayoutOptions DemoClayLayoutOptions(void)
+{
+    const float margin = 40.0f;
+    return (EcsUiClayLayoutOptions){
+        .bounds = {
+            .x = margin,
+            .y = margin,
+            .width = (float)GetScreenWidth() - (margin * 2.0f),
+            .height = (float)GetScreenHeight() - (margin * 2.0f),
+        },
+    };
+}
+
 static Clay_RenderCommandArray DemoClayEmitRenderCommands(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme)
+    const EcsUiClayTheme *theme,
+    const EcsUiClayLayoutOptions *layout_options)
 {
     Clay_BeginLayout();
-    EcsUiClayEmitTree(tree, theme);
+    EcsUiClayEmitTreeEx(tree, theme, layout_options);
     return Clay_EndLayout();
 }
 
@@ -223,6 +240,7 @@ int main(void)
 
     while (!WindowShouldClose()) {
         EcsUiClayTheme theme = DemoClayTheme(ui_world);
+        EcsUiClayLayoutOptions layout_options = DemoClayLayoutOptions();
         Clay_SetLayoutDimensions((Clay_Dimensions){
             .width = (float)GetScreenWidth(),
             .height = (float)GetScreenHeight(),
@@ -232,6 +250,7 @@ int main(void)
         EcsUiClayPointerState pointer = {
             .x = mouse.x,
             .y = mouse.y,
+            .time = GetTime(),
             .down = IsMouseButtonDown(MOUSE_BUTTON_LEFT),
             .pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
             .released = IsMouseButtonReleased(MOUSE_BUTTON_LEFT),
@@ -253,10 +272,10 @@ int main(void)
             (void)EcsUiReadTree(ui_world, root, &tree);
         }
 
-        (void)DemoClayEmitRenderCommands(&tree, &theme);
+        (void)DemoClayEmitRenderCommands(&tree, &theme, &layout_options);
 
         EcsUiEventList events = {0};
-        EcsUiClayCollectEvents(&tree, pointer, &events);
+        EcsUiClayCollectEventsEx(&tree, pointer, &layout_options, &events);
         DemoClayCollectKeyboardEvents(&events);
         const float dt = GetFrameTime();
         DemoUiApplyEvents(ui_world, app_world, &events);
@@ -276,11 +295,15 @@ int main(void)
 
         theme = DemoClayTheme(ui_world);
         Clay_RenderCommandArray render_commands =
-            DemoClayEmitRenderCommands(&tree, &theme);
+            DemoClayEmitRenderCommands(&tree, &theme, &layout_options);
+        EcsUiClayRaylibRenderOptions render_options = {
+            .custom_draw = DemoTerminalDrawCustom,
+            .user_data = ui_world,
+        };
 
         BeginDrawing();
         ClearBackground(DemoClayClearColor(&theme));
-        Clay_Raylib_Render(render_commands, fonts);
+        EcsUiClayRaylibRenderEx(render_commands, fonts, &render_options);
         EndDrawing();
     }
 

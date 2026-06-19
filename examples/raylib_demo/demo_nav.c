@@ -122,8 +122,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
 {
     if (world == NULL || presentation == 0 || refs == NULL ||
         refs->presentation_host == 0 || refs->add_item_action == 0 ||
-        refs->dismiss_presentation_action == 0 ||
-        refs->focus_text_field_action == 0) {
+        refs->dismiss_presentation_action == 0) {
         return 0;
     }
 
@@ -176,10 +175,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .text = "item name",
             .role = ECS_UI_TEXT_LABEL,
         });
-    (void)DemoTextInputBuildAddItemNameField(
-        world,
-        &builder,
-        refs->focus_text_field_action);
+    (void)DemoTextInputBuildAddItemNameField(world, &builder);
     (void)EcsUiAddText(
         &builder,
         (EcsUiTextDesc){
@@ -187,10 +183,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .text = "note",
             .role = ECS_UI_TEXT_LABEL,
         });
-    (void)DemoTextInputBuildAddItemNoteField(
-        world,
-        &builder,
-        refs->focus_text_field_action);
+    (void)DemoTextInputBuildAddItemNoteField(world, &builder);
     EcsUiBeginHStack(
         &builder,
         (EcsUiStackDesc){
@@ -301,7 +294,7 @@ static void DemoNavPresentRouteSystem(ecs_iter_t *it)
              * deletes the previous sheet immediately because the new route owns
              * the overlay slot under the viewport.
              */
-            DemoTextInputRequestBlur(it->world);
+            (void)EcsUiTextInputRequestBlur(it->world);
             DemoNavDeletePresentationUi(it->world, active);
             ecs_delete(it->world, active);
         }
@@ -329,7 +322,7 @@ static void DemoNavDismissPresentationSystem(ecs_iter_t *it)
     for (int32_t i = 0; i < it->count; i += 1) {
         ecs_entity_t active = DemoNavActivePresentationEntity(it->world);
         if (active != 0) {
-            DemoTextInputRequestBlur(it->world);
+            (void)EcsUiTextInputRequestBlur(it->world);
             DemoAnimStartPresentation(
                 it->world,
                 active,
@@ -409,7 +402,7 @@ static void DemoNavEndPresentationDragSystem(ecs_iter_t *it)
                 current < 0.52f;
             ecs_remove(it->world, active, DemoPresentationDrag);
             if (should_dismiss) {
-                DemoTextInputRequestBlur(it->world);
+                (void)EcsUiTextInputRequestBlur(it->world);
             }
             DemoAnimStartPresentation(
                 it->world,

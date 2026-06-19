@@ -41,130 +41,17 @@ void DemoUiApplyEvents(
             continue;
         }
 
-        if (event->type == ECS_UI_EVENT_TEXT_INPUT) {
-            /*
-             * Text events are global input events. The demo routes them to a
-             * field only when text input state says one field is focused, then
-             * text systems mutate the field entity and refresh its projected UI.
-             */
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestInsert(ui_world, event->codepoint);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_DELETE) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestDelete(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_CANCEL) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestBlur(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_FOCUS_NEXT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestFocusNext(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_FOCUS_PREVIOUS) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestFocusPrevious(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_CURSOR_LEFT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestMoveCursorLeft(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_CURSOR_RIGHT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestMoveCursorRight(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_CURSOR_START) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestMoveCursorStart(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_CURSOR_END) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestMoveCursorEnd(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_SELECT_LEFT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestSelectLeft(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_SELECT_RIGHT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestSelectRight(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_SELECT_START) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestSelectStart(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_SELECT_END) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestSelectEnd(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_COPY) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestCopy(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_CUT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestCut(ui_world);
-            }
-            continue;
-        }
-
-        if (event->type == ECS_UI_EVENT_TEXT_PASTE) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
-                DemoTextInputRequestPaste(ui_world, event->text);
-            }
+        if (EcsUiTextInputApplyEvent(ui_world, event)) {
             continue;
         }
 
         if (event->type == ECS_UI_EVENT_TEXT_SUBMIT) {
-            if (DemoTextInputHasFocusedField(ui_world)) {
+            if (EcsUiTextInputHasFocusedField(ui_world)) {
                 const char *label = DemoTextInputAddItemNameValue(ui_world);
                 TraceLog(LOG_INFO, "DEMO: submit text field requested");
                 DemoAppRequestAddNamedItem(app_world, label);
                 DemoTextInputClearAddItemFields(ui_world);
-                DemoTextInputRequestBlur(ui_world);
+                (void)EcsUiTextInputRequestBlur(ui_world);
                 DemoNavRequestDismissPresentation(ui_world);
             }
             continue;
@@ -208,24 +95,6 @@ void DemoUiApplyEvents(
             continue;
         }
 
-        if (DemoTextInputHasFocusedField(ui_world) &&
-            event->action != refs->focus_text_field_action) {
-            DemoTextInputRequestBlur(ui_world);
-        }
-
-        if (event->action == refs->focus_text_field_action) {
-            ecs_entity_t field =
-                EcsUiTextInputUiField(ui_world, event->node);
-            if (field != 0) {
-                TraceLog(
-                    LOG_INFO,
-                    "DEMO: focus text field requested from %s",
-                    event->node_id);
-                DemoTextInputRequestFocusField(ui_world, field);
-            }
-            continue;
-        }
-
         if (event->action == refs->present_add_item_action) {
             TraceLog(
                 LOG_INFO,
@@ -252,7 +121,7 @@ void DemoUiApplyEvents(
                 LOG_INFO,
                 "DEMO: dismiss presentation requested from %s",
                 event->node_id);
-            DemoTextInputRequestBlur(ui_world);
+            (void)EcsUiTextInputRequestBlur(ui_world);
             DemoNavRequestDismissPresentation(ui_world);
             continue;
         }
@@ -272,7 +141,7 @@ void DemoUiApplyEvents(
                 app_world,
                 DemoTextInputAddItemNameValue(ui_world));
             DemoTextInputClearAddItemFields(ui_world);
-            DemoTextInputRequestBlur(ui_world);
+            (void)EcsUiTextInputRequestBlur(ui_world);
             DemoNavRequestDismissPresentation(ui_world);
             continue;
         }

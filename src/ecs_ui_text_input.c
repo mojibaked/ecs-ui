@@ -751,6 +751,93 @@ bool EcsUiTextInputDisplayText(
     return true;
 }
 
+bool EcsUiTextInputApplyEvent(
+    ecs_world_t *world,
+    const EcsUiEvent *event)
+{
+    if (world == NULL || event == NULL || !EcsUiTextInputReady()) {
+        return false;
+    }
+
+    const bool has_focus = EcsUiTextInputHasFocusedField(world);
+    switch (event->type) {
+    case ECS_UI_EVENT_TEXT_INPUT:
+        return has_focus &&
+            EcsUiTextInputRequestInsert(world, event->codepoint) != 0;
+    case ECS_UI_EVENT_TEXT_DELETE:
+        return has_focus && EcsUiTextInputRequestDelete(world) != 0;
+    case ECS_UI_EVENT_TEXT_CANCEL:
+        return has_focus && EcsUiTextInputRequestBlur(world) != 0;
+    case ECS_UI_EVENT_TEXT_FOCUS_NEXT:
+        return has_focus && EcsUiTextInputRequestFocusNext(world) != 0;
+    case ECS_UI_EVENT_TEXT_FOCUS_PREVIOUS:
+        return has_focus && EcsUiTextInputRequestFocusPrevious(world) != 0;
+    case ECS_UI_EVENT_TEXT_CURSOR_LEFT:
+        return has_focus &&
+            EcsUiTextInputRequestMoveCursorLeft(world) != 0;
+    case ECS_UI_EVENT_TEXT_CURSOR_RIGHT:
+        return has_focus &&
+            EcsUiTextInputRequestMoveCursorRight(world) != 0;
+    case ECS_UI_EVENT_TEXT_CURSOR_START:
+        return has_focus &&
+            EcsUiTextInputRequestMoveCursorStart(world) != 0;
+    case ECS_UI_EVENT_TEXT_CURSOR_END:
+        return has_focus &&
+            EcsUiTextInputRequestMoveCursorEnd(world) != 0;
+    case ECS_UI_EVENT_TEXT_SELECT_LEFT:
+        return has_focus && EcsUiTextInputRequestSelectLeft(world) != 0;
+    case ECS_UI_EVENT_TEXT_SELECT_RIGHT:
+        return has_focus && EcsUiTextInputRequestSelectRight(world) != 0;
+    case ECS_UI_EVENT_TEXT_SELECT_START:
+        return has_focus && EcsUiTextInputRequestSelectStart(world) != 0;
+    case ECS_UI_EVENT_TEXT_SELECT_END:
+        return has_focus && EcsUiTextInputRequestSelectEnd(world) != 0;
+    case ECS_UI_EVENT_TEXT_COPY:
+        return has_focus && EcsUiTextInputRequestCopy(world) != 0;
+    case ECS_UI_EVENT_TEXT_CUT:
+        return has_focus && EcsUiTextInputRequestCut(world) != 0;
+    case ECS_UI_EVENT_TEXT_PASTE:
+        return has_focus &&
+            EcsUiTextInputRequestPaste(world, event->text) != 0;
+    case ECS_UI_EVENT_CLICKED: {
+        ecs_entity_t field = EcsUiTextInputUiField(world, event->node);
+        if (field != 0) {
+            return EcsUiTextInputRequestFocusField(world, field) != 0;
+        }
+        if (has_focus) {
+            (void)EcsUiTextInputRequestBlur(world);
+        }
+        return false;
+    }
+    case ECS_UI_EVENT_TEXT_SUBMIT:
+    case ECS_UI_EVENT_NONE:
+    case ECS_UI_EVENT_HOVERED:
+    case ECS_UI_EVENT_PRESSED:
+    case ECS_UI_EVENT_DRAG_STARTED:
+    case ECS_UI_EVENT_DRAGGED:
+    case ECS_UI_EVENT_DRAG_ENDED:
+    default:
+        return false;
+    }
+}
+
+uint32_t EcsUiTextInputApplyEvents(
+    ecs_world_t *world,
+    const EcsUiEventList *events)
+{
+    if (world == NULL || events == NULL) {
+        return 0u;
+    }
+
+    uint32_t consumed = 0u;
+    for (uint32_t i = 0u; i < events->count; i += 1u) {
+        if (EcsUiTextInputApplyEvent(world, &events->events[i])) {
+            consumed += 1u;
+        }
+    }
+    return consumed;
+}
+
 bool EcsUiTextInputPopClipboardWrite(
     ecs_world_t *world,
     char *out,
@@ -795,6 +882,112 @@ bool EcsUiTextInputPopClipboardWrite(
         ecs_delete(world, request);
     }
     return found;
+}
+
+bool EcsUiTextInputProjectFieldView(
+    ecs_world_t *world,
+    ecs_entity_t field)
+{
+    if (world == NULL || field == 0 || !EcsUiTextInputReady()) {
+        return false;
+    }
+
+    const EcsUiTextField *field_data = ecs_get(world, field, EcsUiTextField);
+    if (field_data == NULL) {
+        return false;
+    }
+
+    const bool focused = EcsUiTextInputIsFocused(world, field);
+    char display[ECS_UI_TEXT_MAX] = {0};
+    if (!EcsUiTextInputDisplayText(
+            world,
+            field,
+            true,
+            display,
+            sizeof(display))) {
+        return false;
+    }
+
+    bool projected = false;
+    ecs_entity_t value_node =
+        EcsUiTextInputFieldValueUiNode(world, field);
+    EcsUiText *text =
+        value_node != 0 ? ecs_get_mut(world, value_node, EcsUiText) : NULL;
+    if (text != NULL) {
+        EcsUiTextRole role =
+            field_data->value[0] != '\0' || focused ?
+                ECS_UI_TEXT_BUTTON :
+                ECS_UI_TEXT_CAPTION;
+        if (text->role != role || strcmp(text->text, display) != 0) {
+            EcsUiTextInputCopyString(text->text, sizeof(text->text), display);
+            text->role = role;
+            ecs_modified(world, value_node, EcsUiText);
+        }
+        projected = true;
+    }
+
+    ecs_entity_t field_node =
+        EcsUiTextInputFieldUiNode(world, field);
+    if (field_node != 0) {
+        const float highlight = focused ? 0.22f : 0.0f;
+        const EcsUiVisual *existing =
+            ecs_get(world, field_node, EcsUiVisual);
+        EcsUiVisual visual = existing != NULL ? *existing : (EcsUiVisual){0};
+        visual.opacity = 1.0f;
+        visual.highlight = highlight;
+        if (existing == NULL || existing->opacity != visual.opacity ||
+            existing->highlight != visual.highlight) {
+            ecs_set_ptr(world, field_node, EcsUiVisual, &visual);
+        }
+        projected = true;
+    }
+
+    return projected;
+}
+
+ecs_entity_t EcsUiTextInputBuildFieldView(
+    EcsUiBuilder *builder,
+    ecs_entity_t field,
+    EcsUiTextFieldViewDesc desc)
+{
+    if (builder == NULL || builder->world == NULL || field == 0 ||
+        !EcsUiTextInputReady()) {
+        return 0;
+    }
+
+    ecs_entity_t field_node = EcsUiBeginPressable(
+        builder,
+        (EcsUiPressableDesc){
+            .id = desc.field_id,
+        });
+    ecs_entity_t value_node = EcsUiAddText(
+        builder,
+        (EcsUiTextDesc){
+            .id = desc.value_id,
+            .text = "",
+            .role = ECS_UI_TEXT_CAPTION,
+        });
+    EcsUiEnd(builder);
+
+    if (!EcsUiBuilderOk(builder) || field_node == 0 || value_node == 0) {
+        return field_node;
+    }
+
+    (void)EcsUiTextInputSetFieldUiNodes(
+        builder->world,
+        field,
+        field_node,
+        value_node);
+    (void)EcsUiTextInputSetUiField(builder->world, field_node, field);
+    if (desc.style_token != 0 && EcsUiUsesStyle != 0) {
+        ecs_add_pair(
+            builder->world,
+            field_node,
+            EcsUiUsesStyle,
+            desc.style_token);
+    }
+    (void)EcsUiTextInputProjectFieldView(builder->world, field);
+    return field_node;
 }
 
 bool EcsUiTextInputSetFieldUiNodes(

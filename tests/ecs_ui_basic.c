@@ -825,6 +825,157 @@ int main(void)
         EcsUiTextInputClear(world, text_field_a) &&
             strcmp(EcsUiTextInputValue(world, text_field_a), "") == 0,
         "text field clear mismatch");
+    EcsUiEvent focus_text_event = {
+        .type = ECS_UI_EVENT_CLICKED,
+        .node = text_field_node,
+    };
+    result |= Require(
+        EcsUiTextInputApplyEvent(world, &focus_text_event),
+        "text event router should consume field focus click");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "text event router should focus linked field");
+    EcsUiEvent text_key_event = {
+        .type = ECS_UI_EVENT_TEXT_INPUT,
+        .codepoint = 'z',
+    };
+    result |= Require(
+        EcsUiTextInputApplyEvents(
+            world,
+            &(EcsUiEventList){
+                .count = 1u,
+                .events = {text_key_event},
+            }) == 1u,
+        "text event router should consume text input");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "z") == 0,
+        "text event router should insert typed character");
+    EcsUiEvent submit_text_event = {
+        .type = ECS_UI_EVENT_TEXT_SUBMIT,
+    };
+    result |= Require(
+        !EcsUiTextInputApplyEvent(world, &submit_text_event),
+        "text submit should stay app-owned");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "text submit should not blur focused field");
+    EcsUiEvent outside_click_event = {
+        .type = ECS_UI_EVENT_CLICKED,
+    };
+    result |= Require(
+        !EcsUiTextInputApplyEvent(world, &outside_click_event),
+        "outside click blur should not consume app click");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        !EcsUiTextInputHasFocusedField(world),
+        "outside click should blur focused text field");
+    result |= Require(
+        !EcsUiTextInputApplyEvent(world, &text_key_event),
+        "text event router should ignore typing without focus");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "z") == 0,
+        "ignored text input should not mutate blurred field");
+    result |= Require(
+        EcsUiTextInputApplyEvent(world, &focus_text_event),
+        "text event router should refocus linked field");
+    (void)ecs_progress(world, 0.0f);
+    EcsUiEvent cancel_text_event = {
+        .type = ECS_UI_EVENT_TEXT_CANCEL,
+    };
+    result |= Require(
+        EcsUiTextInputApplyEvents(
+            world,
+            &(EcsUiEventList){
+                .count = 1u,
+                .events = {cancel_text_event},
+            }) == 1u,
+        "text event router should consume cancel while focused");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        !EcsUiTextInputHasFocusedField(world),
+        "text cancel should blur focused field");
+
+    ecs_entity_t text_view_root =
+        EcsUiRootEntity(world, "TextFieldViewRoot");
+    ecs_entity_t text_view_style =
+        ecs_entity(world, {.name = "TextFieldViewStyle"});
+    ecs_set(
+        world,
+        text_view_style,
+        EcsUiBoxStyle,
+        {
+            .background = {10u, 20u, 30u, 255u},
+            .highlight_background = {20u, 30u, 40u, 255u},
+            .padding = 8.0f,
+        });
+    EcsUiBuilder text_view_builder =
+        EcsUiBuilderBegin(world, text_view_root);
+    ecs_entity_t text_view_node = EcsUiTextInputBuildFieldView(
+        &text_view_builder,
+        text_field_a,
+        (EcsUiTextFieldViewDesc){
+            .field_id = "TextFieldView",
+            .value_id = "TextFieldViewValue",
+            .style_token = text_view_style,
+        });
+    EcsUiBuilderEnd(&text_view_builder);
+    ecs_entity_t text_view_value =
+        EcsUiTextInputFieldValueUiNode(world, text_field_a);
+    const EcsUiText *text_view_text =
+        text_view_value != 0 ? ecs_get(world, text_view_value, EcsUiText) : NULL;
+    result |= Require(
+        EcsUiBuilderOk(&text_view_builder) && text_view_node != 0 &&
+            text_view_value != 0,
+        "text field view should build field and value nodes");
+    result |= Require(
+        EcsUiTextInputFieldUiNode(world, text_field_a) == text_view_node &&
+            EcsUiTextInputUiField(world, text_view_node) == text_field_a,
+        "text field view should wire field relationships");
+    result |= Require(
+        ecs_get_target(world, text_view_node, EcsUiUsesStyle, 0) ==
+            text_view_style,
+        "text field view should attach style token");
+    result |= Require(
+        text_view_text != NULL &&
+            strcmp(text_view_text->text, "z") == 0 &&
+            text_view_text->role == ECS_UI_TEXT_BUTTON,
+        "text field view should project blurred value text");
+    EcsUiEvent focus_view_event = {
+        .type = ECS_UI_EVENT_CLICKED,
+        .node = text_view_node,
+    };
+    result |= Require(
+        EcsUiTextInputApplyEvent(world, &focus_view_event),
+        "text field view should focus through router");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputProjectFieldView(world, text_field_a),
+        "text field view projection should update focused field");
+    text_view_text =
+        text_view_value != 0 ? ecs_get(world, text_view_value, EcsUiText) : NULL;
+    const EcsUiVisual *text_view_visual =
+        ecs_get(world, text_view_node, EcsUiVisual);
+    result |= Require(
+        text_view_text != NULL &&
+            strcmp(text_view_text->text, "z|") == 0 &&
+            text_view_text->role == ECS_UI_TEXT_BUTTON,
+        "text field view should project focused caret text");
+    result |= RequireNear(
+        text_view_visual != NULL ? text_view_visual->opacity : 0.0f,
+        1.0f,
+        0.001f,
+        "text field view opacity mismatch");
+    result |= RequireNear(
+        text_view_visual != NULL ? text_view_visual->highlight : 0.0f,
+        0.22f,
+        0.001f,
+        "text field view focus highlight mismatch");
+    (void)EcsUiTextInputRequestBlur(world);
+    (void)ecs_progress(world, 0.0f);
 
     ecs_entity_t root = EcsUiRootEntity(world, "Home");
     if (root == 0) {

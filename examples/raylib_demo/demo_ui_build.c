@@ -12,8 +12,9 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
     ecs_entity_t root = EcsUiRootEntity(world, "RaylibDemo");
     /*
      * Action entities are stable identity tokens attached to interactive UI
-     * nodes. Raylib event collection reports the token back, and DemoUiApplyEvents
-     * decides which domain/navigation/text request to enqueue for that action.
+     * nodes. Event collection reports the token back, and DemoUiApplyEvents
+     * decides which domain/navigation request to enqueue for that action.
+     * Text input focus is routed by EcsUiForTextField instead of a demo token.
      */
     ecs_entity_t add_item_action = ecs_entity(world, {.name = "AddItemAction"});
     ecs_entity_t present_add_item_action =
@@ -22,8 +23,6 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
         ecs_entity(world, {.name = "DismissPresentationAction"});
     ecs_entity_t drag_presentation_action =
         ecs_entity(world, {.name = "DragPresentationAction"});
-    ecs_entity_t focus_text_field_action =
-        ecs_entity(world, {.name = "FocusTextFieldAction"});
     ecs_entity_t select_item_action =
         ecs_entity(world, {.name = "SelectItemAction"});
     ecs_entity_t delete_item_action =
@@ -154,7 +153,6 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
             .present_add_item_action = present_add_item_action,
             .dismiss_presentation_action = dismiss_presentation_action,
             .drag_presentation_action = drag_presentation_action,
-            .focus_text_field_action = focus_text_field_action,
             .select_item_action = select_item_action,
             .delete_item_action = delete_item_action,
             .rename_item_action = rename_item_action,
