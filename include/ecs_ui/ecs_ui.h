@@ -131,6 +131,11 @@ typedef struct EcsUiTextStyle {
     EcsUiColor disabled_color;
 } EcsUiTextStyle;
 
+typedef struct EcsUiTextLayout {
+    EcsUiAlign align_x;
+    EcsUiAlign align_y;
+} EcsUiTextLayout;
+
 typedef struct EcsUiButton {
     EcsUiButtonVariant variant;
     bool disabled;
@@ -162,6 +167,17 @@ typedef struct EcsUiVisual {
     float offset_y;
     float highlight;
 } EcsUiVisual;
+
+typedef struct EcsUiPlacement {
+    EcsUiAlign parent_x;
+    EcsUiAlign parent_y;
+    EcsUiAlign child_x;
+    EcsUiAlign child_y;
+    float offset_x;
+    float offset_y;
+    float width;
+    float height;
+} EcsUiPlacement;
 
 typedef struct EcsUiHitTest {
     EcsUiHitTestMode mode;
@@ -243,16 +259,20 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiStack stack;
     EcsUiBoxStyle box_style;
     EcsUiTextStyle text_style;
+    EcsUiTextLayout text_layout;
     EcsUiButton button;
     EcsUiPressable pressable;
     EcsUiText text;
     EcsUiIcon icon;
     EcsUiCustom custom;
     EcsUiVisual visual;
+    EcsUiPlacement placement;
     EcsUiHitTest hit_test;
     EcsUiTextFieldView text_field_view;
     bool has_box_style;
     bool has_text_style;
+    bool has_text_layout;
+    bool has_placement;
     bool has_text_field_view;
 } EcsUiTreeNodeSnapshot;
 
@@ -293,12 +313,14 @@ extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
 extern ECS_COMPONENT_DECLARE(EcsUiTextStyle);
+extern ECS_COMPONENT_DECLARE(EcsUiTextLayout);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
 extern ECS_COMPONENT_DECLARE(EcsUiPressable);
 extern ECS_COMPONENT_DECLARE(EcsUiText);
 extern ECS_COMPONENT_DECLARE(EcsUiIcon);
 extern ECS_COMPONENT_DECLARE(EcsUiCustom);
 extern ECS_COMPONENT_DECLARE(EcsUiVisual);
+extern ECS_COMPONENT_DECLARE(EcsUiPlacement);
 extern ECS_COMPONENT_DECLARE(EcsUiHitTest);
 extern ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 

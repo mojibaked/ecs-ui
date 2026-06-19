@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+static int16_t g_ecs_ui_clay_z_index_base;
+
 static Clay_String EcsUiClayString(const char *text)
 {
     return (Clay_String){
@@ -83,6 +85,18 @@ static float EcsUiClayClamp01(float value)
     return value;
 }
 
+static int16_t EcsUiClayZIndex(int16_t relative)
+{
+    int value = (int)g_ecs_ui_clay_z_index_base + (int)relative;
+    if (value > 32767) {
+        return 32767;
+    }
+    if (value < -32768) {
+        return -32768;
+    }
+    return (int16_t)value;
+}
+
 static bool EcsUiClayHasOffset(EcsUiVisual visual)
 {
     return visual.offset_x < -0.01f || visual.offset_x > 0.01f ||
@@ -153,6 +167,27 @@ static float EcsUiClayTextSize(EcsUiTextRole role)
     }
 }
 
+static EcsUiTextLayout EcsUiClayDefaultTextLayout(void)
+{
+    return (EcsUiTextLayout){
+        .align_x = ECS_UI_ALIGN_START,
+        .align_y = ECS_UI_ALIGN_CENTER,
+    };
+}
+
+static Clay_TextAlignment EcsUiClayTextAlign(EcsUiAlign align)
+{
+    switch (align) {
+    case ECS_UI_ALIGN_CENTER:
+        return CLAY_TEXT_ALIGN_CENTER;
+    case ECS_UI_ALIGN_END:
+        return CLAY_TEXT_ALIGN_RIGHT;
+    case ECS_UI_ALIGN_START:
+    default:
+        return CLAY_TEXT_ALIGN_LEFT;
+    }
+}
+
 static Clay_Color EcsUiClayTextColor(
     const EcsUiClayTheme *theme,
     EcsUiTextRole role,
@@ -188,6 +223,7 @@ static Clay_TextElementConfig *EcsUiClayTextConfig(
     EcsUiTextStyle text_style,
     bool has_text_style,
     bool disabled,
+    EcsUiTextLayout text_layout,
     float opacity)
 {
     return CLAY_TEXT_CONFIG({
@@ -202,6 +238,7 @@ static Clay_TextElementConfig *EcsUiClayTextConfig(
             opacity),
         .fontSize = EcsUiClayU16(EcsUiClayTextSize(role)),
         .wrapMode = CLAY_TEXT_WRAP_NONE,
+        .textAlignment = EcsUiClayTextAlign(text_layout.align_x),
     });
 }
 
@@ -279,6 +316,52 @@ static Clay_LayoutAlignmentY EcsUiClayAlignY(EcsUiAlign align)
     }
 }
 
+static Clay_FloatingAttachPointType EcsUiClayAttachPoint(
+    EcsUiAlign x,
+    EcsUiAlign y)
+{
+    if (x == ECS_UI_ALIGN_CENTER) {
+        switch (y) {
+        case ECS_UI_ALIGN_CENTER:
+            return CLAY_ATTACH_POINT_CENTER_CENTER;
+        case ECS_UI_ALIGN_END:
+            return CLAY_ATTACH_POINT_CENTER_BOTTOM;
+        case ECS_UI_ALIGN_START:
+        default:
+            return CLAY_ATTACH_POINT_CENTER_TOP;
+        }
+    }
+    if (x == ECS_UI_ALIGN_END) {
+        switch (y) {
+        case ECS_UI_ALIGN_CENTER:
+            return CLAY_ATTACH_POINT_RIGHT_CENTER;
+        case ECS_UI_ALIGN_END:
+            return CLAY_ATTACH_POINT_RIGHT_BOTTOM;
+        case ECS_UI_ALIGN_START:
+        default:
+            return CLAY_ATTACH_POINT_RIGHT_TOP;
+        }
+    }
+
+    switch (y) {
+    case ECS_UI_ALIGN_CENTER:
+        return CLAY_ATTACH_POINT_LEFT_CENTER;
+    case ECS_UI_ALIGN_END:
+        return CLAY_ATTACH_POINT_LEFT_BOTTOM;
+    case ECS_UI_ALIGN_START:
+    default:
+        return CLAY_ATTACH_POINT_LEFT_TOP;
+    }
+}
+
+static Clay_SizingAxis EcsUiClayPlacementSizing(float value)
+{
+    if (value > 0.0f) {
+        return CLAY_SIZING_FIXED(value);
+    }
+    return CLAY_SIZING_GROW(0);
+}
+
 static float EcsUiClayPressableHeight(const EcsUiTreeNodeSnapshot *node)
 {
     if (node == NULL || node->pressable.preferred_height <= 0.0f) {
@@ -297,7 +380,7 @@ static float EcsUiClayBoxPadding(
     return fallback;
 }
 
-static Clay_Color EcsUiClayStackColor(
+static Clay_Color EcsUiClayContainerBackground(
     const EcsUiTreeNodeSnapshot *node,
     Clay_Color fallback)
 {
@@ -322,6 +405,22 @@ static Clay_CornerRadius EcsUiClayCornerRadius(
         .topRight = radius,
         .bottomLeft = radius,
         .bottomRight = radius,
+    };
+}
+
+static Clay_ElementDeclaration EcsUiClayContainerDeclaration(
+    Clay_LayoutConfig layout,
+    const EcsUiTreeNodeSnapshot *node,
+    Clay_Color fallback_background,
+    float fallback_radius,
+    float opacity)
+{
+    return (Clay_ElementDeclaration){
+        .layout = layout,
+        .backgroundColor = EcsUiClayApplyOpacity(
+            EcsUiClayContainerBackground(node, fallback_background),
+            opacity),
+        .cornerRadius = EcsUiClayCornerRadius(node, fallback_radius),
     };
 }
 
@@ -601,6 +700,41 @@ static void EcsUiClayEmitInlineTextRange(
             text_style,
             has_text_style,
             text_disabled,
+            EcsUiClayDefaultTextLayout(),
+            opacity));
+}
+
+static void EcsUiClayEmitTextContent(
+    const EcsUiTreeNodeSnapshot *node,
+    const EcsUiClayTheme *theme,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    EcsUiTextLayout text_layout,
+    float opacity)
+{
+    if (node == NULL) {
+        return;
+    }
+
+    EcsUiTextStyle node_text_style = text_style;
+    bool node_has_text_style = has_text_style;
+    if (node->has_text_style) {
+        node_text_style = node->text_style;
+        node_has_text_style = true;
+    }
+
+    CLAY_TEXT(
+        EcsUiClayString(node->text.text),
+        EcsUiClayTextConfig(
+            theme,
+            node->text.role,
+            inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
+            text_layout,
             opacity));
 }
 
@@ -1047,13 +1181,14 @@ static void EcsUiClayEmitStack(
         tree,
         index,
         Clay_GetElementId(EcsUiClayString(clay_id)));
-    CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
-        .layout = layout,
-        .backgroundColor = EcsUiClayApplyOpacity(
-            EcsUiClayStackColor(node, background),
-            opacity),
-        .cornerRadius = EcsUiClayCornerRadius(node, radius),
-    }) {
+    CLAY(
+        CLAY_SID(EcsUiClayString(clay_id)),
+        EcsUiClayContainerDeclaration(
+            layout,
+            node,
+            background,
+            radius,
+            opacity)) {
         EcsUiClayEmitChildren(
             tree,
             theme,
@@ -1089,16 +1224,21 @@ static void EcsUiClayEmitZStack(
         tree,
         index,
         Clay_GetElementId(EcsUiClayString(clay_id)));
-    CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
-        .layout = layout,
-        .backgroundColor = EcsUiClayApplyOpacity(theme->surface, opacity),
-        .cornerRadius = EcsUiClayCornerRadius(node, 8.0f),
-    }) {
+    CLAY(
+        CLAY_SID(EcsUiClayString(clay_id)),
+        EcsUiClayContainerDeclaration(
+            layout,
+            node,
+            theme->surface,
+            8.0f,
+            opacity)) {
         uint32_t child = node->first_child;
         int16_t z_index = 1;
         bool first = true;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
-            if (first) {
+            const EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
+            const bool placed = child_node->has_placement;
+            if (first && !placed) {
                 EcsUiClayEmitNode(
                     tree,
                     theme,
@@ -1111,17 +1251,40 @@ static void EcsUiClayEmitZStack(
                     frame);
                 first = false;
             } else {
-                const EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
                 const float child_opacity =
                     opacity * EcsUiClayClamp01(child_node->visual.opacity);
                 if (child_opacity <= 0.01f) {
                     child = child_node->next_sibling;
                     continue;
                 }
+                const EcsUiPlacement *placement = &child_node->placement;
+                const float offset_x = child_node->visual.offset_x +
+                    (placed ? placement->offset_x : 0.0f);
+                const float offset_y = child_node->visual.offset_y +
+                    (placed ? placement->offset_y : 0.0f);
+                const Clay_FloatingAttachPoints attach_points = placed ?
+                    (Clay_FloatingAttachPoints){
+                        .element = EcsUiClayAttachPoint(
+                            placement->child_x,
+                            placement->child_y),
+                        .parent = EcsUiClayAttachPoint(
+                            placement->parent_x,
+                            placement->parent_y),
+                    } :
+                    (Clay_FloatingAttachPoints){
+                        .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                        .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                    };
+                const bool placed_text =
+                    placed && child_node->kind == ECS_UI_NODE_TEXT;
+                const EcsUiTextLayout child_text_layout =
+                    child_node->has_text_layout ?
+                        child_node->text_layout :
+                        EcsUiClayDefaultTextLayout();
                 char floating_id[ECS_UI_ID_MAX * 2u] = {0};
                 EcsUiClayElementId(
                     child_node,
-                    "Floating",
+                    placed_text ? NULL : "Floating",
                     floating_id,
                     sizeof(floating_id));
                 EcsUiClayRegisterWrapperBlocker(
@@ -1132,20 +1295,29 @@ static void EcsUiClayEmitZStack(
                 CLAY(CLAY_SID(EcsUiClayString(floating_id)), {
                     .layout = {
                         .sizing = {
-                            .width = CLAY_SIZING_GROW(0),
-                            .height = CLAY_SIZING_GROW(0),
+                            .width = placed ?
+                                EcsUiClayPlacementSizing(placement->width) :
+                                CLAY_SIZING_GROW(0),
+                            .height = placed ?
+                                EcsUiClayPlacementSizing(placement->height) :
+                                CLAY_SIZING_GROW(0),
+                        },
+                        .childAlignment = {
+                            .x = placed_text ?
+                                EcsUiClayAlignX(child_text_layout.align_x) :
+                                CLAY_ALIGN_X_LEFT,
+                            .y = placed_text ?
+                                EcsUiClayAlignY(child_text_layout.align_y) :
+                                CLAY_ALIGN_Y_TOP,
                         },
                     },
                     .floating = {
                         .offset = {
-                            .x = child_node->visual.offset_x,
-                            .y = child_node->visual.offset_y,
+                            .x = offset_x,
+                            .y = offset_y,
                         },
-                        .zIndex = z_index,
-                        .attachPoints = {
-                            .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                            .parent = CLAY_ATTACH_POINT_LEFT_TOP,
-                        },
+                        .zIndex = EcsUiClayZIndex(z_index),
+                        .attachPoints = attach_points,
                         .pointerCaptureMode = EcsUiClayNodeCapturesSelf(
                             child_node) ?
                                 CLAY_POINTER_CAPTURE_MODE_CAPTURE :
@@ -1153,18 +1325,31 @@ static void EcsUiClayEmitZStack(
                         .attachTo = CLAY_ATTACH_TO_PARENT,
                     },
                 }) {
-                    EcsUiClayEmitNodeContent(
-                        tree,
-                        theme,
-                        child,
-                        inverse_text,
-                        text_style,
-                        has_text_style,
-                        text_disabled,
-                        child_opacity,
-                        frame);
+                    if (placed_text) {
+                        EcsUiClayEmitTextContent(
+                            child_node,
+                            theme,
+                            inverse_text,
+                            text_style,
+                            has_text_style,
+                            text_disabled,
+                            child_text_layout,
+                            child_opacity);
+                    } else {
+                        EcsUiClayEmitNodeContent(
+                            tree,
+                            theme,
+                            child,
+                            inverse_text,
+                            text_style,
+                            has_text_style,
+                            text_disabled,
+                            child_opacity,
+                            frame);
+                    }
                 }
                 z_index += 1;
+                first = false;
             }
             child = tree->nodes[child].next_sibling;
         }
@@ -1443,6 +1628,9 @@ static void EcsUiClayEmitNodeContent(
     case ECS_UI_NODE_TEXT: {
         char clay_id[ECS_UI_ID_MAX * 2u] = {0};
         EcsUiClayElementId(node, NULL, clay_id, sizeof(clay_id));
+        EcsUiTextLayout text_layout = node->has_text_layout ?
+            node->text_layout :
+            EcsUiClayDefaultTextLayout();
         CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
             .layout = {
                 .sizing = {
@@ -1451,20 +1639,19 @@ static void EcsUiClayEmitNodeContent(
                         EcsUiClayTextSize(node->text.role) + 8.0f),
                 },
                 .childAlignment = {
-                    .y = CLAY_ALIGN_Y_CENTER,
+                    .y = EcsUiClayAlignY(text_layout.align_y),
                 },
             },
         }) {
-            CLAY_TEXT(
-                EcsUiClayString(node->text.text),
-                EcsUiClayTextConfig(
-                    theme,
-                    node->text.role,
-                    inverse_text,
-                    node_text_style,
-                    node_has_text_style,
-                    text_disabled,
-                    opacity));
+            EcsUiClayEmitTextContent(
+                node,
+                theme,
+                inverse_text,
+                node_text_style,
+                node_has_text_style,
+                text_disabled,
+                text_layout,
+                opacity);
         }
         break;
     }
@@ -1490,6 +1677,7 @@ static void EcsUiClayEmitNodeContent(
                     node_text_style,
                     node_has_text_style,
                     text_disabled,
+                    EcsUiClayDefaultTextLayout(),
                     opacity));
         }
         break;
@@ -1604,6 +1792,8 @@ void EcsUiClayEmitTreeEx(
             .attachTo = CLAY_ATTACH_TO_ROOT,
         },
     }) {
+        const int16_t previous_z_index_base = g_ecs_ui_clay_z_index_base;
+        g_ecs_ui_clay_z_index_base = options->z_index;
         EcsUiClayEmitNode(
             tree,
             theme,
@@ -1614,6 +1804,7 @@ void EcsUiClayEmitTreeEx(
             false,
             1.0f,
             frame);
+        g_ecs_ui_clay_z_index_base = previous_z_index_base;
     }
 }
 

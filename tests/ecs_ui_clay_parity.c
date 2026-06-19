@@ -241,6 +241,35 @@ static int RequireClayTextColor(
     return 1;
 }
 
+static int RequireClayRectangleColor(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor expected,
+    const char *message)
+{
+    if (commands == NULL) {
+        return Require(false, "missing Clay rectangle command inputs");
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_RECTANGLE) {
+            continue;
+        }
+
+        Clay_Color color = command->renderData.rectangle.backgroundColor;
+        if ((uint8_t)color.r == expected.r &&
+            (uint8_t)color.g == expected.g &&
+            (uint8_t)color.b == expected.b &&
+            (uint8_t)color.a == expected.a) {
+            return RequireClayColor(color, expected, message);
+        }
+    }
+
+    (void)fprintf(stderr, "%s: rectangle color not found\n", message);
+    return 1;
+}
+
 static void ResetClayErrors(void)
 {
     memset(&g_clay_errors, 0, sizeof(g_clay_errors));
@@ -639,13 +668,13 @@ static int TestVisualOpacitySkipsHitTesting(void)
     EcsUiClayInteractionState state = {0};
     EcsUiClayInteractionStateInit(&state);
     EcsUiClayLayoutOptions options = {
-        .bounds = {0.0f, 0.0f, 200.0f, 100.0f},
+        .bounds = {20.0f, 30.0f, 200.0f, 100.0f},
     };
     CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
-            .x = 20.0f,
-            .y = 20.0f,
+            .x = 40.0f,
+            .y = 50.0f,
             .time = 1.0,
         },
         &options,
@@ -668,8 +697,8 @@ static int TestVisualOpacitySkipsHitTesting(void)
     CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
-            .x = 20.0f,
-            .y = 20.0f,
+            .x = 40.0f,
+            .y = 50.0f,
             .time = 1.1,
         },
         &options,
@@ -1055,6 +1084,274 @@ static int TestZStackCapturePreventsBackgroundFallthrough(void)
     return result;
 }
 
+static int TestZStackBoxStyleEmitsBackgroundColor(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create zstack color world");
+    }
+
+    const EcsUiColor key_color = {
+        .r = 38u,
+        .g = 48u,
+        .b = 54u,
+        .a = 255u,
+    };
+    ecs_entity_t root = EcsUiRootEntity(world, "ZStackColorRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t stack = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZStackColorTarget",
+            .preferred_width = 80.0f,
+            .preferred_height = 40.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "zstack color builder failed");
+
+    ecs_set(world, stack, EcsUiBoxStyle, {
+        .background = key_color,
+        .radius = 6.0f,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "zstack color tree read failed");
+
+    ResetClayErrors();
+    EcsUiClayTheme clay_theme = EcsUiClayThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(100.0f, 60.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayRectangleColor(
+        &commands,
+        key_color,
+        "zstack should emit its box style background");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "zstack color layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestZStackPlacementAnchorsHitBounds(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create placement world");
+    }
+
+    ecs_entity_t overlay_action = CreateAction(world, "PlacedOverlayAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "PlacedZStackRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlacedStack",
+            .preferred_width = 200.0f,
+            .preferred_height = 100.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PlacedBackground",
+            .kind = "background",
+            .preferred_width = 200.0f,
+            .preferred_height = 100.0f,
+        });
+    ecs_entity_t overlay = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PlacedOverlay",
+            .kind = "overlay",
+            .preferred_width = 40.0f,
+            .preferred_height = 30.0f,
+            .on_click = overlay_action,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "placement zstack builder failed");
+
+    ecs_set(world, overlay, EcsUiPlacement, {
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_START,
+        .offset_x = -10.0f,
+        .offset_y = 5.0f,
+        .width = 40.0f,
+        .height = 30.0f,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "placement zstack tree read failed");
+    EcsUiClayLayoutOptions options = {
+        .bounds = {20.0f, 30.0f, 200.0f, 100.0f},
+    };
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 205.0f,
+            .y = 50.0f,
+            .time = 20.0,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "placed overlay should receive pointer inside anchored bounds");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        overlay,
+        "PlacedOverlay");
+
+    EcsUiEventListClear(&events);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 165.0f,
+            .y = 50.0f,
+            .time = 21.0,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "placed overlay should not receive pointer outside anchored bounds");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestZStackPlacedTextRendersInRetainedBounds(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create placed text world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PlacedTextRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlacedTextStack",
+            .preferred_width = 200.0f,
+            .preferred_height = 100.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PlacedTextBackground",
+            .kind = "background",
+            .preferred_width = 200.0f,
+            .preferred_height = 100.0f,
+        });
+    ecs_entity_t label = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PlacedTextLabel",
+            .text = "q",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "placed text builder failed");
+
+    ecs_set(world, label, EcsUiPlacement, {
+        .parent_x = ECS_UI_ALIGN_CENTER,
+        .parent_y = ECS_UI_ALIGN_CENTER,
+        .child_x = ECS_UI_ALIGN_CENTER,
+        .child_y = ECS_UI_ALIGN_CENTER,
+        .width = 60.0f,
+        .height = 30.0f,
+    });
+    ecs_set(world, label, EcsUiTextLayout, {
+        .align_x = ECS_UI_ALIGN_CENTER,
+        .align_y = ECS_UI_ALIGN_CENTER,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "placed text tree read failed");
+
+    ResetClayErrors();
+    EcsUiClayTheme clay_theme = EcsUiClayThemeDefault();
+    EcsUiClayLayoutOptions options = {
+        .bounds = {20.0f, 30.0f, 200.0f, 100.0f},
+        .z_index = 23,
+    };
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = 240.0f,
+        .height = 160.0f,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    bool found = false;
+    for (int32_t i = 0; i < commands.length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(&commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_TEXT ||
+            !ClayStringSliceEquals(
+                command->renderData.text.stringContents,
+                "q")) {
+            continue;
+        }
+
+        found = true;
+        result |= RequireNear(
+            command->boundingBox.x,
+            115.5f,
+            0.001f,
+            "placed text x should include retained viewport origin");
+        result |= RequireNear(
+            command->boundingBox.y,
+            69.0f,
+            0.001f,
+            "placed text y should include retained viewport origin");
+        result |= Require(
+            command->zIndex > options.z_index,
+            "placed text should render after retained viewport root");
+    }
+
+    result |= Require(found, "placed text render command not found");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "placed text layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestOverlappingRetainedTreesRouteTopmost(void)
 {
     int result = 0;
@@ -1421,6 +1718,9 @@ int main(void)
     result |= TestOverlappingRetainedTreesRouteTopmost();
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
+    result |= TestZStackBoxStyleEmitsBackgroundColor();
+    result |= TestZStackPlacementAnchorsHitBounds();
+    result |= TestZStackPlacedTextRendersInRetainedBounds();
     result |= TestFloatingCaptureBlocksRetainedTree();
     result |= TestFloatingPassthroughAllowsRetainedTree();
 

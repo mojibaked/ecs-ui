@@ -400,19 +400,155 @@ static Color EcsUiRaylibPressableColor(
         EcsUiRaylibClamp01(node->visual.highlight) * 0.42f);
 }
 
+static float EcsUiRaylibAlignedPosition(
+    float start,
+    float available,
+    EcsUiAlign align)
+{
+    switch (align) {
+    case ECS_UI_ALIGN_CENTER:
+        return start + (available * 0.5f);
+    case ECS_UI_ALIGN_END:
+        return start + available;
+    case ECS_UI_ALIGN_START:
+    default:
+        return start;
+    }
+}
+
+static EcsUiTextLayout EcsUiRaylibDefaultTextLayout(void)
+{
+    return (EcsUiTextLayout){
+        .align_x = ECS_UI_ALIGN_START,
+        .align_y = ECS_UI_ALIGN_CENTER,
+    };
+}
+
 static void EcsUiRaylibDrawTextLine(
     const char *text,
     Rectangle bounds,
     float font_size,
+    EcsUiTextLayout layout,
     Color color)
 {
     const char *value = text != NULL ? text : "";
     Vector2 text_size = MeasureTextEx(GetFontDefault(), value, font_size, 1.0f);
+    const float extra_x = bounds.width - text_size.x;
+    const float extra_y = bounds.height - text_size.y;
     Vector2 position = {
-        .x = bounds.x,
-        .y = bounds.y + ((bounds.height - text_size.y) * 0.5f),
+        .x = EcsUiRaylibAlignedPosition(
+            bounds.x,
+            extra_x > 0.0f ? extra_x : 0.0f,
+            layout.align_x),
+        .y = EcsUiRaylibAlignedPosition(
+            bounds.y,
+            extra_y > 0.0f ? extra_y : 0.0f,
+            layout.align_y),
     };
     DrawTextEx(GetFontDefault(), value, position, font_size, 1.0f, color);
+}
+
+static Vector2 EcsUiRaylibNaturalNodeSize(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    Rectangle fallback)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    switch (node->kind) {
+    case ECS_UI_NODE_TEXT: {
+        const float font_size = EcsUiRaylibTextSize(node->text.role);
+        Vector2 text_size = MeasureTextEx(
+            GetFontDefault(),
+            node->text.text,
+            font_size,
+            1.0f);
+        return (Vector2){
+            .x = text_size.x,
+            .y = font_size + 8.0f,
+        };
+    }
+    case ECS_UI_NODE_ICON: {
+        Vector2 text_size = MeasureTextEx(
+            GetFontDefault(),
+            node->icon.name,
+            18.0f,
+            1.0f);
+        return (Vector2){
+            .x = text_size.x,
+            .y = 24.0f,
+        };
+    }
+    case ECS_UI_NODE_CUSTOM:
+        return (Vector2){
+            .x = node->custom.preferred_width > 0.0f ?
+                node->custom.preferred_width :
+                fallback.width,
+            .y = EcsUiRaylibPreferredCustomHeight(node),
+        };
+    case ECS_UI_NODE_BUTTON:
+        return (Vector2){
+            .x = fallback.width,
+            .y = 46.0f,
+        };
+    case ECS_UI_NODE_PRESSABLE:
+        return (Vector2){
+            .x = fallback.width,
+            .y = EcsUiRaylibPressableHeight(node),
+        };
+    case ECS_UI_NODE_ROOT:
+    case ECS_UI_NODE_VSTACK:
+    case ECS_UI_NODE_HSTACK:
+    case ECS_UI_NODE_ZSTACK:
+        return (Vector2){
+            .x = EcsUiRaylibPreferredWidth(tree, index) > 0.0f ?
+                EcsUiRaylibPreferredWidth(tree, index) :
+                fallback.width,
+            .y = EcsUiRaylibPreferredHeight(tree, index, fallback.width),
+        };
+    case ECS_UI_NODE_NONE:
+    default:
+        return (Vector2){
+            .x = fallback.width,
+            .y = fallback.height,
+        };
+    }
+}
+
+static Rectangle EcsUiRaylibPlacedChildBounds(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t child,
+    Rectangle bounds)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[child];
+    if (!node->has_placement) {
+        return bounds;
+    }
+
+    Vector2 natural = EcsUiRaylibNaturalNodeSize(tree, child, bounds);
+    const EcsUiPlacement *placement = &node->placement;
+    const float width =
+        placement->width > 0.0f ? placement->width : natural.x;
+    const float height =
+        placement->height > 0.0f ? placement->height : natural.y;
+    const float parent_x = EcsUiRaylibAlignedPosition(
+        bounds.x,
+        bounds.width,
+        placement->parent_x);
+    const float parent_y = EcsUiRaylibAlignedPosition(
+        bounds.y,
+        bounds.height,
+        placement->parent_y);
+    const float child_x =
+        EcsUiRaylibAlignedPosition(0.0f, width, placement->child_x);
+    const float child_y =
+        EcsUiRaylibAlignedPosition(0.0f, height, placement->child_y);
+
+    return (Rectangle){
+        .x = parent_x - child_x + placement->offset_x,
+        .y = parent_y - child_y + placement->offset_y,
+        .width = EcsUiRaylibClampPositive(width),
+        .height = EcsUiRaylibClampPositive(height),
+    };
 }
 
 static void EcsUiRaylibDrawTextFieldView(
@@ -753,12 +889,14 @@ static void EcsUiRaylibDrawNode(
         Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
         uint32_t child = node->first_child;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
+            Rectangle child_bounds =
+                EcsUiRaylibPlacedChildBounds(tree, child, inner);
             EcsUiRaylibDrawNode(
                 tree,
                 theme,
                 options,
                 child,
-                inner,
+                child_bounds,
                 inverse_text,
                 node_text_style,
                 node_has_text_style,
@@ -842,6 +980,9 @@ static void EcsUiRaylibDrawNode(
             node->text.text,
             node_bounds,
             EcsUiRaylibTextSize(node->text.role),
+            node->has_text_layout ?
+                node->text_layout :
+                EcsUiRaylibDefaultTextLayout(),
             EcsUiRaylibApplyOpacity(
                 EcsUiRaylibTextColor(
                     theme,
@@ -857,6 +998,7 @@ static void EcsUiRaylibDrawNode(
             node->icon.name,
             node_bounds,
             18.0f,
+            EcsUiRaylibDefaultTextLayout(),
             EcsUiRaylibApplyOpacity(
                 EcsUiRaylibTextColor(
                     theme,
@@ -889,6 +1031,7 @@ static void EcsUiRaylibDrawNode(
                 node->custom.kind,
                 EcsUiRaylibInset(node_bounds, 12.0f),
                 EcsUiRaylibTextSize(ECS_UI_TEXT_CAPTION),
+                EcsUiRaylibDefaultTextLayout(),
                 EcsUiRaylibApplyOpacity(theme->text_muted, node_opacity));
         }
         break;
@@ -1082,7 +1225,15 @@ static bool EcsUiRaylibHitChildrenZStack(
     }
 
     for (uint32_t i = child_count; i > 0u; i -= 1u) {
-        if (EcsUiRaylibHitNode(tree, children[i - 1u], bounds, point, hit)) {
+        const uint32_t child_index = children[i - 1u];
+        Rectangle child_bounds =
+            EcsUiRaylibPlacedChildBounds(tree, child_index, bounds);
+        if (EcsUiRaylibHitNode(
+                tree,
+                child_index,
+                child_bounds,
+                point,
+                hit)) {
             return true;
         }
     }

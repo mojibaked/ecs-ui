@@ -456,6 +456,82 @@ static int TestGestureArenaPanThreshold(void)
     return result;
 }
 
+static int TestPlacementAndTextLayoutSnapshot(void)
+{
+    int result = 0;
+    ecs_world_t *world = ecs_init();
+    if (world == NULL) {
+        return Require(false, "failed to create placement world");
+    }
+    EcsUiImport(world);
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PlacementRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlacementStack",
+            .preferred_width = 100.0f,
+            .preferred_height = 50.0f,
+        });
+    ecs_entity_t label = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PlacedLabel",
+            .text = "X",
+            .role = ECS_UI_TEXT_CAPTION,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+
+    ecs_set(world, label, EcsUiPlacement, {
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_START,
+        .offset_x = -4.0f,
+        .offset_y = 2.0f,
+        .width = 20.0f,
+        .height = 16.0f,
+    });
+    ecs_set(world, label, EcsUiTextLayout, {
+        .align_x = ECS_UI_ALIGN_END,
+        .align_y = ECS_UI_ALIGN_CENTER,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "placement tree read failed");
+    uint32_t label_index = ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (strcmp(tree.nodes[i].id, "PlacedLabel") == 0) {
+            label_index = i;
+            break;
+        }
+    }
+    result |= Require(
+        label_index != ECS_UI_TREE_INVALID_INDEX,
+        "placed label missing from tree");
+    if (label_index != ECS_UI_TREE_INVALID_INDEX) {
+        const EcsUiTreeNodeSnapshot *node = &tree.nodes[label_index];
+        result |= Require(
+            node->has_placement &&
+                node->placement.parent_x == ECS_UI_ALIGN_END &&
+                node->placement.child_x == ECS_UI_ALIGN_END &&
+                node->placement.width == 20.0f,
+            "placed label placement mismatch");
+        result |= Require(
+            node->has_text_layout &&
+                node->text_layout.align_x == ECS_UI_ALIGN_END &&
+                node->text_layout.align_y == ECS_UI_ALIGN_CENTER,
+            "placed label text layout mismatch");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestGestureArenaPanImmediateAndCancel(void)
 {
     int result = 0;
@@ -763,6 +839,7 @@ int main(void)
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     ECS_COMPONENT_DEFINE(world, TestProjectionUiItem);
     int result = 0;
+    result |= TestPlacementAndTextLayoutSnapshot();
     result |= TestGestureArenaPanThreshold();
     result |= TestGestureArenaPanImmediateAndCancel();
     result |= TestGestureArenaPressCapture();
@@ -789,6 +866,12 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiTextStyle) != 0,
         "EcsUiTextStyle should be registered");
+    result |= Require(
+        ecs_id(EcsUiTextLayout) != 0,
+        "EcsUiTextLayout should be registered");
+    result |= Require(
+        ecs_id(EcsUiPlacement) != 0,
+        "EcsUiPlacement should be registered");
     ecs_entity_t style_token_root = EcsUiStyleTokenRoot(world);
     ecs_entity_t text_field_style_token =
         EcsUiStyleToken(world, "TextField");

@@ -8,12 +8,14 @@ ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
 ECS_COMPONENT_DECLARE(EcsUiTextStyle);
+ECS_COMPONENT_DECLARE(EcsUiTextLayout);
 ECS_COMPONENT_DECLARE(EcsUiButton);
 ECS_COMPONENT_DECLARE(EcsUiPressable);
 ECS_COMPONENT_DECLARE(EcsUiText);
 ECS_COMPONENT_DECLARE(EcsUiIcon);
 ECS_COMPONENT_DECLARE(EcsUiCustom);
 ECS_COMPONENT_DECLARE(EcsUiVisual);
+ECS_COMPONENT_DECLARE(EcsUiPlacement);
 ECS_COMPONENT_DECLARE(EcsUiHitTest);
 ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
@@ -93,6 +95,8 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     ecs_remove(world, entity, EcsUiStack);
     ecs_remove(world, entity, EcsUiBoxStyle);
     ecs_remove(world, entity, EcsUiTextStyle);
+    ecs_remove(world, entity, EcsUiTextLayout);
+    ecs_remove(world, entity, EcsUiPlacement);
     ecs_remove(world, entity, EcsUiButton);
     ecs_remove(world, entity, EcsUiPressable);
     ecs_remove(world, entity, EcsUiText);
@@ -235,12 +239,14 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
     ECS_COMPONENT_DEFINE(world, EcsUiBoxStyle);
     ECS_COMPONENT_DEFINE(world, EcsUiTextStyle);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextLayout);
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
     ECS_COMPONENT_DEFINE(world, EcsUiPressable);
     ECS_COMPONENT_DEFINE(world, EcsUiText);
     ECS_COMPONENT_DEFINE(world, EcsUiIcon);
     ECS_COMPONENT_DEFINE(world, EcsUiCustom);
     ECS_COMPONENT_DEFINE(world, EcsUiVisual);
+    ECS_COMPONENT_DEFINE(world, EcsUiPlacement);
     ECS_COMPONENT_DEFINE(world, EcsUiHitTest);
     ECS_COMPONENT_DEFINE(world, EcsUiTextFieldView);
 
@@ -715,6 +721,13 @@ static uint32_t EcsUiReadNode(
         snapshot->has_text_style = true;
     }
 
+    const EcsUiTextLayout *text_layout =
+        ecs_get(world, entity, EcsUiTextLayout);
+    if (text_layout != NULL) {
+        snapshot->text_layout = *text_layout;
+        snapshot->has_text_layout = true;
+    }
+
     const EcsUiButton *button = ecs_get(world, entity, EcsUiButton);
     if (button != NULL) {
         snapshot->button = *button;
@@ -743,6 +756,13 @@ static uint32_t EcsUiReadNode(
     const EcsUiVisual *visual = ecs_get(world, entity, EcsUiVisual);
     if (visual != NULL) {
         snapshot->visual = *visual;
+    }
+
+    const EcsUiPlacement *placement =
+        ecs_get(world, entity, EcsUiPlacement);
+    if (placement != NULL) {
+        snapshot->placement = *placement;
+        snapshot->has_placement = true;
     }
 
     const EcsUiHitTest *hit_test = ecs_get(world, entity, EcsUiHitTest);
