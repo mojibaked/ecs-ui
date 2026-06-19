@@ -997,11 +997,21 @@ int main(void)
         text_view_value != 0 ? ecs_get(world, text_view_value, EcsUiText) : NULL;
     const EcsUiVisual *text_view_visual =
         ecs_get(world, text_view_node, EcsUiVisual);
+    const EcsUiTextFieldView *text_view_state =
+        ecs_get(world, text_view_node, EcsUiTextFieldView);
     result |= Require(
         text_view_text != NULL &&
-            strcmp(text_view_text->text, "z|") == 0 &&
+            strcmp(text_view_text->text, "z") == 0 &&
             text_view_text->role == ECS_UI_TEXT_BUTTON,
-        "text field view should project focused caret text");
+        "text field view should project focused raw text");
+    result |= Require(
+        text_view_state != NULL &&
+            text_view_state->value_node == text_view_value &&
+            text_view_state->focused &&
+            text_view_state->cursor == 1u &&
+            text_view_state->selection_anchor == 1u &&
+            text_view_state->selection_focus == 1u,
+        "text field view should project cursor state");
     result |= RequireNear(
         text_view_visual != NULL ? text_view_visual->opacity : 0.0f,
         1.0f,

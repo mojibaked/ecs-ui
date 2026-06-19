@@ -15,6 +15,7 @@ ECS_COMPONENT_DECLARE(EcsUiIcon);
 ECS_COMPONENT_DECLARE(EcsUiCustom);
 ECS_COMPONENT_DECLARE(EcsUiVisual);
 ECS_COMPONENT_DECLARE(EcsUiHitTest);
+ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
 ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
@@ -97,6 +98,7 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     ecs_remove(world, entity, EcsUiText);
     ecs_remove(world, entity, EcsUiIcon);
     ecs_remove(world, entity, EcsUiCustom);
+    ecs_remove(world, entity, EcsUiTextFieldView);
     ecs_remove_id(world, entity, EcsUiInteractive);
     ecs_remove_pair(world, entity, EcsUiOnClick, EcsWildcard);
     ecs_remove_pair(world, entity, EcsUiUsesStyle, EcsWildcard);
@@ -236,6 +238,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiCustom);
     ECS_COMPONENT_DEFINE(world, EcsUiVisual);
     ECS_COMPONENT_DEFINE(world, EcsUiHitTest);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextFieldView);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
     ECS_TAG_DEFINE(world, EcsUiInteractive);
@@ -740,6 +743,13 @@ static uint32_t EcsUiReadNode(
     const EcsUiHitTest *hit_test = ecs_get(world, entity, EcsUiHitTest);
     if (hit_test != NULL) {
         snapshot->hit_test = *hit_test;
+    }
+
+    const EcsUiTextFieldView *text_field_view =
+        ecs_get(world, entity, EcsUiTextFieldView);
+    if (text_field_view != NULL) {
+        snapshot->text_field_view = *text_field_view;
+        snapshot->has_text_field_view = true;
     }
 
     uint32_t previous_child = ECS_UI_TREE_INVALID_INDEX;

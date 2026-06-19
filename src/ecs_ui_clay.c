@@ -471,6 +471,340 @@ static void EcsUiClayEmitChildren(
     }
 }
 
+static uint32_t EcsUiClayFindNodeIndex(
+    const EcsUiTreeSnapshot *tree,
+    ecs_entity_t entity)
+{
+    if (tree == NULL || entity == 0) {
+        return ECS_UI_TREE_INVALID_INDEX;
+    }
+
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (tree->nodes[i].entity == entity) {
+            return i;
+        }
+    }
+    return ECS_UI_TREE_INVALID_INDEX;
+}
+
+static uint32_t EcsUiClayClampTextIndex(uint32_t index, size_t length)
+{
+    return index <= length ? index : (uint32_t)length;
+}
+
+static Clay_String EcsUiClayStringRange(
+    const char *text,
+    uint32_t start,
+    uint32_t end)
+{
+    const char *source = text != NULL ? text : "";
+    const size_t length = strlen(source);
+    uint32_t range_start = EcsUiClayClampTextIndex(start, length);
+    uint32_t range_end = EcsUiClayClampTextIndex(end, length);
+    if (range_start > range_end) {
+        uint32_t swap = range_start;
+        range_start = range_end;
+        range_end = swap;
+    }
+
+    return (Clay_String){
+        .isStaticallyAllocated = false,
+        .length = (int32_t)(range_end - range_start),
+        .chars = &source[range_start],
+    };
+}
+
+static void EcsUiClayEmitInlineTextRange(
+    const EcsUiTreeNodeSnapshot *node,
+    const EcsUiClayTheme *theme,
+    uint32_t start,
+    uint32_t end,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    float opacity)
+{
+    if (node == NULL || start == end) {
+        return;
+    }
+
+    CLAY_TEXT(
+        EcsUiClayStringRange(node->text.text, start, end),
+        EcsUiClayTextConfig(
+            theme,
+            node->text.role,
+            inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
+            opacity));
+}
+
+static void EcsUiClayEmitTextFieldCaret(
+    const EcsUiTreeNodeSnapshot *value_node,
+    const EcsUiTextFieldView *view,
+    const EcsUiClayTheme *theme,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    float opacity)
+{
+    if (value_node == NULL || view == NULL || theme == NULL) {
+        return;
+    }
+
+    char clay_id[ECS_UI_ID_MAX * 2u] = {0};
+    EcsUiClayElementId(value_node, "_Caret", clay_id, sizeof(clay_id));
+    const float caret_width =
+        view->caret_width > 0.0f ?
+            view->caret_width :
+            2.0f;
+    CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
+        .layout = {
+            .sizing = {
+                .width = CLAY_SIZING_FIXED(caret_width),
+                .height = CLAY_SIZING_FIXED(
+                    EcsUiClayTextSize(value_node->text.role) + 8.0f),
+            },
+        },
+        .backgroundColor = EcsUiClayApplyOpacity(
+            EcsUiClayTextColor(
+                theme,
+                value_node->text.role,
+                inverse_text,
+                text_style,
+                has_text_style,
+                text_disabled),
+            opacity),
+    }) {}
+}
+
+static void EcsUiClayEmitSelectedTextRange(
+    const EcsUiTreeNodeSnapshot *node,
+    const EcsUiClayTheme *theme,
+    uint32_t start,
+    uint32_t end,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    float opacity)
+{
+    if (node == NULL || start == end) {
+        return;
+    }
+
+    char clay_id[ECS_UI_ID_MAX * 2u] = {0};
+    EcsUiClayElementId(node, "_Selection", clay_id, sizeof(clay_id));
+    Clay_Color selection = theme->button_primary;
+    selection.a *= 0.35f;
+    CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
+        .layout = {
+            .childAlignment = {
+                .y = CLAY_ALIGN_Y_CENTER,
+            },
+        },
+        .backgroundColor = EcsUiClayApplyOpacity(selection, opacity),
+    }) {
+        EcsUiClayEmitInlineTextRange(
+            node,
+            theme,
+            start,
+            end,
+            inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
+            opacity);
+    }
+}
+
+static void EcsUiClayEmitTextFieldValue(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiClayTheme *theme,
+    const EcsUiTreeNodeSnapshot *field_node,
+    uint32_t value_index,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    float opacity)
+{
+    if (tree == NULL || field_node == NULL || value_index >= tree->count) {
+        return;
+    }
+
+    const EcsUiTreeNodeSnapshot *value_node = &tree->nodes[value_index];
+    EcsUiTextStyle value_text_style = text_style;
+    bool value_has_text_style = has_text_style;
+    if (value_node->has_text_style) {
+        value_text_style = value_node->text_style;
+        value_has_text_style = true;
+    }
+
+    const char *text = value_node->text.text;
+    const size_t length = strlen(text);
+    const uint32_t text_end = (uint32_t)length;
+    const EcsUiTextFieldView *view = &field_node->text_field_view;
+    const uint32_t cursor = EcsUiClayClampTextIndex(view->cursor, length);
+    uint32_t selection_start =
+        EcsUiClayClampTextIndex(view->selection_anchor, length);
+    uint32_t selection_end =
+        EcsUiClayClampTextIndex(view->selection_focus, length);
+    if (selection_start > selection_end) {
+        uint32_t swap = selection_start;
+        selection_start = selection_end;
+        selection_end = swap;
+    }
+    const bool has_selection =
+        view->focused && selection_start < selection_end;
+
+    if (!view->focused) {
+        EcsUiClayEmitInlineTextRange(
+            value_node,
+            theme,
+            0u,
+            text_end,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || view->disabled,
+            opacity);
+        return;
+    }
+
+    if (!has_selection) {
+        EcsUiClayEmitInlineTextRange(
+            value_node,
+            theme,
+            0u,
+            cursor,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || view->disabled,
+            opacity);
+        EcsUiClayEmitTextFieldCaret(
+            value_node,
+            view,
+            theme,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || view->disabled,
+            opacity);
+        EcsUiClayEmitInlineTextRange(
+            value_node,
+            theme,
+            cursor,
+            text_end,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || view->disabled,
+            opacity);
+        return;
+    }
+
+    EcsUiClayEmitInlineTextRange(
+        value_node,
+        theme,
+        0u,
+        selection_start,
+        inverse_text,
+        value_text_style,
+        value_has_text_style,
+        text_disabled || view->disabled,
+        opacity);
+    if (cursor == selection_start) {
+        EcsUiClayEmitTextFieldCaret(
+            value_node,
+            view,
+            theme,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || view->disabled,
+            opacity);
+    }
+    EcsUiClayEmitSelectedTextRange(
+        value_node,
+        theme,
+        selection_start,
+        selection_end,
+        inverse_text,
+        value_text_style,
+        value_has_text_style,
+        text_disabled || view->disabled,
+        opacity);
+    if (cursor != selection_start) {
+        EcsUiClayEmitTextFieldCaret(
+            value_node,
+            view,
+            theme,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || view->disabled,
+            opacity);
+    }
+    EcsUiClayEmitInlineTextRange(
+        value_node,
+        theme,
+        selection_end,
+        text_end,
+        inverse_text,
+        value_text_style,
+        value_has_text_style,
+        text_disabled || view->disabled,
+        opacity);
+}
+
+static void EcsUiClayEmitTextFieldChildren(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiClayTheme *theme,
+    uint32_t index,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    float opacity)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const uint32_t value_index = EcsUiClayFindNodeIndex(
+        tree,
+        node->text_field_view.value_node);
+    uint32_t child = node->first_child;
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        if (child == value_index &&
+            tree->nodes[child].kind == ECS_UI_NODE_TEXT) {
+            EcsUiClayEmitTextFieldValue(
+                tree,
+                theme,
+                node,
+                child,
+                inverse_text,
+                text_style,
+                has_text_style,
+                text_disabled,
+                opacity);
+        } else {
+            EcsUiClayEmitNode(
+                tree,
+                theme,
+                child,
+                inverse_text,
+                text_style,
+                has_text_style,
+                text_disabled,
+                opacity);
+        }
+        child = tree->nodes[child].next_sibling;
+    }
+}
+
 static bool EcsUiClayNodeCapturesSelf(
     const EcsUiTreeNodeSnapshot *node);
 
@@ -817,7 +1151,7 @@ static void EcsUiClayEmitNodeContent(
                     .right = EcsUiClayU16(EcsUiClayBoxPadding(node, 12.0f)),
                 },
                 .layoutDirection = CLAY_LEFT_TO_RIGHT,
-                .childGap = 8u,
+                .childGap = node->has_text_field_view ? 0u : 8u,
                 .childAlignment = {
                     .y = CLAY_ALIGN_Y_CENTER,
                 },
@@ -827,15 +1161,27 @@ static void EcsUiClayEmitNodeContent(
                 opacity),
             .cornerRadius = EcsUiClayCornerRadius(node, 8.0f),
         }) {
-            EcsUiClayEmitChildren(
-                tree,
-                theme,
-                index,
-                false,
-                node_text_style,
-                node_has_text_style,
-                text_disabled || node->pressable.disabled,
-                opacity);
+            if (node->has_text_field_view) {
+                EcsUiClayEmitTextFieldChildren(
+                    tree,
+                    theme,
+                    index,
+                    false,
+                    node_text_style,
+                    node_has_text_style,
+                    text_disabled || node->pressable.disabled,
+                    opacity);
+            } else {
+                EcsUiClayEmitChildren(
+                    tree,
+                    theme,
+                    index,
+                    false,
+                    node_text_style,
+                    node_has_text_style,
+                    text_disabled || node->pressable.disabled,
+                    opacity);
+            }
         }
         break;
     }

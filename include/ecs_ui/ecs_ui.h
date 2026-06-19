@@ -156,6 +156,16 @@ typedef struct EcsUiHitTest {
     EcsUiHitTestMode mode;
 } EcsUiHitTest;
 
+typedef struct EcsUiTextFieldView {
+    ecs_entity_t value_node;
+    uint32_t cursor;
+    uint32_t selection_anchor;
+    uint32_t selection_focus;
+    float caret_width;
+    bool focused;
+    bool disabled;
+} EcsUiTextFieldView;
+
 typedef struct EcsUiStackDesc {
     const char *id;
     float gap;
@@ -224,8 +234,10 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiCustom custom;
     EcsUiVisual visual;
     EcsUiHitTest hit_test;
+    EcsUiTextFieldView text_field_view;
     bool has_box_style;
     bool has_text_style;
+    bool has_text_field_view;
 } EcsUiTreeNodeSnapshot;
 
 typedef struct EcsUiTreeSnapshot {
@@ -271,6 +283,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiIcon);
 extern ECS_COMPONENT_DECLARE(EcsUiCustom);
 extern ECS_COMPONENT_DECLARE(EcsUiVisual);
 extern ECS_COMPONENT_DECLARE(EcsUiHitTest);
+extern ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
 extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);

@@ -107,6 +107,58 @@ static uint32_t EcsUiRaylibChildCount(
     return count;
 }
 
+static uint32_t EcsUiRaylibFindNodeIndex(
+    const EcsUiTreeSnapshot *tree,
+    ecs_entity_t entity)
+{
+    if (tree == NULL || entity == 0) {
+        return ECS_UI_TREE_INVALID_INDEX;
+    }
+
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (tree->nodes[i].entity == entity) {
+            return i;
+        }
+    }
+    return ECS_UI_TREE_INVALID_INDEX;
+}
+
+static uint32_t EcsUiRaylibClampTextIndex(uint32_t index, size_t length)
+{
+    return index <= length ? index : (uint32_t)length;
+}
+
+static void EcsUiRaylibCopyTextRange(
+    char *out,
+    size_t out_size,
+    const char *text,
+    uint32_t start,
+    uint32_t end)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+
+    const char *source = text != NULL ? text : "";
+    const size_t length = strlen(source);
+    uint32_t range_start = EcsUiRaylibClampTextIndex(start, length);
+    uint32_t range_end = EcsUiRaylibClampTextIndex(end, length);
+    if (range_start > range_end) {
+        uint32_t swap = range_start;
+        range_start = range_end;
+        range_end = swap;
+    }
+
+    size_t out_index = 0u;
+    for (uint32_t i = range_start;
+         i < range_end && out_index + 1u < out_size;
+         i += 1u) {
+        out[out_index] = source[i];
+        out_index += 1u;
+    }
+    out[out_index] = '\0';
+}
+
 static float EcsUiRaylibTextSize(EcsUiTextRole role)
 {
     switch (role) {
@@ -307,6 +359,127 @@ static void EcsUiRaylibDrawTextLine(
         .y = bounds.y + ((bounds.height - text_size.y) * 0.5f),
     };
     DrawTextEx(GetFontDefault(), value, position, font_size, 1.0f, color);
+}
+
+static void EcsUiRaylibDrawTextFieldView(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiRaylibTheme *theme,
+    const EcsUiTreeNodeSnapshot *field_node,
+    Rectangle bounds,
+    bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
+    float opacity)
+{
+    if (tree == NULL || theme == NULL || field_node == NULL ||
+        !field_node->has_text_field_view) {
+        return;
+    }
+
+    const uint32_t value_index = EcsUiRaylibFindNodeIndex(
+        tree,
+        field_node->text_field_view.value_node);
+    if (value_index == ECS_UI_TREE_INVALID_INDEX ||
+        tree->nodes[value_index].kind != ECS_UI_NODE_TEXT) {
+        return;
+    }
+
+    const EcsUiTreeNodeSnapshot *value_node = &tree->nodes[value_index];
+    EcsUiTextStyle value_text_style = text_style;
+    bool value_has_text_style = has_text_style;
+    if (value_node->has_text_style) {
+        value_text_style = value_node->text_style;
+        value_has_text_style = true;
+    }
+
+    const float font_size = EcsUiRaylibTextSize(value_node->text.role);
+    const Color text_color = EcsUiRaylibApplyOpacity(
+        EcsUiRaylibTextColor(
+            theme,
+            value_node->text.role,
+            inverse_text,
+            value_text_style,
+            value_has_text_style,
+            text_disabled || field_node->text_field_view.disabled),
+        opacity);
+    const char *text = value_node->text.text;
+    const size_t length = strlen(text);
+    const uint32_t cursor = EcsUiRaylibClampTextIndex(
+        field_node->text_field_view.cursor,
+        length);
+    char prefix[ECS_UI_TEXT_MAX] = {0};
+    EcsUiRaylibCopyTextRange(
+        prefix,
+        sizeof(prefix),
+        text,
+        0u,
+        cursor);
+    const Vector2 prefix_size =
+        MeasureTextEx(GetFontDefault(), prefix, font_size, 1.0f);
+    const Vector2 all_size =
+        MeasureTextEx(GetFontDefault(), text, font_size, 1.0f);
+    const Vector2 position = {
+        .x = bounds.x,
+        .y = bounds.y + ((bounds.height - all_size.y) * 0.5f),
+    };
+
+    uint32_t selection_start = EcsUiRaylibClampTextIndex(
+        field_node->text_field_view.selection_anchor,
+        length);
+    uint32_t selection_end = EcsUiRaylibClampTextIndex(
+        field_node->text_field_view.selection_focus,
+        length);
+    if (selection_start > selection_end) {
+        uint32_t swap = selection_start;
+        selection_start = selection_end;
+        selection_end = swap;
+    }
+    if (field_node->text_field_view.focused &&
+        selection_start < selection_end) {
+        char before_selection[ECS_UI_TEXT_MAX] = {0};
+        char selected[ECS_UI_TEXT_MAX] = {0};
+        EcsUiRaylibCopyTextRange(
+            before_selection,
+            sizeof(before_selection),
+            text,
+            0u,
+            selection_start);
+        EcsUiRaylibCopyTextRange(
+            selected,
+            sizeof(selected),
+            text,
+            selection_start,
+            selection_end);
+        const Vector2 before_size =
+            MeasureTextEx(GetFontDefault(), before_selection, font_size, 1.0f);
+        const Vector2 selected_size =
+            MeasureTextEx(GetFontDefault(), selected, font_size, 1.0f);
+        DrawRectangleRec(
+            (Rectangle){
+                .x = position.x + before_size.x,
+                .y = position.y,
+                .width = selected_size.x,
+                .height = all_size.y,
+            },
+            EcsUiRaylibApplyOpacity(ColorAlpha(theme->button_primary, 0.35f), opacity));
+    }
+
+    DrawTextEx(GetFontDefault(), text, position, font_size, 1.0f, text_color);
+    if (field_node->text_field_view.focused) {
+        const float caret_width =
+            field_node->text_field_view.caret_width > 0.0f ?
+                field_node->text_field_view.caret_width :
+                2.0f;
+        DrawRectangleRec(
+            (Rectangle){
+                .x = position.x + prefix_size.x,
+                .y = position.y,
+                .width = caret_width,
+                .height = all_size.y,
+            },
+            text_color);
+    }
 }
 
 static void EcsUiRaylibDrawNode(
@@ -561,17 +734,30 @@ static void EcsUiRaylibDrawNode(
             EcsUiRaylibApplyOpacity(fill, node_opacity));
         Rectangle inner =
             EcsUiRaylibInset(node_bounds, EcsUiRaylibBoxPadding(node, 12.0f));
-        EcsUiRaylibDrawChildrenHorizontal(
-            tree,
-            theme,
-            options,
-            index,
-            inner,
-            false,
-            node_text_style,
-            node_has_text_style,
-            text_disabled || node->pressable.disabled,
-            node_opacity);
+        if (node->has_text_field_view) {
+            EcsUiRaylibDrawTextFieldView(
+                tree,
+                theme,
+                node,
+                inner,
+                false,
+                node_text_style,
+                node_has_text_style,
+                text_disabled || node->pressable.disabled,
+                node_opacity);
+        } else {
+            EcsUiRaylibDrawChildrenHorizontal(
+                tree,
+                theme,
+                options,
+                index,
+                inner,
+                false,
+                node_text_style,
+                node_has_text_style,
+                text_disabled || node->pressable.disabled,
+                node_opacity);
+        }
         break;
     }
     case ECS_UI_NODE_TEXT:

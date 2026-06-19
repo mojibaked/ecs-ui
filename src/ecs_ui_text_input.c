@@ -30,6 +30,7 @@ ECS_TAG_DECLARE(EcsUiTextCutRequest);
 static bool EcsUiTextInputReady(void)
 {
     return ecs_id(EcsUiTextField) != 0 &&
+        ecs_id(EcsUiTextFieldView) != 0 &&
         ecs_id(EcsUiTextEditState) != 0 &&
         ecs_id(EcsUiTextInsertRequest) != 0 &&
         ecs_id(EcsUiTextPasteRequest) != 0 &&
@@ -902,7 +903,7 @@ bool EcsUiTextInputProjectFieldView(
     if (!EcsUiTextInputDisplayText(
             world,
             field,
-            true,
+            false,
             display,
             sizeof(display))) {
         return false;
@@ -929,6 +930,23 @@ bool EcsUiTextInputProjectFieldView(
     ecs_entity_t field_node =
         EcsUiTextInputFieldUiNode(world, field);
     if (field_node != 0) {
+        const EcsUiTextEditState *edit_state =
+            ecs_get(world, field, EcsUiTextEditState);
+        const uint32_t cursor = EcsUiTextInputCursor(world, field);
+        EcsUiTextFieldView view = {
+            .value_node = value_node,
+            .cursor = cursor,
+            .selection_anchor = edit_state != NULL ?
+                edit_state->selection_anchor :
+                cursor,
+            .selection_focus = edit_state != NULL ?
+                edit_state->selection_focus :
+                cursor,
+            .caret_width = 2.0f,
+            .focused = focused,
+        };
+        ecs_set_ptr(world, field_node, EcsUiTextFieldView, &view);
+
         const float highlight = focused ? 0.22f : 0.0f;
         const EcsUiVisual *existing =
             ecs_get(world, field_node, EcsUiVisual);
