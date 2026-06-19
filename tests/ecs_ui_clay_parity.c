@@ -258,6 +258,38 @@ static EcsUiClayLayoutOptions LayoutOptions(float width, float height)
     };
 }
 
+static void CollectTreeFrameEvents(
+    const EcsUiTreeSnapshot *tree,
+    EcsUiClayPointerState pointer,
+    const EcsUiClayLayoutOptions *options,
+    EcsUiClayInteractionState *state,
+    EcsUiEventList *events,
+    EcsUiClayInteractionFrame *out_frame)
+{
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayInteractionFrameBegin(&frame, state);
+    if (options != NULL) {
+        Clay_SetLayoutDimensions((Clay_Dimensions){
+            .width = options->bounds.width,
+            .height = options->bounds.height,
+        });
+    }
+    Clay_BeginLayout();
+    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiClayEmitTreeEx(tree, &theme, options, &frame);
+    (void)Clay_EndLayout();
+    Clay_SetPointerState(
+        (Clay_Vector2){
+            .x = pointer.x,
+            .y = pointer.y,
+        },
+        pointer.down);
+    EcsUiClayCollectFrameEvents(&frame, pointer, events);
+    if (out_frame != NULL) {
+        *out_frame = frame;
+    }
+}
+
 static ecs_world_t *CreateWorld(void)
 {
     ecs_world_t *world = ecs_init();
@@ -404,7 +436,7 @@ static int TestDuplicateAuthoredIdsDoNotCollide(void)
         .height = options.bounds.height,
     });
     Clay_BeginLayout();
-    EcsUiClayEmitTreeEx(&tree, &theme, &options);
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
     Clay_RenderCommandArray commands = Clay_EndLayout();
 
     result |= Require(commands.length > 0, "Clay layout should emit render commands");
@@ -536,7 +568,7 @@ static int TestTextStyleInheritanceEmitsClayForegroundColor(void)
         .height = options.bounds.height,
     });
     Clay_BeginLayout();
-    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options);
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
     Clay_RenderCommandArray commands = Clay_EndLayout();
 
     result |= Require(
@@ -604,15 +636,22 @@ static int TestVisualOpacitySkipsHitTesting(void)
     EcsUiTreeSnapshot tree = {0};
     result |= Require(EcsUiReadTree(world, root, &tree), "opacity tree read failed");
     EcsUiEventList events = {0};
-    EcsUiClayCollectEventsEx(
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayLayoutOptions options = {
+        .bounds = {0.0f, 0.0f, 200.0f, 100.0f},
+    };
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 20.0f,
             .y = 20.0f,
             .time = 1.0,
         },
-        &(EcsUiClayLayoutOptions){.bounds = {0.0f, 0.0f, 200.0f, 100.0f}},
-        &events);
+        &options,
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         0u,
@@ -626,15 +665,17 @@ static int TestVisualOpacitySkipsHitTesting(void)
             .opacity = 0.02f,
         });
     result |= Require(EcsUiReadTree(world, root, &tree), "visible tree read failed");
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 20.0f,
             .y = 20.0f,
             .time = 1.1,
         },
-        &(EcsUiClayLayoutOptions){.bounds = {0.0f, 0.0f, 200.0f, 100.0f}},
-        &events);
+        &options,
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         1u,
@@ -687,8 +728,10 @@ static int TestVisualOffsetAffectsHitTesting(void)
     result |= Require(EcsUiReadTree(world, root, &tree), "offset tree read failed");
     EcsUiClayLayoutOptions options = LayoutOptions(200.0f, 140.0f);
     EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
 
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 10.0f,
@@ -696,13 +739,15 @@ static int TestVisualOffsetAffectsHitTesting(void)
             .time = 2.0,
         },
         &options,
-        &events);
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         0u,
         "offset target should not hit at its original x position");
 
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 40.0f,
@@ -710,7 +755,9 @@ static int TestVisualOffsetAffectsHitTesting(void)
             .time = 2.1,
         },
         &options,
-        &events);
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         1u,
@@ -753,8 +800,10 @@ static int TestPointerCaptureLifecycle(void)
     result |= Require(EcsUiReadTree(world, root, &tree), "capture tree read failed");
     EcsUiClayLayoutOptions options = LayoutOptions(200.0f, 100.0f);
     EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
 
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 10.0f,
@@ -764,7 +813,9 @@ static int TestPointerCaptureLifecycle(void)
             .pressed = true,
         },
         &options,
-        &events);
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         3u,
@@ -773,7 +824,7 @@ static int TestPointerCaptureLifecycle(void)
     result |= RequireEvent(&events, 1u, ECS_UI_EVENT_PRESSED, target, "DragTarget");
     result |= RequireEvent(&events, 2u, ECS_UI_EVENT_DRAG_STARTED, target, "DragTarget");
 
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 14.0f,
@@ -782,7 +833,9 @@ static int TestPointerCaptureLifecycle(void)
             .down = true,
         },
         &options,
-        &events);
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         1u,
@@ -811,7 +864,7 @@ static int TestPointerCaptureLifecycle(void)
             "drag delta_y mismatch");
     }
 
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 14.0f,
@@ -820,7 +873,9 @@ static int TestPointerCaptureLifecycle(void)
             .released = true,
         },
         &options,
-        &events);
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         2u,
@@ -828,7 +883,7 @@ static int TestPointerCaptureLifecycle(void)
     result |= RequireEvent(&events, 0u, ECS_UI_EVENT_DRAG_ENDED, target, "DragTarget");
     result |= RequireEvent(&events, 1u, ECS_UI_EVENT_CLICKED, target, "DragTarget");
 
-    EcsUiClayCollectEventsEx(
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 180.0f,
@@ -836,7 +891,9 @@ static int TestPointerCaptureLifecycle(void)
             .time = 10.3,
         },
         &options,
-        &events);
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
         0u,
@@ -890,20 +947,26 @@ static int TestZStackCapturePreventsBackgroundFallthrough(void)
     EcsUiTreeSnapshot tree = {0};
     result |= Require(EcsUiReadTree(world, root, &tree), "zstack tree read failed");
     EcsUiEventList events = {0};
-    EcsUiClayCollectEventsEx(
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayLayoutOptions options = {
+        .bounds = {0.0f, 0.0f, 200.0f, 160.0f},
+    };
+    CollectTreeFrameEvents(
         &tree,
         (EcsUiClayPointerState){
             .x = 20.0f,
             .y = 20.0f,
             .time = 20.0,
         },
-        &(EcsUiClayLayoutOptions){.bounds = {0.0f, 0.0f, 200.0f, 160.0f}},
-        &events);
+        &options,
+        &state,
+        &events,
+        NULL);
     result |= RequireEventCount(
         &events,
-        1u,
+        0u,
         "capturing overlay should consume zstack hit test");
-    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_HOVERED, overlay, "Overlay");
     if (events.count > 0u && events.events[0].node == background) {
         result |= Require(false, "background should not receive zstack hit through overlay");
     }
@@ -912,7 +975,7 @@ static int TestZStackCapturePreventsBackgroundFallthrough(void)
     return result;
 }
 
-static int TestPointerCaptureIsScopedToOwningTree(void)
+static int TestOverlappingRetainedTreesRouteTopmost(void)
 {
     int result = 0;
     ecs_world_t *world = CreateWorld();
@@ -922,7 +985,7 @@ static int TestPointerCaptureIsScopedToOwningTree(void)
 
     ecs_entity_t action_a = CreateAction(world, "ActionA");
     ecs_entity_t action_b = CreateAction(world, "ActionB");
-    ecs_entity_t root_a = EcsUiRootEntity(world, "CaptureScopeRootA");
+    ecs_entity_t root_a = EcsUiRootEntity(world, "TopmostRootA");
     EcsUiBuilder builder_a = EcsUiBuilderBegin(world, root_a);
     ecs_entity_t target_a = EcsUiAddCustom(
         &builder_a,
@@ -934,9 +997,9 @@ static int TestPointerCaptureIsScopedToOwningTree(void)
             .on_click = action_a,
         });
     EcsUiBuilderEnd(&builder_a);
-    result |= Require(EcsUiBuilderOk(&builder_a), "capture scope A builder failed");
+    result |= Require(EcsUiBuilderOk(&builder_a), "tree A builder failed");
 
-    ecs_entity_t root_b = EcsUiRootEntity(world, "CaptureScopeRootB");
+    ecs_entity_t root_b = EcsUiRootEntity(world, "TopmostRootB");
     EcsUiBuilder builder_b = EcsUiBuilderBegin(world, root_b);
     ecs_entity_t target_b = EcsUiAddCustom(
         &builder_b,
@@ -948,7 +1011,7 @@ static int TestPointerCaptureIsScopedToOwningTree(void)
             .on_click = action_b,
         });
     EcsUiBuilderEnd(&builder_b);
-    result |= Require(EcsUiBuilderOk(&builder_b), "capture scope B builder failed");
+    result |= Require(EcsUiBuilderOk(&builder_b), "tree B builder failed");
 
     EcsUiTreeSnapshot tree_a = {0};
     EcsUiTreeSnapshot tree_b = {0};
@@ -958,70 +1021,214 @@ static int TestPointerCaptureIsScopedToOwningTree(void)
     EcsUiClayLayoutOptions options = {
         .bounds = {0.0f, 0.0f, 120.0f, 60.0f},
     };
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayInteractionFrame frame = {0};
     EcsUiEventList events = {0};
-    EcsUiClayCollectEventsEx(
-        &tree_a,
-        (EcsUiClayPointerState){
-            .x = 20.0f,
-            .y = 20.0f,
-            .time = 30.0,
-            .down = true,
-            .pressed = true,
-        },
-        &options,
-        &events);
+    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiClayPointerState press = {
+        .x = 20.0f,
+        .y = 20.0f,
+        .time = 30.0,
+        .down = true,
+        .pressed = true,
+    };
+
+    EcsUiClayInteractionFrameBegin(&frame, &state);
+    Clay_SetLayoutDimensions((Clay_Dimensions){.width = 120.0f, .height = 60.0f});
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree_a, &theme, &options, &frame);
+    EcsUiClayEmitTreeEx(&tree_b, &theme, &options, &frame);
+    (void)Clay_EndLayout();
+    Clay_SetPointerState((Clay_Vector2){press.x, press.y}, press.down);
+    EcsUiClayCollectFrameEvents(&frame, press, &events);
+
     result |= RequireEventCount(
         &events,
         3u,
-        "tree A press should start pointer capture");
-    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_PRESSED, target_a, "TargetA");
+        "topmost tree press should emit hover, pressed, and drag started");
+    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_PRESSED, target_b, "TargetB");
+    if (events.count > 1u && events.events[1].node == target_a) {
+        result |= Require(false, "underlying tree should not receive press");
+    }
 
-    EcsUiClayCollectEventsEx(
-        &tree_b,
-        (EcsUiClayPointerState){
-            .x = 20.0f,
-            .y = 20.0f,
-            .time = 30.1,
-            .released = true,
+    EcsUiClayPointerState release = {
+        .x = 20.0f,
+        .y = 20.0f,
+        .time = 30.1,
+        .released = true,
+    };
+    EcsUiClayInteractionFrameBegin(&frame, &state);
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree_a, &theme, &options, &frame);
+    EcsUiClayEmitTreeEx(&tree_b, &theme, &options, &frame);
+    (void)Clay_EndLayout();
+    Clay_SetPointerState((Clay_Vector2){release.x, release.y}, release.down);
+    EcsUiClayCollectFrameEvents(&frame, release, &events);
+
+    result |= RequireEventCount(&events, 2u, "topmost tree release should click captured target");
+    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_CLICKED, target_b, "TargetB");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestFloatingCaptureBlocksRetainedTree(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t action = CreateAction(world, "CaptureBlockedAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "CaptureBlockedRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "BlockedTarget",
+            .kind = "target",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+            .on_click = action,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "capture blocked builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "capture blocked tree read failed");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiEventList events = {0};
+    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 240.0f);
+    EcsUiClayPointerState pointer = {
+        .x = 20.0f,
+        .y = 20.0f,
+        .time = 40.0,
+        .down = true,
+        .pressed = true,
+    };
+
+    EcsUiClayInteractionFrameBegin(&frame, &state);
+    Clay_SetLayoutDimensions((Clay_Dimensions){.width = 320.0f, .height = 240.0f});
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, &frame);
+    CLAY(CLAY_ID("CaptureLayer"), {
+        .layout = {
+            .sizing = {
+                .width = CLAY_SIZING_FIXED(320.0f),
+                .height = CLAY_SIZING_FIXED(240.0f),
+            },
         },
-        &options,
-        &events);
+        .floating = {
+            .zIndex = 10,
+            .attachPoints = {
+                .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+            },
+            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_CAPTURE,
+            .attachTo = CLAY_ATTACH_TO_ROOT,
+        },
+    }) {}
+    (void)Clay_EndLayout();
+    Clay_SetPointerState((Clay_Vector2){pointer.x, pointer.y}, pointer.down);
+    EcsUiClayCollectFrameEvents(&frame, pointer, &events);
+
     result |= RequireEventCount(
         &events,
         0u,
-        "non-owning tree should not consume captured release");
+        "capturing floating root should block retained events underneath");
+    result |= Require(
+        !EcsUiClayInteractionFrameTreePointerInside(&frame, tree.root),
+        "capturing floating root should block retained tree inside state");
+    if (events.count > 0u && events.events[0].node == target) {
+        result |= Require(false, "blocked target should not receive event");
+    }
 
-    EcsUiClayCollectEventsEx(
-        &tree_a,
-        (EcsUiClayPointerState){
-            .x = 20.0f,
-            .y = 20.0f,
-            .time = 30.2,
-            .released = true,
-        },
-        &options,
-        &events);
-    result |= RequireEventCount(
-        &events,
-        2u,
-        "owning tree should receive captured release");
-    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_DRAG_ENDED, target_a, "TargetA");
-    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_CLICKED, target_a, "TargetA");
+    ecs_fini(world);
+    return result;
+}
 
-    EcsUiClayCollectEventsEx(
-        &tree_b,
-        (EcsUiClayPointerState){
-            .x = 20.0f,
-            .y = 20.0f,
-            .time = 30.3,
+static int TestFloatingPassthroughAllowsRetainedTree(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t action = CreateAction(world, "PassthroughAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "PassthroughRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PassthroughTarget",
+            .kind = "target",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+            .on_click = action,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "passthrough builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "passthrough tree read failed");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiEventList events = {0};
+    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 240.0f);
+    EcsUiClayPointerState pointer = {
+        .x = 20.0f,
+        .y = 20.0f,
+        .time = 41.0,
+    };
+
+    EcsUiClayInteractionFrameBegin(&frame, &state);
+    Clay_SetLayoutDimensions((Clay_Dimensions){.width = 320.0f, .height = 240.0f});
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, &frame);
+    CLAY(CLAY_ID("PassthroughLayer"), {
+        .layout = {
+            .sizing = {
+                .width = CLAY_SIZING_FIXED(320.0f),
+                .height = CLAY_SIZING_FIXED(240.0f),
+            },
         },
-        &options,
-        &events);
+        .floating = {
+            .zIndex = 10,
+            .attachPoints = {
+                .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+            },
+            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+            .attachTo = CLAY_ATTACH_TO_ROOT,
+        },
+    }) {}
+    (void)Clay_EndLayout();
+    Clay_SetPointerState((Clay_Vector2){pointer.x, pointer.y}, pointer.down);
+    EcsUiClayCollectFrameEvents(&frame, pointer, &events);
+
     result |= RequireEventCount(
         &events,
         1u,
-        "capture should clear after owning tree release");
-    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_HOVERED, target_b, "TargetB");
+        "passthrough floating root should allow retained hover underneath");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        target,
+        "PassthroughTarget");
+    result |= Require(
+        EcsUiClayInteractionFrameTreePointerInside(&frame, tree.root),
+        "passthrough floating root should allow retained tree inside state");
 
     ecs_fini(world);
     return result;
@@ -1040,8 +1247,10 @@ int main(void)
     result |= TestVisualOpacitySkipsHitTesting();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestPointerCaptureLifecycle();
-    result |= TestPointerCaptureIsScopedToOwningTree();
+    result |= TestOverlappingRetainedTreesRouteTopmost();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
+    result |= TestFloatingCaptureBlocksRetainedTree();
+    result |= TestFloatingPassthroughAllowsRetainedTree();
 
     free(clay_memory);
     return result;

@@ -188,10 +188,11 @@ static EcsUiClayLayoutOptions DemoClayLayoutOptions(void)
 static Clay_RenderCommandArray DemoClayEmitRenderCommands(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme,
-    const EcsUiClayLayoutOptions *layout_options)
+    const EcsUiClayLayoutOptions *layout_options,
+    EcsUiClayInteractionFrame *frame)
 {
     Clay_BeginLayout();
-    EcsUiClayEmitTreeEx(tree, theme, layout_options);
+    EcsUiClayEmitTreeEx(tree, theme, layout_options, frame);
     return Clay_EndLayout();
 }
 
@@ -222,6 +223,8 @@ int main(void)
     Font fonts[1] = {0};
     fonts[0] = GetFontDefault();
     Clay_SetMeasureTextFunction(EcsUiClayRaylibMeasureText, fonts);
+    EcsUiClayInteractionState interaction_state = {0};
+    EcsUiClayInteractionStateInit(&interaction_state);
 
     ecs_world_t *app_world = ecs_init();
     DemoAppRegister(app_world);
@@ -255,9 +258,6 @@ int main(void)
             .pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
             .released = IsMouseButtonReleased(MOUSE_BUTTON_LEFT),
         };
-        Clay_SetPointerState(
-            (Clay_Vector2){pointer.x, pointer.y},
-            pointer.down);
         Vector2 scroll = GetMouseWheelMoveV();
         Clay_UpdateScrollContainers(
             true,
@@ -272,10 +272,21 @@ int main(void)
             (void)EcsUiReadTree(ui_world, root, &tree);
         }
 
-        (void)DemoClayEmitRenderCommands(&tree, &theme, &layout_options);
+        EcsUiClayInteractionFrame interaction_frame = {0};
+        EcsUiClayInteractionFrameBegin(
+            &interaction_frame,
+            &interaction_state);
+        (void)DemoClayEmitRenderCommands(
+            &tree,
+            &theme,
+            &layout_options,
+            &interaction_frame);
+        Clay_SetPointerState(
+            (Clay_Vector2){pointer.x, pointer.y},
+            pointer.down);
 
         EcsUiEventList events = {0};
-        EcsUiClayCollectEventsEx(&tree, pointer, &layout_options, &events);
+        EcsUiClayCollectFrameEvents(&interaction_frame, pointer, &events);
         DemoClayCollectKeyboardEvents(&events);
         const float dt = GetFrameTime();
         DemoUiApplyEvents(ui_world, app_world, &events);
@@ -295,7 +306,7 @@ int main(void)
 
         theme = DemoClayTheme(ui_world);
         Clay_RenderCommandArray render_commands =
-            DemoClayEmitRenderCommands(&tree, &theme, &layout_options);
+            DemoClayEmitRenderCommands(&tree, &theme, &layout_options, NULL);
         EcsUiClayRaylibRenderOptions render_options = {
             .custom_draw = DemoTerminalDrawCustom,
             .user_data = ui_world,

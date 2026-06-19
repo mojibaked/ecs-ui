@@ -255,6 +255,7 @@ typedef struct EcsUiTreeSnapshot {
 
 typedef struct EcsUiEvent {
     EcsUiEventType type;
+    ecs_entity_t tree;
     ecs_entity_t node;
     ecs_entity_t action;
     char node_id[ECS_UI_ID_MAX];

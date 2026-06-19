@@ -9,6 +9,8 @@
 extern "C" {
 #endif
 
+#define ECS_UI_CLAY_INTERACTION_TARGET_MAX 4096u
+
 typedef struct EcsUiClayTheme {
     Clay_Color root_background;
     Clay_Color surface;
@@ -36,23 +38,68 @@ typedef struct EcsUiClayPointerState {
     bool released;
 } EcsUiClayPointerState;
 
+typedef struct EcsUiClayInteractionTarget {
+    Clay_ElementId clay_id;
+    Clay_ElementId wrapper_id;
+    ecs_entity_t tree;
+    ecs_entity_t node;
+    ecs_entity_t action;
+    char node_id[ECS_UI_ID_MAX];
+    uint32_t node_index;
+    uint32_t emit_order;
+    uint32_t depth;
+    bool area;
+    bool pressable;
+    bool blocking;
+    bool disabled;
+    bool inside;
+} EcsUiClayInteractionTarget;
+
+typedef struct EcsUiClayPointerCapture {
+    bool active;
+    ecs_entity_t tree;
+    ecs_entity_t node;
+    ecs_entity_t action;
+    char node_id[ECS_UI_ID_MAX];
+    float start_x;
+    float start_y;
+    double start_time;
+} EcsUiClayPointerCapture;
+
+typedef struct EcsUiClayInteractionState {
+    EcsUiClayPointerCapture capture;
+} EcsUiClayInteractionState;
+
+typedef struct EcsUiClayInteractionFrame {
+    EcsUiClayInteractionState *state;
+    EcsUiClayInteractionTarget targets[ECS_UI_CLAY_INTERACTION_TARGET_MAX];
+    uint32_t target_count;
+    ecs_entity_t resolved_tree;
+    ecs_entity_t resolved_node;
+    bool truncated;
+} EcsUiClayInteractionFrame;
+
 EcsUiClayTheme EcsUiClayThemeDefault(void);
+void EcsUiClayInteractionStateInit(EcsUiClayInteractionState *state);
+void EcsUiClayInteractionFrameBegin(
+    EcsUiClayInteractionFrame *frame,
+    EcsUiClayInteractionState *state);
 void EcsUiClayEmitTree(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme);
+    const EcsUiClayTheme *theme,
+    EcsUiClayInteractionFrame *frame);
 void EcsUiClayEmitTreeEx(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme,
-    const EcsUiClayLayoutOptions *options);
-void EcsUiClayCollectEvents(
-    const EcsUiTreeSnapshot *tree,
-    EcsUiClayPointerState pointer,
-    EcsUiEventList *events);
-void EcsUiClayCollectEventsEx(
-    const EcsUiTreeSnapshot *tree,
-    EcsUiClayPointerState pointer,
     const EcsUiClayLayoutOptions *options,
+    EcsUiClayInteractionFrame *frame);
+void EcsUiClayCollectFrameEvents(
+    EcsUiClayInteractionFrame *frame,
+    EcsUiClayPointerState pointer,
     EcsUiEventList *events);
+bool EcsUiClayInteractionFrameTreePointerInside(
+    const EcsUiClayInteractionFrame *frame,
+    ecs_entity_t tree);
 
 #ifdef __cplusplus
 }
