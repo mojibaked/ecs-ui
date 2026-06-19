@@ -214,6 +214,8 @@ static ecs_entity_t EcsUiBeginStack(
         .axis = axis,
         .gap = desc.gap,
         .padding = desc.padding,
+        .preferred_width = desc.preferred_width,
+        .preferred_height = desc.preferred_height,
     };
     ecs_set_ptr(builder->world, entity, EcsUiStack, &stack);
     EcsUiPushParent(builder, entity);
@@ -572,6 +574,7 @@ ecs_entity_t EcsUiBeginPressable(
     }
 
     EcsUiPressable pressable = {
+        .preferred_height = desc.preferred_height,
         .disabled = desc.disabled,
     };
     ecs_set_ptr(builder->world, entity, EcsUiPressable, &pressable);

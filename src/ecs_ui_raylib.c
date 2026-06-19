@@ -184,6 +184,44 @@ static float EcsUiRaylibPreferredCustomHeight(
     return node->custom.preferred_height;
 }
 
+static bool EcsUiRaylibNodeIsStack(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL &&
+        (node->kind == ECS_UI_NODE_ROOT ||
+            node->kind == ECS_UI_NODE_VSTACK ||
+            node->kind == ECS_UI_NODE_HSTACK ||
+            node->kind == ECS_UI_NODE_ZSTACK);
+}
+
+static float EcsUiRaylibPreferredWidth(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (tree == NULL || index >= tree->count) {
+        return 0.0f;
+    }
+
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    if (EcsUiRaylibNodeIsStack(node) &&
+        node->stack.preferred_width > 0.0f) {
+        return node->stack.preferred_width;
+    }
+    if (node->kind == ECS_UI_NODE_CUSTOM &&
+        node->custom.preferred_width > 0.0f) {
+        return node->custom.preferred_width;
+    }
+    return 0.0f;
+}
+
+static float EcsUiRaylibPressableHeight(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || node->pressable.preferred_height <= 0.0f) {
+        return 46.0f;
+    }
+    return node->pressable.preferred_height;
+}
+
 static float EcsUiRaylibPreferredHeight(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
@@ -192,6 +230,10 @@ static float EcsUiRaylibPreferredHeight(
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     const float padding = EcsUiRaylibClampPositive(node->stack.padding);
     const float gap = EcsUiRaylibClampPositive(node->stack.gap);
+    if (EcsUiRaylibNodeIsStack(node) &&
+        node->stack.preferred_height > 0.0f) {
+        return node->stack.preferred_height;
+    }
 
     switch (node->kind) {
     case ECS_UI_NODE_TEXT:
@@ -199,8 +241,9 @@ static float EcsUiRaylibPreferredHeight(
     case ECS_UI_NODE_ICON:
         return 24.0f;
     case ECS_UI_NODE_BUTTON:
-    case ECS_UI_NODE_PRESSABLE:
         return 46.0f;
+    case ECS_UI_NODE_PRESSABLE:
+        return EcsUiRaylibPressableHeight(node);
     case ECS_UI_NODE_CUSTOM:
         return EcsUiRaylibPreferredCustomHeight(node);
     case ECS_UI_NODE_HSTACK: {
@@ -309,6 +352,17 @@ static float EcsUiRaylibBoxPadding(
         return node->box_style.padding;
     }
     return fallback;
+}
+
+static Color EcsUiRaylibStackColor(
+    const EcsUiTreeNodeSnapshot *node,
+    Color fallback)
+{
+    if (node == NULL || !node->has_box_style ||
+        node->box_style.background.a == 0u) {
+        return fallback;
+    }
+    return EcsUiRaylibColor(node->box_style.background);
 }
 
 static Color EcsUiRaylibPressableColor(
@@ -559,12 +613,29 @@ static void EcsUiRaylibDrawChildrenHorizontal(
 
     const float gap = EcsUiRaylibClampPositive(node->stack.gap);
     const float total_gap = gap * (float)(child_count - 1u);
-    const float child_width =
-        EcsUiRaylibClampPositive(bounds.width - total_gap) / (float)child_count;
-    float x = bounds.x;
-
+    float fixed_width = 0.0f;
+    uint32_t flexible_count = 0u;
     uint32_t child = node->first_child;
     while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const float preferred_width = EcsUiRaylibPreferredWidth(tree, child);
+        if (preferred_width > 0.0f) {
+            fixed_width += preferred_width;
+        } else {
+            flexible_count += 1u;
+        }
+        child = tree->nodes[child].next_sibling;
+    }
+    const float flexible_width = flexible_count > 0u ?
+        EcsUiRaylibClampPositive(bounds.width - total_gap - fixed_width) /
+            (float)flexible_count :
+        0.0f;
+    float x = bounds.x;
+
+    child = node->first_child;
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const float preferred_width = EcsUiRaylibPreferredWidth(tree, child);
+        const float child_width =
+            preferred_width > 0.0f ? preferred_width : flexible_width;
         Rectangle child_bounds = {
             .x = x,
             .y = bounds.y,
@@ -636,7 +707,9 @@ static void EcsUiRaylibDrawNode(
             node_bounds,
             theme->radius,
             8,
-            EcsUiRaylibApplyOpacity(theme->surface, node_opacity));
+            EcsUiRaylibApplyOpacity(
+                EcsUiRaylibStackColor(node, theme->surface),
+                node_opacity));
         EcsUiRaylibDrawChildrenVertical(
             tree,
             theme,
@@ -654,7 +727,9 @@ static void EcsUiRaylibDrawNode(
             node_bounds,
             theme->radius,
             8,
-            EcsUiRaylibApplyOpacity(theme->surface_subtle, node_opacity));
+            EcsUiRaylibApplyOpacity(
+                EcsUiRaylibStackColor(node, theme->surface_subtle),
+                node_opacity));
         EcsUiRaylibDrawChildrenHorizontal(
             tree,
             theme,
@@ -672,7 +747,9 @@ static void EcsUiRaylibDrawNode(
             node_bounds,
             theme->radius,
             8,
-            EcsUiRaylibApplyOpacity(theme->surface, node_opacity));
+            EcsUiRaylibApplyOpacity(
+                EcsUiRaylibStackColor(node, theme->surface),
+                node_opacity));
         Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
         uint32_t child = node->first_child;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
@@ -949,12 +1026,29 @@ static bool EcsUiRaylibHitChildrenHorizontal(
 
     const float gap = EcsUiRaylibClampPositive(node->stack.gap);
     const float total_gap = gap * (float)(child_count - 1u);
-    const float child_width =
-        EcsUiRaylibClampPositive(bounds.width - total_gap) / (float)child_count;
-    float x = bounds.x;
-
+    float fixed_width = 0.0f;
+    uint32_t flexible_count = 0u;
     uint32_t child = node->first_child;
     while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const float preferred_width = EcsUiRaylibPreferredWidth(tree, child);
+        if (preferred_width > 0.0f) {
+            fixed_width += preferred_width;
+        } else {
+            flexible_count += 1u;
+        }
+        child = tree->nodes[child].next_sibling;
+    }
+    const float flexible_width = flexible_count > 0u ?
+        EcsUiRaylibClampPositive(bounds.width - total_gap - fixed_width) /
+            (float)flexible_count :
+        0.0f;
+    float x = bounds.x;
+
+    child = node->first_child;
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const float preferred_width = EcsUiRaylibPreferredWidth(tree, child);
+        const float child_width =
+            preferred_width > 0.0f ? preferred_width : flexible_width;
         Rectangle child_bounds = {
             .x = x,
             .y = bounds.y,

@@ -248,6 +248,42 @@ static float EcsUiClayCustomHeight(const EcsUiTreeNodeSnapshot *node)
     return node->custom.preferred_height;
 }
 
+static bool EcsUiClayNodeIsStack(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL &&
+        (node->kind == ECS_UI_NODE_ROOT ||
+            node->kind == ECS_UI_NODE_VSTACK ||
+            node->kind == ECS_UI_NODE_HSTACK ||
+            node->kind == ECS_UI_NODE_ZSTACK);
+}
+
+static float EcsUiClayPreferredWidth(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (tree == NULL || index >= tree->count) {
+        return 0.0f;
+    }
+
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    if (EcsUiClayNodeIsStack(node) && node->stack.preferred_width > 0.0f) {
+        return node->stack.preferred_width;
+    }
+    if (node->kind == ECS_UI_NODE_CUSTOM &&
+        node->custom.preferred_width > 0.0f) {
+        return node->custom.preferred_width;
+    }
+    return 0.0f;
+}
+
+static float EcsUiClayPressableHeight(const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || node->pressable.preferred_height <= 0.0f) {
+        return 46.0f;
+    }
+    return node->pressable.preferred_height;
+}
+
 static float EcsUiClayBoxPadding(
     const EcsUiTreeNodeSnapshot *node,
     float fallback)
@@ -256,6 +292,16 @@ static float EcsUiClayBoxPadding(
         return node->box_style.padding;
     }
     return fallback;
+}
+
+static Clay_Color EcsUiClayStackColor(
+    const EcsUiTreeNodeSnapshot *node,
+    Clay_Color fallback)
+{
+    if (node == NULL || !node->has_box_style) {
+        return fallback;
+    }
+    return EcsUiClayStyleColorOr(node->box_style.background, fallback);
 }
 
 static Clay_CornerRadius EcsUiClayCornerRadius(
@@ -331,6 +377,9 @@ static float EcsUiClayPreferredHeight(
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     const float padding = EcsUiClayClampPositive(node->stack.padding);
     const float gap = EcsUiClayClampPositive(node->stack.gap);
+    if (EcsUiClayNodeIsStack(node) && node->stack.preferred_height > 0.0f) {
+        return node->stack.preferred_height;
+    }
 
     switch (node->kind) {
     case ECS_UI_NODE_TEXT:
@@ -338,8 +387,9 @@ static float EcsUiClayPreferredHeight(
     case ECS_UI_NODE_ICON:
         return 24.0f;
     case ECS_UI_NODE_BUTTON:
-    case ECS_UI_NODE_PRESSABLE:
         return 46.0f;
+    case ECS_UI_NODE_PRESSABLE:
+        return EcsUiClayPressableHeight(node);
     case ECS_UI_NODE_CUSTOM:
         return EcsUiClayCustomHeight(node);
     case ECS_UI_NODE_HSTACK: {
@@ -397,8 +447,10 @@ static Clay_LayoutConfig EcsUiClayFlowLayout(
         height = CLAY_SIZING_FIXED(24.0f);
         break;
     case ECS_UI_NODE_BUTTON:
-    case ECS_UI_NODE_PRESSABLE:
         height = CLAY_SIZING_FIXED(46.0f);
+        break;
+    case ECS_UI_NODE_PRESSABLE:
+        height = CLAY_SIZING_FIXED(EcsUiClayPressableHeight(node));
         break;
     case ECS_UI_NODE_CUSTOM:
         height = CLAY_SIZING_FIXED(EcsUiClayCustomHeight(node));
@@ -417,6 +469,17 @@ static Clay_LayoutConfig EcsUiClayFlowLayout(
     case ECS_UI_NODE_NONE:
     default:
         break;
+    }
+    if (EcsUiClayNodeIsStack(node)) {
+        if (node->stack.preferred_width > 0.0f) {
+            width = CLAY_SIZING_FIXED(node->stack.preferred_width);
+        }
+        if (node->stack.preferred_height > 0.0f) {
+            height = CLAY_SIZING_FIXED(node->stack.preferred_height);
+        }
+    } else if (node->kind == ECS_UI_NODE_CUSTOM &&
+        node->custom.preferred_width > 0.0f) {
+        width = CLAY_SIZING_FIXED(node->custom.preferred_width);
     }
 
     return (Clay_LayoutConfig){
@@ -834,7 +897,9 @@ static void EcsUiClayEmitStack(
     EcsUiClayElementId(node, NULL, clay_id, sizeof(clay_id));
     CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
         .layout = layout,
-        .backgroundColor = EcsUiClayApplyOpacity(background, opacity),
+        .backgroundColor = EcsUiClayApplyOpacity(
+            EcsUiClayStackColor(node, background),
+            opacity),
         .cornerRadius = EcsUiClayCornerRadius(node, radius),
     }) {
         EcsUiClayEmitChildren(
@@ -1144,7 +1209,8 @@ static void EcsUiClayEmitNodeContent(
             .layout = {
                 .sizing = {
                     .width = CLAY_SIZING_GROW(0),
-                    .height = CLAY_SIZING_FIXED(46.0f),
+                    .height = CLAY_SIZING_FIXED(
+                        EcsUiClayPressableHeight(node)),
                 },
                 .padding = {
                     .left = EcsUiClayU16(EcsUiClayBoxPadding(node, 12.0f)),
@@ -1529,12 +1595,29 @@ static bool EcsUiClayHitChildrenHorizontal(
 
     const float gap = EcsUiClayClampPositive(node->stack.gap);
     const float total_gap = gap * (float)(child_count - 1u);
-    const float child_width =
-        EcsUiClayClampPositive(bounds.width - total_gap) / (float)child_count;
-    float x = bounds.x;
-
+    float fixed_width = 0.0f;
+    uint32_t flexible_count = 0u;
     uint32_t child = node->first_child;
     while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const float preferred_width = EcsUiClayPreferredWidth(tree, child);
+        if (preferred_width > 0.0f) {
+            fixed_width += preferred_width;
+        } else {
+            flexible_count += 1u;
+        }
+        child = tree->nodes[child].next_sibling;
+    }
+    const float flexible_width = flexible_count > 0u ?
+        EcsUiClayClampPositive(bounds.width - total_gap - fixed_width) /
+            (float)flexible_count :
+        0.0f;
+    float x = bounds.x;
+
+    child = node->first_child;
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        const float preferred_width = EcsUiClayPreferredWidth(tree, child);
+        const float child_width =
+            preferred_width > 0.0f ? preferred_width : flexible_width;
         EcsUiClayRect child_bounds = {
             .x = x,
             .y = bounds.y,

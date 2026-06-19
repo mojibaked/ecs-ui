@@ -1161,7 +1161,14 @@ int main(void)
                     .role = ECS_UI_TEXT_BUTTON,
                 });
         }
-        HStack(&builder, {.id = "Footer", .gap = 4.0f}) {
+        HStack(
+            &builder,
+            {
+                .id = "Footer",
+                .gap = 4.0f,
+                .preferred_width = 144.0f,
+                .preferred_height = 30.0f,
+            }) {
             Icon(&builder, {.id = "FooterIcon", .name = "plus"});
             Text(
                 &builder,
@@ -1177,6 +1184,7 @@ int main(void)
                 .id = "SearchField",
                 .on_click = present_add_machine_action,
                 .style_token = text_field_style_token,
+                .preferred_height = 54.0f,
             });
         Text(
             &builder,
@@ -1282,6 +1290,16 @@ int main(void)
     result |= Require(
         strcmp(tree.nodes[10u].text.text, "direct") == 0,
         "direct style text payload not copied");
+    result |= RequireNear(
+        tree.nodes[4u].stack.preferred_width,
+        144.0f,
+        0.0001f,
+        "stack preferred width should be copied");
+    result |= RequireNear(
+        tree.nodes[4u].stack.preferred_height,
+        30.0f,
+        0.0001f,
+        "stack preferred height should be copied");
     result |= Require(
         strcmp(tree.nodes[11u].custom.kind, "terminal") == 0,
         "custom kind not copied");
@@ -1345,6 +1363,11 @@ int main(void)
     result |= Require(
         tree.nodes[7u].on_click == present_add_machine_action,
         "pressable snapshot should expose OnClick action");
+    result |= RequireNear(
+        tree.nodes[7u].pressable.preferred_height,
+        54.0f,
+        0.0001f,
+        "pressable preferred height should be copied");
     result |= Require(
         ecs_get_target(world, tree.nodes[7u].entity, EcsUiUsesStyle, 0) ==
             text_field_style_token,

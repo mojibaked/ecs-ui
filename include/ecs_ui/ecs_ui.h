@@ -97,6 +97,8 @@ typedef struct EcsUiStack {
     EcsUiAxis axis;
     float gap;
     float padding;
+    float preferred_width;
+    float preferred_height;
 } EcsUiStack;
 
 typedef struct EcsUiColor {
@@ -127,6 +129,7 @@ typedef struct EcsUiButton {
 } EcsUiButton;
 
 typedef struct EcsUiPressable {
+    float preferred_height;
     bool disabled;
 } EcsUiPressable;
 
@@ -170,6 +173,8 @@ typedef struct EcsUiStackDesc {
     const char *id;
     float gap;
     float padding;
+    float preferred_width;
+    float preferred_height;
 } EcsUiStackDesc;
 
 typedef struct EcsUiButtonDesc {
@@ -185,6 +190,7 @@ typedef struct EcsUiPressableDesc {
     ecs_entity_t on_click;
     bool disabled;
     ecs_entity_t style_token;
+    float preferred_height;
 } EcsUiPressableDesc;
 
 typedef struct EcsUiTextDesc {
