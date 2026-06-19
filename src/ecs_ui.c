@@ -216,6 +216,8 @@ static ecs_entity_t EcsUiBeginStack(
         .padding = desc.padding,
         .preferred_width = desc.preferred_width,
         .preferred_height = desc.preferred_height,
+        .align_x = desc.align_x,
+        .align_y = desc.align_y,
     };
     ecs_set_ptr(builder->world, entity, EcsUiStack, &stack);
     EcsUiPushParent(builder, entity);

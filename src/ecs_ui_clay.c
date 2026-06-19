@@ -253,6 +253,32 @@ static bool EcsUiClayNodeIsStack(const EcsUiTreeNodeSnapshot *node)
             node->kind == ECS_UI_NODE_ZSTACK);
 }
 
+static Clay_LayoutAlignmentX EcsUiClayAlignX(EcsUiAlign align)
+{
+    switch (align) {
+    case ECS_UI_ALIGN_CENTER:
+        return CLAY_ALIGN_X_CENTER;
+    case ECS_UI_ALIGN_END:
+        return CLAY_ALIGN_X_RIGHT;
+    case ECS_UI_ALIGN_START:
+    default:
+        return CLAY_ALIGN_X_LEFT;
+    }
+}
+
+static Clay_LayoutAlignmentY EcsUiClayAlignY(EcsUiAlign align)
+{
+    switch (align) {
+    case ECS_UI_ALIGN_CENTER:
+        return CLAY_ALIGN_Y_CENTER;
+    case ECS_UI_ALIGN_END:
+        return CLAY_ALIGN_Y_BOTTOM;
+    case ECS_UI_ALIGN_START:
+    default:
+        return CLAY_ALIGN_Y_TOP;
+    }
+}
+
 static float EcsUiClayPressableHeight(const EcsUiTreeNodeSnapshot *node)
 {
     if (node == NULL || node->pressable.preferred_height <= 0.0f) {
@@ -860,12 +886,13 @@ static bool EcsUiClayNodeIsPressableTarget(
         return !node->button.disabled;
     case ECS_UI_NODE_PRESSABLE:
         return !node->pressable.disabled;
-    case ECS_UI_NODE_CUSTOM:
-        return node->on_click != 0;
     case ECS_UI_NODE_ROOT:
     case ECS_UI_NODE_VSTACK:
     case ECS_UI_NODE_HSTACK:
     case ECS_UI_NODE_ZSTACK:
+        return node->on_click != 0;
+    case ECS_UI_NODE_CUSTOM:
+        return node->on_click != 0;
     case ECS_UI_NODE_TEXT:
     case ECS_UI_NODE_ICON:
     case ECS_UI_NODE_NONE:
@@ -1008,6 +1035,10 @@ static void EcsUiClayEmitStack(
     layout.padding = CLAY_PADDING_ALL(EcsUiClayU16(node->stack.padding));
     layout.layoutDirection = direction;
     layout.childGap = EcsUiClayU16(node->stack.gap);
+    layout.childAlignment = (Clay_ChildAlignment){
+        .x = EcsUiClayAlignX(node->stack.align_x),
+        .y = EcsUiClayAlignY(node->stack.align_y),
+    };
 
     char clay_id[ECS_UI_ID_MAX * 2u] = {0};
     EcsUiClayElementId(node, NULL, clay_id, sizeof(clay_id));
@@ -1562,6 +1593,7 @@ void EcsUiClayEmitTreeEx(
                 .x = options->bounds.x,
                 .y = options->bounds.y,
             },
+            .zIndex = options->z_index,
             .attachPoints = {
                 .element = CLAY_ATTACH_POINT_LEFT_TOP,
                 .parent = CLAY_ATTACH_POINT_LEFT_TOP,

@@ -773,6 +773,86 @@ static int TestVisualOffsetAffectsHitTesting(void)
     return result;
 }
 
+static int TestActionStackEmitsPointerEvents(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t action = CreateAction(world, "ChromeAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "ChromeRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ChromeTarget",
+            .preferred_width = 120.0f,
+            .preferred_height = 44.0f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "ChromeLabel",
+            .text = "+",
+            .role = ECS_UI_TEXT_TITLE,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "action stack builder failed");
+    ecs_add_pair(world, target, EcsUiOnClick, action);
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "action stack tree read failed");
+    EcsUiClayLayoutOptions options = LayoutOptions(160.0f, 80.0f);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 4.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "action stack pressed frame should emit hover, pressed, and drag started");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        target,
+        "ChromeTarget");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        target,
+        "ChromeTarget");
+    result |= RequireEvent(
+        &events,
+        2u,
+        ECS_UI_EVENT_DRAG_STARTED,
+        target,
+        "ChromeTarget");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestPointerCaptureLifecycle(void)
 {
     int result = 0;
@@ -1246,6 +1326,7 @@ int main(void)
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();
     result |= TestVisualOpacitySkipsHitTesting();
     result |= TestVisualOffsetAffectsHitTesting();
+    result |= TestActionStackEmitsPointerEvents();
     result |= TestPointerCaptureLifecycle();
     result |= TestOverlappingRetainedTreesRouteTopmost();
     result |= TestZStackCapturePreventsBackgroundFallthrough();

@@ -1317,6 +1317,8 @@ int main(void)
                 .gap = 4.0f,
                 .preferred_width = 144.0f,
                 .preferred_height = 30.0f,
+                .align_x = ECS_UI_ALIGN_CENTER,
+                .align_y = ECS_UI_ALIGN_END,
             }) {
             Icon(&builder, {.id = "FooterIcon", .name = "plus"});
             Text(
@@ -1449,6 +1451,10 @@ int main(void)
         30.0f,
         0.0001f,
         "stack preferred height should be copied");
+    result |= Require(
+        tree.nodes[4u].stack.align_x == ECS_UI_ALIGN_CENTER &&
+            tree.nodes[4u].stack.align_y == ECS_UI_ALIGN_END,
+        "stack alignment should be copied");
     result |= Require(
         strcmp(tree.nodes[11u].custom.kind, "terminal") == 0,
         "custom kind not copied");

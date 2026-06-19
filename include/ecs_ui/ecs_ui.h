@@ -36,6 +36,12 @@ typedef enum EcsUiAxis {
     ECS_UI_AXIS_DEPTH = 2,
 } EcsUiAxis;
 
+typedef enum EcsUiAlign {
+    ECS_UI_ALIGN_START = 0,
+    ECS_UI_ALIGN_CENTER = 1,
+    ECS_UI_ALIGN_END = 2,
+} EcsUiAlign;
+
 typedef enum EcsUiButtonVariant {
     ECS_UI_BUTTON_DEFAULT = 0,
     ECS_UI_BUTTON_PRIMARY = 1,
@@ -99,6 +105,8 @@ typedef struct EcsUiStack {
     float padding;
     float preferred_width;
     float preferred_height;
+    EcsUiAlign align_x;
+    EcsUiAlign align_y;
 } EcsUiStack;
 
 typedef struct EcsUiColor {
@@ -175,6 +183,8 @@ typedef struct EcsUiStackDesc {
     float padding;
     float preferred_width;
     float preferred_height;
+    EcsUiAlign align_x;
+    EcsUiAlign align_y;
 } EcsUiStackDesc;
 
 typedef struct EcsUiButtonDesc {

@@ -27,6 +27,7 @@ typedef struct EcsUiClayTheme {
 
 typedef struct EcsUiClayLayoutOptions {
     Clay_BoundingBox bounds;
+    int16_t z_index;
 } EcsUiClayLayoutOptions;
 
 typedef struct EcsUiClayPointerState {
