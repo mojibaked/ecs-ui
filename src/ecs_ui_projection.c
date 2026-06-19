@@ -295,6 +295,24 @@ static bool EcsUiProjectionKeyInItems(
     return false;
 }
 
+typedef struct EcsUiProjectionOrderedEntityItem {
+    uint64_t key;
+    ecs_entity_t source;
+} EcsUiProjectionOrderedEntityItem;
+
+static bool EcsUiProjectionKeyInEntityItems(
+    const EcsUiProjectionOrderedEntityItem *items,
+    uint32_t item_count,
+    uint64_t key)
+{
+    for (uint32_t i = 0u; i < item_count; i += 1u) {
+        if (items[i].key == key) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static ecs_entity_t EcsUiProjectionFindCollectionSource(
     ecs_world_t *world,
     ecs_entity_t source_parent,
@@ -398,6 +416,97 @@ static bool EcsUiProjectionDeleteStaleCollectionSources(
     return true;
 }
 
+static bool EcsUiProjectionDeleteStaleOrderedEntitySources(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source_parent,
+    const EcsUiProjectionOrderedEntityItem *items,
+    uint32_t item_count)
+{
+    ecs_entity_t stale_sources[ECS_UI_TREE_NODE_MAX] = {0};
+    int32_t stale_count = 0;
+    ecs_entities_t children =
+        ecs_get_ordered_children(ui_world, ui_source_parent);
+    for (int32_t i = 0; i < children.count; i += 1) {
+        const EcsUiProjectionKey *key =
+            ecs_get(ui_world, children.ids[i], EcsUiProjectionKey);
+        if (key == NULL ||
+            EcsUiProjectionKeyInEntityItems(
+                items,
+                item_count,
+                key->value)) {
+            continue;
+        }
+        if (stale_count >= (int32_t)ECS_UI_TREE_NODE_MAX) {
+            return false;
+        }
+        stale_sources[stale_count] = children.ids[i];
+        stale_count += 1;
+    }
+
+    for (int32_t i = 0; i < stale_count; i += 1) {
+        ecs_entity_t ui_root =
+            EcsUiProjectionGetRoot(ui_world, stale_sources[i]);
+        if (ui_root != 0) {
+            ecs_delete(ui_world, ui_root);
+        }
+        ecs_delete(ui_world, stale_sources[i]);
+    }
+    return true;
+}
+
+static ecs_entity_t EcsUiProjectionEnsureOrderedEntitySource(
+    ecs_world_t *ui_world,
+    EcsUiProjectionOrderedEntityDesc *desc,
+    const EcsUiProjectionOrderedEntityItem *item)
+{
+    if (ui_world == NULL || desc == NULL || item == NULL || item->key == 0u) {
+        return 0;
+    }
+
+    ecs_entity_t ui_source =
+        EcsUiProjectionFindCollectionSource(
+            ui_world,
+            desc->ui_source_parent,
+            item->key);
+    if (ui_source == 0) {
+        char name[ECS_UI_ID_MAX] = {0};
+        const char *prefix = desc->ui_source_name_prefix != NULL ?
+            desc->ui_source_name_prefix :
+            "ProjectionSource";
+        (void)snprintf(
+            name,
+            sizeof(name),
+            "%s%llu",
+            prefix,
+            (unsigned long long)item->key);
+        ui_source = ecs_entity(ui_world, {
+            .parent = desc->ui_source_parent,
+            .name = name,
+            .sep = "",
+        });
+        ecs_set(
+            ui_world,
+            ui_source,
+            EcsUiProjectionKey,
+            {
+                .value = item->key,
+            });
+    }
+
+    if (ui_source != 0 && desc->ui_source_filter != 0) {
+        ecs_add_id(ui_world, ui_source, desc->ui_source_filter);
+    }
+    if (ui_source != 0 && desc->sync_source != NULL) {
+        desc->sync_source(
+            ui_world,
+            ui_source,
+            desc->source_world,
+            item->source,
+            desc->ctx);
+    }
+    return ui_source;
+}
+
 bool EcsUiProjectionSyncCollection(
     ecs_world_t *world,
     EcsUiProjectionCollectionDesc desc)
@@ -498,4 +607,132 @@ bool EcsUiProjectionSyncCollectionView(
             .update_root = desc.update_root,
             .ctx = desc.ctx,
         });
+}
+
+bool EcsUiProjectionSyncOrderedEntities(
+    EcsUiProjectionOrderedEntityDesc desc)
+{
+    if (desc.out_projected_count != NULL) {
+        *desc.out_projected_count = 0u;
+    }
+    if (desc.source_world == NULL || desc.source_parent == 0 ||
+        desc.ui_world == NULL || desc.ui_source_parent == 0 ||
+        desc.ui_parent == 0 || desc.key == NULL ||
+        !EcsUiProjectionReady()) {
+        return false;
+    }
+    if (ecs_is_deferred(desc.source_world) || ecs_is_deferred(desc.ui_world)) {
+        return false;
+    }
+
+    EcsUiProjectionOrderedEntityItem items[ECS_UI_TREE_NODE_MAX] = {0};
+    uint32_t item_count = 0u;
+    ecs_entities_t source_children =
+        ecs_get_ordered_children(desc.source_world, desc.source_parent);
+    for (int32_t i = 0; i < source_children.count; i += 1) {
+        ecs_entity_t source = source_children.ids[i];
+        if (desc.source_filter != 0 &&
+            !ecs_has_id(desc.source_world, source, desc.source_filter)) {
+            continue;
+        }
+        if (item_count >= (uint32_t)ECS_UI_TREE_NODE_MAX) {
+            return false;
+        }
+
+        uint64_t key = desc.key(desc.source_world, source, desc.ctx);
+        if (key == 0u ||
+            EcsUiProjectionKeyInEntityItems(items, item_count, key)) {
+            return false;
+        }
+        items[item_count] = (EcsUiProjectionOrderedEntityItem){
+            .key = key,
+            .source = source,
+        };
+        item_count += 1u;
+    }
+
+    ecs_add_id(desc.ui_world, desc.ui_source_parent, EcsOrderedChildren);
+    if (!EcsUiProjectionDeleteStaleOrderedEntitySources(
+            desc.ui_world,
+            desc.ui_source_parent,
+            items,
+            item_count)) {
+        return false;
+    }
+
+    ecs_entity_t ordered_sources[ECS_UI_TREE_NODE_MAX] = {0};
+    uint32_t projected_count = 0u;
+    for (uint32_t i = 0u; i < item_count; i += 1u) {
+        const EcsUiProjectionOrderedEntityItem *item = &items[i];
+        ecs_entity_t ui_source =
+            EcsUiProjectionEnsureOrderedEntitySource(
+                desc.ui_world,
+                &desc,
+                item);
+        if (ui_source == 0) {
+            return false;
+        }
+        ordered_sources[projected_count] = ui_source;
+        projected_count += 1u;
+
+        ecs_entity_t ui_root =
+            EcsUiProjectionGetRoot(desc.ui_world, ui_source);
+        if (ui_root == 0 && desc.build_root != NULL) {
+            ui_root = desc.build_root(
+                desc.ui_world,
+                ui_source,
+                desc.source_world,
+                item->source,
+                desc.ctx);
+            if (ui_root != 0 &&
+                EcsUiProjectionGetRoot(desc.ui_world, ui_source) == 0) {
+                (void)EcsUiProjectionLink(desc.ui_world, ui_source, ui_root);
+            }
+        }
+        if (ui_root == 0) {
+            return false;
+        }
+        if (desc.update_root != NULL) {
+            desc.update_root(
+                desc.ui_world,
+                ui_source,
+                ui_root,
+                desc.source_world,
+                item->source,
+                i + 1u,
+                item_count,
+                desc.ctx);
+        }
+    }
+
+    if (projected_count > 0u) {
+        ecs_set_child_order(
+            desc.ui_world,
+            desc.ui_source_parent,
+            ordered_sources,
+            (int32_t)projected_count);
+    } else {
+        ecs_entities_t ui_source_children =
+            ecs_get_ordered_children(desc.ui_world, desc.ui_source_parent);
+        if (ui_source_children.count != 0) {
+            return false;
+        }
+    }
+
+    if (!EcsUiProjectionSyncOrderedChildren(
+            desc.ui_world,
+            (EcsUiProjectionOrderSyncDesc){
+                .source_parent = desc.ui_source_parent,
+                .ui_parent = desc.ui_parent,
+                .source_filter = desc.ui_source_filter,
+                .preserve_unprojected_ui_children =
+                    desc.preserve_unprojected_ui_children,
+            })) {
+        return false;
+    }
+
+    if (desc.out_projected_count != NULL) {
+        *desc.out_projected_count = projected_count;
+    }
+    return true;
 }

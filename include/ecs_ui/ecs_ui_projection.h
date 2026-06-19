@@ -99,6 +99,53 @@ typedef struct EcsUiProjectionCollectionViewDesc {
     void *ctx;
 } EcsUiProjectionCollectionViewDesc;
 
+typedef uint64_t (*EcsUiProjectionEntityKey)(
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    void *ctx);
+
+typedef void (*EcsUiProjectionSyncEntitySource)(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source,
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    void *ctx);
+
+typedef ecs_entity_t (*EcsUiProjectionBuildEntityRoot)(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source,
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    void *ctx);
+
+typedef void (*EcsUiProjectionUpdateEntityRoot)(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source,
+    ecs_entity_t ui_root,
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    uint32_t position,
+    uint32_t count,
+    void *ctx);
+
+typedef struct EcsUiProjectionOrderedEntityDesc {
+    ecs_world_t *source_world;
+    ecs_entity_t source_parent;
+    ecs_id_t source_filter;
+    ecs_world_t *ui_world;
+    ecs_entity_t ui_source_parent;
+    ecs_entity_t ui_parent;
+    ecs_id_t ui_source_filter;
+    bool preserve_unprojected_ui_children;
+    const char *ui_source_name_prefix;
+    EcsUiProjectionEntityKey key;
+    EcsUiProjectionSyncEntitySource sync_source;
+    EcsUiProjectionBuildEntityRoot build_root;
+    EcsUiProjectionUpdateEntityRoot update_root;
+    uint32_t *out_projected_count;
+    void *ctx;
+} EcsUiProjectionOrderedEntityDesc;
+
 extern ECS_COMPONENT_DECLARE(EcsUiProjectionKey);
 extern ECS_TAG_DECLARE(EcsUiProjectionRoot);
 extern ECS_TAG_DECLARE(EcsUiProjectionSource);
@@ -156,6 +203,8 @@ bool EcsUiProjectionSyncCollection(
 bool EcsUiProjectionSyncCollectionView(
     ecs_world_t *world,
     EcsUiProjectionCollectionViewDesc desc);
+bool EcsUiProjectionSyncOrderedEntities(
+    EcsUiProjectionOrderedEntityDesc desc);
 
 #ifdef __cplusplus
 }

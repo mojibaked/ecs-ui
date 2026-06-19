@@ -557,6 +557,10 @@ the retained projection reconciler.
   existing collection reconciler.
 - [x] Convert the demo item-list bridge from parallel DTO/source arrays to the
   projection buffer.
+- [x] Add `EcsUiProjectionSyncOrderedEntities` for ECS-native app lists that
+  live as ordered children in a separate app world.
+- [x] Move the demo item-list bridge from the DTO projection buffer to ordered
+  app-world children projected into retained UI-world rows.
 - [x] Keep app policy in the demo: reading app entities, row construction,
   selection styling, and status text remain app-owned.
 

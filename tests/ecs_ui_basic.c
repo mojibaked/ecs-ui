@@ -73,7 +73,19 @@ typedef struct TestProjectionContext {
     uint32_t update_count;
 } TestProjectionContext;
 
+typedef struct TestProjectionAppItem {
+    uint64_t key;
+    char label[ECS_UI_TEXT_MAX];
+} TestProjectionAppItem;
+
+typedef struct TestProjectionUiItem {
+    uint64_t key;
+    char label[ECS_UI_TEXT_MAX];
+} TestProjectionUiItem;
+
 ECS_COMPONENT_DECLARE(TestProjectionItem);
+ECS_COMPONENT_DECLARE(TestProjectionAppItem);
+ECS_COMPONENT_DECLARE(TestProjectionUiItem);
 
 static void TestProjectionSyncSource(
     ecs_world_t *world,
@@ -181,6 +193,142 @@ static void TestProjectionUpdateRoot(
     projection->update_count += 1u;
 }
 
+static uint64_t TestProjectionEntityKey(
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    void *ctx)
+{
+    (void)ctx;
+
+    const TestProjectionAppItem *data =
+        ecs_get(source_world, source, TestProjectionAppItem);
+    return data != NULL ? data->key : 0u;
+}
+
+static void TestProjectionSyncEntitySource(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source,
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    void *ctx)
+{
+    (void)ctx;
+
+    const TestProjectionAppItem *data =
+        ecs_get(source_world, source, TestProjectionAppItem);
+    if (data == NULL) {
+        return;
+    }
+
+    TestProjectionUiItem ui_data = {
+        .key = data->key,
+    };
+    (void)snprintf(
+        ui_data.label,
+        sizeof(ui_data.label),
+        "%s",
+        data->label);
+    ecs_set_ptr(ui_world, ui_source, TestProjectionUiItem, &ui_data);
+}
+
+static ecs_entity_t TestProjectionBuildEntityRoot(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source,
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    void *ctx)
+{
+    (void)source_world;
+    (void)source;
+
+    TestProjectionContext *projection = ctx;
+    const TestProjectionUiItem *data =
+        ecs_get(ui_world, ui_source, TestProjectionUiItem);
+    if (projection == NULL || data == NULL) {
+        return 0;
+    }
+
+    char row_id[ECS_UI_ID_MAX] = {0};
+    char label_id[ECS_UI_ID_MAX] = {0};
+    (void)snprintf(
+        row_id,
+        sizeof(row_id),
+        "EntityRow%llu",
+        (unsigned long long)data->key);
+    (void)snprintf(
+        label_id,
+        sizeof(label_id),
+        "EntityLabel%llu",
+        (unsigned long long)data->key);
+
+    EcsUiBuilder builder =
+        EcsUiBuilderBegin(ui_world, projection->ui_parent);
+    ecs_entity_t row = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = row_id,
+        });
+    ecs_entity_t label = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = label_id,
+            .text = data->label,
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+
+    if (EcsUiBuilderOk(&builder) && row != 0 && label != 0) {
+        (void)EcsUiProjectionSetNode(
+            ui_world,
+            ui_source,
+            projection->label_slot,
+            label);
+        projection->build_count += 1u;
+        return row;
+    }
+    return 0;
+}
+
+static void TestProjectionUpdateEntityRoot(
+    ecs_world_t *ui_world,
+    ecs_entity_t ui_source,
+    ecs_entity_t ui_root,
+    ecs_world_t *source_world,
+    ecs_entity_t source,
+    uint32_t position,
+    uint32_t count,
+    void *ctx)
+{
+    (void)ui_root;
+    (void)source_world;
+    (void)source;
+    (void)count;
+
+    TestProjectionContext *projection = ctx;
+    const TestProjectionUiItem *data =
+        ecs_get(ui_world, ui_source, TestProjectionUiItem);
+    if (projection == NULL || data == NULL) {
+        return;
+    }
+
+    ecs_entity_t label =
+        EcsUiProjectionGetNode(ui_world, ui_source, projection->label_slot);
+    EcsUiText *text =
+        label != 0 ? ecs_get_mut(ui_world, label, EcsUiText) : NULL;
+    if (text != NULL) {
+        (void)snprintf(
+            text->text,
+            sizeof(text->text),
+            "%u:%.200s",
+            position,
+            data->label);
+        text->role = ECS_UI_TEXT_BODY;
+        ecs_modified(ui_world, label, EcsUiText);
+    }
+    projection->update_count += 1u;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -194,6 +342,7 @@ int main(void)
     EcsUiProjectionImport(world);
     EcsUiTextInputImport(world);
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
+    ECS_COMPONENT_DEFINE(world, TestProjectionUiItem);
     int result = 0;
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
@@ -1841,6 +1990,242 @@ int main(void)
         collection_sources.count == 0 &&
             collection_order.count == 1,
         "empty collection cleanup mismatch");
+
+    ecs_world_t *app_world = ecs_init();
+    result |= Require(app_world != NULL, "ordered entity app world failed");
+    if (app_world != NULL) {
+        ECS_COMPONENT_DEFINE(app_world, TestProjectionAppItem);
+
+        ecs_entity_t app_parent =
+            ecs_entity(app_world, {.name = "OrderedEntitySources"});
+        ecs_add_id(app_world, app_parent, EcsOrderedChildren);
+        ecs_entity_t app_a = ecs_entity(app_world, {
+            .parent = app_parent,
+            .name = "EntityA",
+            .sep = "",
+        });
+        ecs_entity_t app_b = ecs_entity(app_world, {
+            .parent = app_parent,
+            .name = "EntityB",
+            .sep = "",
+        });
+        ecs_set(
+            app_world,
+            app_a,
+            TestProjectionAppItem,
+            {
+                .key = 10u,
+                .label = "one",
+            });
+        ecs_set(
+            app_world,
+            app_b,
+            TestProjectionAppItem,
+            {
+                .key = 20u,
+                .label = "two",
+            });
+
+        ecs_entity_t entity_source_parent =
+            ecs_entity(world, {.name = "OrderedEntityUiSources"});
+        ecs_add_id(world, entity_source_parent, EcsOrderedChildren);
+        ecs_entity_t entity_ui_parent =
+            EcsUiRootEntity(world, "OrderedEntityUi");
+        EcsUiBuilder entity_builder =
+            EcsUiBuilderBegin(world, entity_ui_parent);
+        (void)EcsUiAddText(
+            &entity_builder,
+            (EcsUiTextDesc){
+                .id = "OrderedEntityHeader",
+                .text = "entities",
+                .role = ECS_UI_TEXT_LABEL,
+            });
+        EcsUiBuilderEnd(&entity_builder);
+        result |= Require(
+            EcsUiBuilderOk(&entity_builder),
+            "ordered entity builder failed");
+
+        TestProjectionContext entity_ctx = {
+            .ui_parent = entity_ui_parent,
+            .label_slot =
+                ecs_entity(world, {.name = "OrderedEntityLabelSlot"}),
+        };
+        uint32_t projected_count = 0u;
+        result |= Require(
+            EcsUiProjectionSyncOrderedEntities(
+                (EcsUiProjectionOrderedEntityDesc){
+                    .source_world = app_world,
+                    .source_parent = app_parent,
+                    .source_filter = ecs_id(TestProjectionAppItem),
+                    .ui_world = world,
+                    .ui_source_parent = entity_source_parent,
+                    .ui_parent = entity_ui_parent,
+                    .ui_source_filter = ecs_id(TestProjectionUiItem),
+                    .preserve_unprojected_ui_children = true,
+                    .ui_source_name_prefix = "OrderedEntitySource",
+                    .key = TestProjectionEntityKey,
+                    .sync_source = TestProjectionSyncEntitySource,
+                    .build_root = TestProjectionBuildEntityRoot,
+                    .update_root = TestProjectionUpdateEntityRoot,
+                    .out_projected_count = &projected_count,
+                    .ctx = &entity_ctx,
+                }),
+            "ordered entity sync failed");
+        result |= Require(
+            projected_count == 2u &&
+                entity_ctx.build_count == 2u &&
+                entity_ctx.update_count == 2u,
+            "ordered entity build/update counts mismatch");
+
+        ecs_entities_t entity_sources =
+            ecs_get_ordered_children(world, entity_source_parent);
+        result |= Require(
+            entity_sources.count == 2,
+            "ordered entity source count mismatch");
+        const EcsUiProjectionKey *entity_key_1 =
+            ecs_get(world, entity_sources.ids[0], EcsUiProjectionKey);
+        const EcsUiProjectionKey *entity_key_2 =
+            ecs_get(world, entity_sources.ids[1], EcsUiProjectionKey);
+        result |= Require(
+            entity_key_1 != NULL && entity_key_2 != NULL &&
+                entity_key_1->value == 10u && entity_key_2->value == 20u,
+            "ordered entity source key order mismatch");
+        ecs_entity_t entity_row_1 =
+            EcsUiProjectionGetRoot(world, entity_sources.ids[0]);
+        ecs_entity_t entity_row_2 =
+            EcsUiProjectionGetRoot(world, entity_sources.ids[1]);
+        ecs_entities_t entity_order =
+            ecs_get_ordered_children(world, entity_ui_parent);
+        result |= Require(
+            entity_order.count == 3 &&
+                entity_order.ids[1] == entity_row_1 &&
+                entity_order.ids[2] == entity_row_2,
+            "ordered entity row order mismatch");
+
+        TestProjectionAppItem *app_b_data =
+            ecs_get_mut(app_world, app_b, TestProjectionAppItem);
+        if (app_b_data != NULL) {
+            (void)snprintf(
+                app_b_data->label,
+                sizeof(app_b_data->label),
+                "%s",
+                "two updated");
+            ecs_modified(app_world, app_b, TestProjectionAppItem);
+        }
+        ecs_entity_t app_order[2] = {app_b, app_a};
+        ecs_set_child_order(app_world, app_parent, app_order, 2);
+        result |= Require(
+            EcsUiProjectionSyncOrderedEntities(
+                (EcsUiProjectionOrderedEntityDesc){
+                    .source_world = app_world,
+                    .source_parent = app_parent,
+                    .source_filter = ecs_id(TestProjectionAppItem),
+                    .ui_world = world,
+                    .ui_source_parent = entity_source_parent,
+                    .ui_parent = entity_ui_parent,
+                    .ui_source_filter = ecs_id(TestProjectionUiItem),
+                    .preserve_unprojected_ui_children = true,
+                    .ui_source_name_prefix = "OrderedEntitySource",
+                    .key = TestProjectionEntityKey,
+                    .sync_source = TestProjectionSyncEntitySource,
+                    .build_root = TestProjectionBuildEntityRoot,
+                    .update_root = TestProjectionUpdateEntityRoot,
+                    .out_projected_count = &projected_count,
+                    .ctx = &entity_ctx,
+                }),
+            "ordered entity reorder sync failed");
+        entity_sources =
+            ecs_get_ordered_children(world, entity_source_parent);
+        entity_row_2 =
+            EcsUiProjectionGetRoot(world, entity_sources.ids[0]);
+        entity_row_1 =
+            EcsUiProjectionGetRoot(world, entity_sources.ids[1]);
+        entity_order =
+            ecs_get_ordered_children(world, entity_ui_parent);
+        result |= Require(
+            projected_count == 2u &&
+                entity_ctx.build_count == 2u &&
+                entity_ctx.update_count == 4u &&
+                entity_order.count == 3 &&
+                entity_order.ids[1] == entity_row_2 &&
+                entity_order.ids[2] == entity_row_1,
+            "ordered entity reorder mismatch");
+        ecs_entity_t entity_label =
+            EcsUiProjectionGetNode(
+                world,
+                entity_sources.ids[0],
+                entity_ctx.label_slot);
+        const EcsUiText *entity_label_text =
+            entity_label != 0 ? ecs_get(world, entity_label, EcsUiText) : NULL;
+        result |= Require(
+            entity_label_text != NULL &&
+                strcmp(entity_label_text->text, "1:two updated") == 0,
+            "ordered entity update mismatch");
+
+        ecs_delete(app_world, app_a);
+        result |= Require(
+            EcsUiProjectionSyncOrderedEntities(
+                (EcsUiProjectionOrderedEntityDesc){
+                    .source_world = app_world,
+                    .source_parent = app_parent,
+                    .source_filter = ecs_id(TestProjectionAppItem),
+                    .ui_world = world,
+                    .ui_source_parent = entity_source_parent,
+                    .ui_parent = entity_ui_parent,
+                    .ui_source_filter = ecs_id(TestProjectionUiItem),
+                    .preserve_unprojected_ui_children = true,
+                    .ui_source_name_prefix = "OrderedEntitySource",
+                    .key = TestProjectionEntityKey,
+                    .sync_source = TestProjectionSyncEntitySource,
+                    .build_root = TestProjectionBuildEntityRoot,
+                    .update_root = TestProjectionUpdateEntityRoot,
+                    .out_projected_count = &projected_count,
+                    .ctx = &entity_ctx,
+                }),
+            "ordered entity stale delete sync failed");
+        entity_sources =
+            ecs_get_ordered_children(world, entity_source_parent);
+        entity_order =
+            ecs_get_ordered_children(world, entity_ui_parent);
+        result |= Require(
+            projected_count == 1u &&
+                entity_sources.count == 1 &&
+                entity_order.count == 2,
+            "ordered entity stale delete mismatch");
+
+        ecs_delete(app_world, app_b);
+        result |= Require(
+            EcsUiProjectionSyncOrderedEntities(
+                (EcsUiProjectionOrderedEntityDesc){
+                    .source_world = app_world,
+                    .source_parent = app_parent,
+                    .source_filter = ecs_id(TestProjectionAppItem),
+                    .ui_world = world,
+                    .ui_source_parent = entity_source_parent,
+                    .ui_parent = entity_ui_parent,
+                    .ui_source_filter = ecs_id(TestProjectionUiItem),
+                    .preserve_unprojected_ui_children = true,
+                    .ui_source_name_prefix = "OrderedEntitySource",
+                    .key = TestProjectionEntityKey,
+                    .sync_source = TestProjectionSyncEntitySource,
+                    .build_root = TestProjectionBuildEntityRoot,
+                    .update_root = TestProjectionUpdateEntityRoot,
+                    .out_projected_count = &projected_count,
+                    .ctx = &entity_ctx,
+                }),
+            "ordered entity empty sync failed");
+        entity_sources =
+            ecs_get_ordered_children(world, entity_source_parent);
+        entity_order =
+            ecs_get_ordered_children(world, entity_ui_parent);
+        result |= Require(
+            projected_count == 0u &&
+                entity_sources.count == 0 &&
+                entity_order.count == 1,
+            "ordered entity empty cleanup mismatch");
+
+        ecs_fini(app_world);
+    }
 
     ecs_fini(world);
     return result;
