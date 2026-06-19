@@ -155,8 +155,22 @@ static float EcsUiClayTextSize(EcsUiTextRole role)
 static Clay_Color EcsUiClayTextColor(
     const EcsUiClayTheme *theme,
     EcsUiTextRole role,
-    bool inverse)
+    bool inverse,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool disabled)
 {
+    if (has_text_style) {
+        if (disabled && text_style.disabled_color.a != 0u) {
+            return EcsUiClayColor(text_style.disabled_color);
+        }
+        if (role == ECS_UI_TEXT_CAPTION && text_style.muted_color.a != 0u) {
+            return EcsUiClayColor(text_style.muted_color);
+        }
+        if (text_style.color.a != 0u) {
+            return EcsUiClayColor(text_style.color);
+        }
+    }
     if (inverse) {
         return theme->text_inverse;
     }
@@ -170,11 +184,20 @@ static Clay_TextElementConfig *EcsUiClayTextConfig(
     const EcsUiClayTheme *theme,
     EcsUiTextRole role,
     bool inverse,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool disabled,
     float opacity)
 {
     return CLAY_TEXT_CONFIG({
         .textColor = EcsUiClayApplyOpacity(
-            EcsUiClayTextColor(theme, role, inverse),
+            EcsUiClayTextColor(
+                theme,
+                role,
+                inverse,
+                text_style,
+                has_text_style,
+                disabled),
             opacity),
         .fontSize = EcsUiClayU16(EcsUiClayTextSize(role)),
         .wrapMode = CLAY_TEXT_WRAP_NONE,
@@ -409,12 +432,18 @@ static void EcsUiClayEmitNode(
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity);
 static void EcsUiClayEmitNodeContent(
     const EcsUiTreeSnapshot *tree,
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity);
 
 static void EcsUiClayEmitChildren(
@@ -422,11 +451,22 @@ static void EcsUiClayEmitChildren(
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     uint32_t child = tree->nodes[index].first_child;
     while (child != ECS_UI_TREE_INVALID_INDEX) {
-        EcsUiClayEmitNode(tree, theme, child, inverse_text, opacity);
+        EcsUiClayEmitNode(
+            tree,
+            theme,
+            child,
+            inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
+            opacity);
         child = tree->nodes[child].next_sibling;
     }
 }
@@ -441,6 +481,9 @@ static void EcsUiClayEmitStack(
     Clay_Color background,
     float radius,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -460,7 +503,15 @@ static void EcsUiClayEmitStack(
         .backgroundColor = EcsUiClayApplyOpacity(background, opacity),
         .cornerRadius = EcsUiClayCornerRadius(node, radius),
     }) {
-        EcsUiClayEmitChildren(tree, theme, index, inverse_text, opacity);
+        EcsUiClayEmitChildren(
+            tree,
+            theme,
+            index,
+            inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
+            opacity);
     }
 }
 
@@ -469,6 +520,9 @@ static void EcsUiClayEmitZStack(
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -487,7 +541,15 @@ static void EcsUiClayEmitZStack(
         bool first = true;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
             if (first) {
-                EcsUiClayEmitNode(tree, theme, child, inverse_text, opacity);
+                EcsUiClayEmitNode(
+                    tree,
+                    theme,
+                    child,
+                    inverse_text,
+                    text_style,
+                    has_text_style,
+                    text_disabled,
+                    opacity);
                 first = false;
             } else {
                 const EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
@@ -532,6 +594,9 @@ static void EcsUiClayEmitZStack(
                         theme,
                         child,
                         inverse_text,
+                        text_style,
+                        has_text_style,
+                        text_disabled,
                         child_opacity);
                 }
                 z_index += 1;
@@ -546,6 +611,9 @@ static void EcsUiClayEmitOffsetNode(
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -582,6 +650,9 @@ static void EcsUiClayEmitOffsetNode(
                 theme,
                 index,
                 inverse_text,
+                text_style,
+                has_text_style,
+                text_disabled,
                 opacity);
         }
     }
@@ -592,6 +663,9 @@ static void EcsUiClayEmitNode(
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -606,10 +680,21 @@ static void EcsUiClayEmitNode(
             theme,
             index,
             inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
             node_opacity);
         return;
     }
-    EcsUiClayEmitNodeContent(tree, theme, index, inverse_text, node_opacity);
+    EcsUiClayEmitNodeContent(
+        tree,
+        theme,
+        index,
+        inverse_text,
+        text_style,
+        has_text_style,
+        text_disabled,
+        node_opacity);
 }
 
 static void EcsUiClayEmitNodeContent(
@@ -617,9 +702,18 @@ static void EcsUiClayEmitNodeContent(
     const EcsUiClayTheme *theme,
     uint32_t index,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    EcsUiTextStyle node_text_style = text_style;
+    bool node_has_text_style = has_text_style;
+    if (node->has_text_style) {
+        node_text_style = node->text_style;
+        node_has_text_style = true;
+    }
 
     switch (node->kind) {
     case ECS_UI_NODE_ROOT:
@@ -630,6 +724,9 @@ static void EcsUiClayEmitNodeContent(
             theme->root_background,
             0.0f,
             inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
             opacity);
         break;
     case ECS_UI_NODE_VSTACK:
@@ -640,6 +737,9 @@ static void EcsUiClayEmitNodeContent(
             theme->surface,
             8.0f,
             inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
             opacity);
         break;
     case ECS_UI_NODE_HSTACK:
@@ -650,10 +750,21 @@ static void EcsUiClayEmitNodeContent(
             theme->surface_subtle,
             8.0f,
             inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
             opacity);
         break;
     case ECS_UI_NODE_ZSTACK:
-        EcsUiClayEmitZStack(tree, theme, index, inverse_text, opacity);
+        EcsUiClayEmitZStack(
+            tree,
+            theme,
+            index,
+            inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
+            opacity);
         break;
     case ECS_UI_NODE_BUTTON: {
         char clay_id[ECS_UI_ID_MAX * 2u] = {0};
@@ -685,6 +796,9 @@ static void EcsUiClayEmitNodeContent(
                 theme,
                 index,
                 node->button.variant == ECS_UI_BUTTON_PRIMARY,
+                node_text_style,
+                node_has_text_style,
+                text_disabled || node->button.disabled,
                 opacity);
         }
         break;
@@ -713,7 +827,15 @@ static void EcsUiClayEmitNodeContent(
                 opacity),
             .cornerRadius = EcsUiClayCornerRadius(node, 8.0f),
         }) {
-            EcsUiClayEmitChildren(tree, theme, index, false, opacity);
+            EcsUiClayEmitChildren(
+                tree,
+                theme,
+                index,
+                false,
+                node_text_style,
+                node_has_text_style,
+                text_disabled || node->pressable.disabled,
+                opacity);
         }
         break;
     }
@@ -738,6 +860,9 @@ static void EcsUiClayEmitNodeContent(
                     theme,
                     node->text.role,
                     inverse_text,
+                    node_text_style,
+                    node_has_text_style,
+                    text_disabled,
                     opacity));
         }
         break;
@@ -761,6 +886,9 @@ static void EcsUiClayEmitNodeContent(
                     theme,
                     ECS_UI_TEXT_LABEL,
                     inverse_text,
+                    node_text_style,
+                    node_has_text_style,
+                    text_disabled,
                     opacity));
         }
         break;
@@ -824,7 +952,15 @@ void EcsUiClayEmitTreeEx(
         return;
     }
     if (options == NULL) {
-        EcsUiClayEmitNode(tree, theme, 0u, false, 1.0f);
+        EcsUiClayEmitNode(
+            tree,
+            theme,
+            0u,
+            false,
+            (EcsUiTextStyle){0},
+            false,
+            false,
+            1.0f);
         return;
     }
 
@@ -850,7 +986,15 @@ void EcsUiClayEmitTreeEx(
             .attachTo = CLAY_ATTACH_TO_ROOT,
         },
     }) {
-        EcsUiClayEmitNode(tree, theme, 0u, false, 1.0f);
+        EcsUiClayEmitNode(
+            tree,
+            theme,
+            0u,
+            false,
+            (EcsUiTextStyle){0},
+            false,
+            false,
+            1.0f);
     }
 }
 

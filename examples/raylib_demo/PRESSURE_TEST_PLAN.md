@@ -566,3 +566,84 @@ Definition of done:
   `EcsUiProjectionCollectionSource` array.
 - [x] The core reconciler still owns retained row lifecycle and ordering.
 - [x] The bridge shape is clearer for future Glowfish app-state projections.
+
+## Phase 27: App-Authored Action Button Widget
+
+Prove that buttons with design-system semantics can live in app/demo code over
+the lower-level `Pressable` primitive instead of expanding core `EcsUiButton`.
+
+- [x] Add a demo-local `DemoUiActionButton` widget that begins a `Pressable`,
+  maps action tones to `PrimaryAction`, `SubtleAction`, or `DangerAction`
+  style tokens, and lets callers author text/icon children.
+- [x] Migrate the static home/theme actions to the widget while preserving
+  their action-token wiring.
+- [x] Migrate retained item-row action controls to the widget, including
+  selected-row tone updates and disabled up/down pressable state.
+- [x] Leave core `EcsUiButton` unchanged as a legacy/convenience primitive.
+
+Follow-up:
+
+- [x] Add a design-system text-color contract for action tones so the demo
+  widget is not limited to token-driven background/padding state. Completed in
+  Phase 30.
+
+## Phase 28: Form Projection Pattern
+
+Keep reusable text-field state separate from app-owned form policy.
+
+- [x] Add a demo-owned `DemoAddItemForm` helper that reads reusable
+  `ecs-ui-text-input` field state and computes the trimmed submit name.
+- [x] Treat blank or whitespace-only item names as invalid form state.
+- [x] Project the retained add-item sheet create button disabled state from the
+  form helper instead of duplicating checks in UI construction.
+- [x] Keep submit behavior app-owned: Enter and click both validate before
+  creating the item, clearing fields, blurring text input, and dismissing the
+  sheet.
+- [x] Avoid a generic form framework; this phase proves a small demo-local
+  pattern for Glowfish form glue.
+
+Definition of done:
+
+- [x] Text value, focus, cursor, and selection state remain in
+  `ecs-ui-text-input`.
+- [x] Add-item validation and submit policy remain in the demo layer.
+- [x] Projection keeps retained controls in sync with current form validity.
+
+## Phase 29: Glowfish Mobile Integration Spike
+
+Turn the demo findings into a concrete `glowfish-mobile` adoption plan.
+
+- [x] Inspect the current Glowfish UI boundary, Clay runtime, core Flecs world,
+  navigation plan, text-input flow, terminal viewport widget, and soft keyboard
+  widget.
+- [x] Document the recommended two-world integration shape: Glowfish core world
+  remains durable app state, while an `ecs-ui` UI world owns retained UI,
+  style tokens, text-field views, and renderer-adapter state.
+- [x] Identify the first realistic integration slice as the add-machine bottom
+  sheet rather than the terminal route.
+- [x] Capture why Glowfish buttons should be app-authored widgets over
+  `Pressable`, not new core `ecs-ui` semantics.
+
+See `docs/phase_29_glowfish_mobile_spike.md`.
+
+## Phase 30: Text Style Tokens For Action Widgets
+
+Make app-authored `Pressable` widgets visually complete without relying on
+legacy button variants for foreground color.
+
+- [x] Add reusable `EcsUiTextStyle` with normal, muted, and disabled colors.
+- [x] Let themes provide text styles for stable style tokens with
+  `EcsUiThemeSetTextStyle`.
+- [x] Include resolved text style in `EcsUiTreeNodeSnapshot`, with direct
+  component precedence over token-provided style.
+- [x] Update raylib and Clay adapters so text/icon children inherit text style
+  from styled parents such as action pressables.
+- [x] Give demo action tokens foreground colors for dark and light themes.
+
+Definition of done:
+
+- [x] `PrimaryAction`, `SubtleAction`, and `DangerAction` provide both box and
+  text styling to `DemoUiActionButton`.
+- [x] Disabled action pressables can render disabled foreground from ECS state.
+- [x] Core tests cover text-style registration, theme application, snapshot
+  readback, theme switching, and direct-style precedence.

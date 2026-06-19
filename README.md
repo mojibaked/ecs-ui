@@ -66,6 +66,11 @@ EcsUiThemeSetBoxStyle(world, theme, text_field_style, (EcsUiBoxStyle){
     .hover_background = {224, 238, 235, 255},
     .padding = 12.0f,
 });
+EcsUiThemeSetTextStyle(world, theme, text_field_style, (EcsUiTextStyle){
+    .color = {20, 31, 34, 255},
+    .muted_color = {80, 99, 102, 255},
+    .disabled_color = {105, 119, 121, 255},
+});
 
 Pressable(&builder, {
     .id = "SearchField",
@@ -80,11 +85,15 @@ apps can standardize semantic names such as `TextField`, `PrimaryAction`,
 `SubtleAction`, and `DangerAction`. Nodes can opt in through
 `EcsUiSetStyleToken` or the `style_token` field on button and pressable descs.
 When both are present, a direct `EcsUiBoxStyle` component on the node still wins
-over the token style.
+over the token style. Foreground styling follows the same contract with
+`EcsUiTextStyle`: a style token may define text/icon colors, muted caption
+colors, and disabled text colors, and renderer adapters inherit those values
+through child `Text` and `Icon` nodes.
 
-The current action tokens are semantic handles in snapshots. Existing button
-renderers still draw from `EcsUiButtonVariant` palettes; pressables and
-text-field views consume box-style token values today.
+The current action tokens are semantic handles in snapshots. Existing
+`EcsUiButton` renderers still draw from `EcsUiButtonVariant` palettes and are
+best treated as a legacy/convenience widget; app design systems can layer
+token-driven action widgets over `Pressable`, as text-field views already do.
 
 ## Text Input
 
@@ -140,6 +149,13 @@ The demo also models app state in Flecs. Clicking `add item` emits the
 observers materialize retained item rows and status text under `ItemList` from
 `DemoItem` changes. The static UI shell is authored once; adding an item does
 not rebuild the whole UI tree.
+
+The add-item sheet uses a small form projection pattern. Reusable field value,
+focus, cursor, and selection state stay in `ecs_ui_text_input`. The demo-owned
+`DemoAddItemForm` helper trims and validates the item name, projects the
+retained `CreateItem` button disabled state, and leaves submit behavior in the
+event bridge. Enter and click both re-check form validity before creating the
+item, clearing fields, blurring, and dismissing the sheet.
 
 See `examples/raylib_demo/PRESSURE_TEST_PLAN.md` for the phased plan to prove
 out Glowfish-style actions, selection relationships, navigation, animations,

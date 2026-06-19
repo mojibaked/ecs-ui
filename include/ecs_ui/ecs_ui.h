@@ -115,6 +115,12 @@ typedef struct EcsUiBoxStyle {
     float padding;
 } EcsUiBoxStyle;
 
+typedef struct EcsUiTextStyle {
+    EcsUiColor color;
+    EcsUiColor muted_color;
+    EcsUiColor disabled_color;
+} EcsUiTextStyle;
+
 typedef struct EcsUiButton {
     EcsUiButtonVariant variant;
     bool disabled;
@@ -210,6 +216,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     uint32_t next_sibling;
     EcsUiStack stack;
     EcsUiBoxStyle box_style;
+    EcsUiTextStyle text_style;
     EcsUiButton button;
     EcsUiPressable pressable;
     EcsUiText text;
@@ -218,6 +225,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiVisual visual;
     EcsUiHitTest hit_test;
     bool has_box_style;
+    bool has_text_style;
 } EcsUiTreeNodeSnapshot;
 
 typedef struct EcsUiTreeSnapshot {
@@ -255,6 +263,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiNodeId);
 extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
+extern ECS_COMPONENT_DECLARE(EcsUiTextStyle);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
 extern ECS_COMPONENT_DECLARE(EcsUiPressable);
 extern ECS_COMPONENT_DECLARE(EcsUiText);
@@ -289,6 +298,11 @@ bool EcsUiThemeSetBoxStyle(
     ecs_entity_t theme,
     ecs_entity_t style_token,
     EcsUiBoxStyle style);
+bool EcsUiThemeSetTextStyle(
+    ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token,
+    EcsUiTextStyle style);
 bool EcsUiThemeApply(ecs_world_t *world);
 
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id);

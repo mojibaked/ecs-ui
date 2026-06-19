@@ -214,8 +214,22 @@ static Color EcsUiRaylibButtonColor(
 static Color EcsUiRaylibTextColor(
     const EcsUiRaylibTheme *theme,
     EcsUiTextRole role,
-    bool inverse)
+    bool inverse,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool disabled)
 {
+    if (has_text_style) {
+        if (disabled && text_style.disabled_color.a != 0u) {
+            return EcsUiRaylibColor(text_style.disabled_color);
+        }
+        if (role == ECS_UI_TEXT_CAPTION && text_style.muted_color.a != 0u) {
+            return EcsUiRaylibColor(text_style.muted_color);
+        }
+        if (text_style.color.a != 0u) {
+            return EcsUiRaylibColor(text_style.color);
+        }
+    }
     if (inverse) {
         return theme->text_inverse;
     }
@@ -302,6 +316,9 @@ static void EcsUiRaylibDrawNode(
     uint32_t index,
     Rectangle bounds,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity);
 
 static void EcsUiRaylibDrawChildrenVertical(
@@ -311,6 +328,9 @@ static void EcsUiRaylibDrawChildrenVertical(
     uint32_t index,
     Rectangle bounds,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -337,6 +357,9 @@ static void EcsUiRaylibDrawChildrenVertical(
             child,
             child_bounds,
             inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
             opacity);
         y += child_bounds.height + gap;
         child = tree->nodes[child].next_sibling;
@@ -350,6 +373,9 @@ static void EcsUiRaylibDrawChildrenHorizontal(
     uint32_t index,
     Rectangle bounds,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -379,6 +405,9 @@ static void EcsUiRaylibDrawChildrenHorizontal(
             child,
             child_bounds,
             inverse_text,
+            text_style,
+            has_text_style,
+            text_disabled,
             opacity);
         x += child_width + gap;
         child = tree->nodes[child].next_sibling;
@@ -392,6 +421,9 @@ static void EcsUiRaylibDrawNode(
     uint32_t index,
     Rectangle bounds,
     bool inverse_text,
+    EcsUiTextStyle text_style,
+    bool has_text_style,
+    bool text_disabled,
     float opacity)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
@@ -402,6 +434,12 @@ static void EcsUiRaylibDrawNode(
     }
 
     Rectangle node_bounds = EcsUiRaylibOffset(bounds, node->visual);
+    EcsUiTextStyle node_text_style = text_style;
+    bool node_has_text_style = has_text_style;
+    if (node->has_text_style) {
+        node_text_style = node->text_style;
+        node_has_text_style = true;
+    }
 
     switch (node->kind) {
     case ECS_UI_NODE_ROOT:
@@ -415,6 +453,9 @@ static void EcsUiRaylibDrawNode(
             index,
             EcsUiRaylibInset(node_bounds, node->stack.padding),
             inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
             node_opacity);
         break;
     case ECS_UI_NODE_VSTACK:
@@ -430,6 +471,9 @@ static void EcsUiRaylibDrawNode(
             index,
             EcsUiRaylibInset(node_bounds, node->stack.padding),
             inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
             node_opacity);
         break;
     case ECS_UI_NODE_HSTACK:
@@ -445,6 +489,9 @@ static void EcsUiRaylibDrawNode(
             index,
             EcsUiRaylibInset(node_bounds, node->stack.padding),
             inverse_text,
+            node_text_style,
+            node_has_text_style,
+            text_disabled,
             node_opacity);
         break;
     case ECS_UI_NODE_ZSTACK: {
@@ -463,6 +510,9 @@ static void EcsUiRaylibDrawNode(
                 child,
                 inner,
                 inverse_text,
+                node_text_style,
+                node_has_text_style,
+                text_disabled,
                 node_opacity);
             child = tree->nodes[child].next_sibling;
         }
@@ -493,6 +543,9 @@ static void EcsUiRaylibDrawNode(
             index,
             inner,
             node->button.variant == ECS_UI_BUTTON_PRIMARY,
+            node_text_style,
+            node_has_text_style,
+            text_disabled || node->button.disabled,
             node_opacity);
         break;
     }
@@ -515,6 +568,9 @@ static void EcsUiRaylibDrawNode(
             index,
             inner,
             false,
+            node_text_style,
+            node_has_text_style,
+            text_disabled || node->pressable.disabled,
             node_opacity);
         break;
     }
@@ -524,7 +580,13 @@ static void EcsUiRaylibDrawNode(
             node_bounds,
             EcsUiRaylibTextSize(node->text.role),
             EcsUiRaylibApplyOpacity(
-                EcsUiRaylibTextColor(theme, node->text.role, inverse_text),
+                EcsUiRaylibTextColor(
+                    theme,
+                    node->text.role,
+                    inverse_text,
+                    node_text_style,
+                    node_has_text_style,
+                    text_disabled),
                 node_opacity));
         break;
     case ECS_UI_NODE_ICON:
@@ -533,7 +595,13 @@ static void EcsUiRaylibDrawNode(
             node_bounds,
             18.0f,
             EcsUiRaylibApplyOpacity(
-                EcsUiRaylibTextColor(theme, ECS_UI_TEXT_LABEL, inverse_text),
+                EcsUiRaylibTextColor(
+                    theme,
+                    ECS_UI_TEXT_LABEL,
+                    inverse_text,
+                    node_text_style,
+                    node_has_text_style,
+                    text_disabled),
                 node_opacity));
         break;
     case ECS_UI_NODE_CUSTOM:
@@ -1101,7 +1169,17 @@ void EcsUiRaylibDrawTreeEx(
         return;
     }
 
-    EcsUiRaylibDrawNode(tree, theme, options, 0u, bounds, false, 1.0f);
+    EcsUiRaylibDrawNode(
+        tree,
+        theme,
+        options,
+        0u,
+        bounds,
+        false,
+        (EcsUiTextStyle){0},
+        false,
+        false,
+        1.0f);
 }
 
 void EcsUiRaylibCollectEvents(

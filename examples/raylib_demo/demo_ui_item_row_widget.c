@@ -1,7 +1,7 @@
 #include "demo_ui_internal.h"
 
 #include "demo_anim.h"
-#include "demo_theme.h"
+#include "demo_ui_action_button.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -13,9 +13,8 @@ void DemoUiApplyItemSelectionStyle(
 {
     ecs_entity_t select_button =
         EcsUiProjectionGetNode(world, source, DemoItemSelectUiNode);
-    EcsUiButton *button =
-        select_button != 0 ? ecs_get_mut(world, select_button, EcsUiButton) : NULL;
-    if (button == NULL) {
+    if (select_button == 0 ||
+        !ecs_has(world, select_button, EcsUiPressable)) {
         return;
     }
 
@@ -25,29 +24,20 @@ void DemoUiApplyItemSelectionStyle(
         return;
     }
 
-    const EcsUiButtonVariant variant =
+    const DemoUiActionButtonTone tone =
         item_data->id == selected_item_id ?
-            ECS_UI_BUTTON_PRIMARY :
-            ECS_UI_BUTTON_SUBTLE;
+            DEMO_UI_ACTION_BUTTON_PRIMARY :
+            DEMO_UI_ACTION_BUTTON_SUBTLE;
     const ecs_entity_t style_token =
-        item_data->id == selected_item_id ?
-            DemoThemePrimaryActionStyleToken(world) :
-            DemoThemeSubtleActionStyleToken(world);
+        DemoUiActionButtonStyleToken(world, tone);
     const ecs_entity_t current_style =
         ecs_get_target(world, select_button, EcsUiUsesStyle, 0);
-    if (button->variant == variant && current_style == style_token) {
+    if (current_style == style_token) {
         return;
     }
 
-    const bool variant_changed = button->variant != variant;
-    if (variant_changed) {
-        button->variant = variant;
-        ecs_modified(world, select_button, EcsUiButton);
-    }
-    if (current_style != style_token && style_token != 0) {
-        (void)EcsUiSetStyleToken(world, select_button, style_token);
-    }
-    if (variant_changed && item_data->id == selected_item_id) {
+    if (DemoUiSetActionButtonTone(world, select_button, tone) &&
+        item_data->id == selected_item_id) {
         DemoAnimStartSelectionHighlight(world, select_button);
     }
 }
@@ -71,21 +61,6 @@ static void DemoUiUpdateTextNode(
     (void)snprintf(text->text, sizeof(text->text), "%s", next_value);
     text->role = role;
     ecs_modified(world, node, EcsUiText);
-}
-
-static void DemoUiSetButtonDisabled(
-    ecs_world_t *world,
-    ecs_entity_t node,
-    bool disabled)
-{
-    EcsUiButton *button =
-        node != 0 ? ecs_get_mut(world, node, EcsUiButton) : NULL;
-    if (button == NULL || button->disabled == disabled) {
-        return;
-    }
-
-    button->disabled = disabled;
-    ecs_modified(world, node, EcsUiButton);
 }
 
 static uint32_t DemoUiItemCount(ecs_world_t *world)
@@ -147,11 +122,11 @@ void DemoUiUpdateItemRowWithPosition(
 
     ecs_entity_t up_button =
         EcsUiProjectionGetNode(world, source, DemoItemUpUiNode);
-    DemoUiSetButtonDisabled(world, up_button, position <= 1u);
+    (void)DemoUiSetActionButtonDisabled(world, up_button, position <= 1u);
 
     ecs_entity_t down_button =
         EcsUiProjectionGetNode(world, source, DemoItemDownUiNode);
-    DemoUiSetButtonDisabled(
+    (void)DemoUiSetActionButtonDisabled(
         world,
         down_button,
         position == 0u || item_count == 0u || position >= item_count);
@@ -220,13 +195,12 @@ ecs_entity_t DemoUiCreateItemRow(
             .gap = 8.0f,
             .padding = 6.0f,
         });
-    ecs_entity_t select_button = EcsUiBeginButton(
+    ecs_entity_t select_button = DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = select_id,
-            .variant = ECS_UI_BUTTON_SUBTLE,
+            .tone = DEMO_UI_ACTION_BUTTON_SUBTLE,
             .on_click = refs->select_item_action,
-            .style_token = DemoThemeSubtleActionStyleToken(world),
         });
     ecs_entity_t label_text = EcsUiAddText(
         &builder,
@@ -243,11 +217,11 @@ ecs_entity_t DemoUiCreateItemRow(
             .role = ECS_UI_TEXT_CAPTION,
         });
     EcsUiEnd(&builder);
-    ecs_entity_t rename_button = EcsUiBeginButton(
+    ecs_entity_t rename_button = DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = rename_id,
-            .variant = ECS_UI_BUTTON_DEFAULT,
+            .tone = DEMO_UI_ACTION_BUTTON_SUBTLE,
             .on_click = refs->rename_item_action,
         });
     (void)EcsUiAddText(
@@ -258,11 +232,11 @@ ecs_entity_t DemoUiCreateItemRow(
             .role = ECS_UI_TEXT_BUTTON,
         });
     EcsUiEnd(&builder);
-    ecs_entity_t up_button = EcsUiBeginButton(
+    ecs_entity_t up_button = DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = up_id,
-            .variant = ECS_UI_BUTTON_DEFAULT,
+            .tone = DEMO_UI_ACTION_BUTTON_SUBTLE,
             .on_click = refs->move_item_up_action,
         });
     (void)EcsUiAddText(
@@ -273,11 +247,11 @@ ecs_entity_t DemoUiCreateItemRow(
             .role = ECS_UI_TEXT_BUTTON,
         });
     EcsUiEnd(&builder);
-    ecs_entity_t down_button = EcsUiBeginButton(
+    ecs_entity_t down_button = DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = down_id,
-            .variant = ECS_UI_BUTTON_DEFAULT,
+            .tone = DEMO_UI_ACTION_BUTTON_SUBTLE,
             .on_click = refs->move_item_down_action,
         });
     (void)EcsUiAddText(
@@ -288,13 +262,12 @@ ecs_entity_t DemoUiCreateItemRow(
             .role = ECS_UI_TEXT_BUTTON,
         });
     EcsUiEnd(&builder);
-    ecs_entity_t delete_button = EcsUiBeginButton(
+    ecs_entity_t delete_button = DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = delete_id,
-            .variant = ECS_UI_BUTTON_DANGER,
+            .tone = DEMO_UI_ACTION_BUTTON_DANGER,
             .on_click = refs->delete_item_action,
-            .style_token = DemoThemeDangerActionStyleToken(world),
         });
     (void)EcsUiAddText(
         &builder,

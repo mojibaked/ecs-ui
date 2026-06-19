@@ -2,6 +2,7 @@
 
 #include "demo_terminal.h"
 #include "demo_theme.h"
+#include "demo_ui_action_button.h"
 #include "ecs_ui/ecs_ui_navigation.h"
 
 #include <stdio.h>
@@ -55,13 +56,12 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                     .role = ECS_UI_TEXT_CAPTION,
                 });
             HStack(&builder, {.id = "Actions", .gap = 10.0f, .padding = 0.0f}) {
-                Button(
+                DemoUiActionButton(
                     &builder,
                     {
                         .id = "AddItem",
-                        .variant = ECS_UI_BUTTON_PRIMARY,
+                        .tone = DEMO_UI_ACTION_BUTTON_PRIMARY,
                         .on_click = present_add_item_action,
-                        .style_token = DemoThemePrimaryActionStyleToken(world),
                     }) {
                     Icon(&builder, {.id = "AddItemIcon", .name = "+"});
                     Text(
@@ -72,13 +72,12 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                             .role = ECS_UI_TEXT_BUTTON,
                         });
                 }
-                Button(
+                DemoUiActionButton(
                     &builder,
                     {
                         .id = "ToggleTheme",
-                        .variant = ECS_UI_BUTTON_SUBTLE,
+                        .tone = DEMO_UI_ACTION_BUTTON_SUBTLE,
                         .on_click = toggle_theme_action,
-                        .style_token = DemoThemeSubtleActionStyleToken(world),
                     }) {
                     theme_text = Text(
                         &builder,

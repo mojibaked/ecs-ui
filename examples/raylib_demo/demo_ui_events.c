@@ -25,6 +25,36 @@ static uint32_t DemoUiEventItemId(
     return source_data != NULL ? source_data->id : 0u;
 }
 
+static bool DemoUiSubmitAddItemForm(
+    ecs_world_t *ui_world,
+    ecs_world_t *app_world,
+    const char *source)
+{
+    DemoAddItemForm form = {0};
+    const char *label =
+        source != NULL && source[0] != '\0' ? source : "text submit";
+    if (!DemoAddItemFormRead(ui_world, &form) || !form.can_submit) {
+        TraceLog(
+            LOG_INFO,
+            "DEMO: add item blocked from %s because item name is blank",
+            label);
+        (void)DemoAddItemFormProject(ui_world);
+        return false;
+    }
+
+    /*
+     * The form owns policy, not mutation. Successful submit still fans out to
+     * app, text-input, and navigation requests so those systems own their state.
+     */
+    TraceLog(LOG_INFO, "DEMO: add item requested from %s", label);
+    DemoAppRequestAddNamedItem(app_world, form.item_name);
+    DemoTextInputClearAddItemFields(ui_world);
+    (void)EcsUiTextInputRequestBlur(ui_world);
+    DemoNavRequestDismissPresentation(ui_world);
+    (void)DemoAddItemFormProject(ui_world);
+    return true;
+}
+
 void DemoUiApplyEvents(
     ecs_world_t *ui_world,
     ecs_world_t *app_world,
@@ -46,13 +76,11 @@ void DemoUiApplyEvents(
         }
 
         if (event->type == ECS_UI_EVENT_TEXT_SUBMIT) {
-            if (EcsUiTextInputHasFocusedField(ui_world)) {
-                const char *label = DemoTextInputAddItemNameValue(ui_world);
-                TraceLog(LOG_INFO, "DEMO: submit text field requested");
-                DemoAppRequestAddNamedItem(app_world, label);
-                DemoTextInputClearAddItemFields(ui_world);
-                (void)EcsUiTextInputRequestBlur(ui_world);
-                DemoNavRequestDismissPresentation(ui_world);
+            if (DemoAddItemFormHasFocusedField(ui_world)) {
+                (void)DemoUiSubmitAddItemForm(
+                    ui_world,
+                    app_world,
+                    "text submit");
             }
             continue;
         }
@@ -127,22 +155,10 @@ void DemoUiApplyEvents(
         }
 
         if (event->action == refs->add_item_action) {
-            /*
-             * Submitting the sheet spans three subsystems: app request for the
-             * item, text request/state cleanup, and navigation request to dismiss.
-             * Keeping each as a request lets their registered systems own the
-             * actual mutation and projection refresh.
-             */
-            TraceLog(
-                LOG_INFO,
-                "DEMO: add item requested from %s",
-                event->node_id);
-            DemoAppRequestAddNamedItem(
+            (void)DemoUiSubmitAddItemForm(
+                ui_world,
                 app_world,
-                DemoTextInputAddItemNameValue(ui_world));
-            DemoTextInputClearAddItemFields(ui_world);
-            (void)EcsUiTextInputRequestBlur(ui_world);
-            DemoNavRequestDismissPresentation(ui_world);
+                event->node_id);
             continue;
         }
 

@@ -214,6 +214,9 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiBoxStyle) != 0,
         "EcsUiBoxStyle should be registered");
+    result |= Require(
+        ecs_id(EcsUiTextStyle) != 0,
+        "EcsUiTextStyle should be registered");
     ecs_entity_t style_token_root = EcsUiStyleTokenRoot(world);
     ecs_entity_t text_field_style_token =
         EcsUiStyleToken(world, "TextField");
@@ -1051,6 +1054,28 @@ int main(void)
             }),
         "dark theme should store token box style");
     result |= Require(
+        EcsUiThemeSetTextStyle(
+            world,
+            light_theme,
+            text_field_style_token,
+            (EcsUiTextStyle){
+                .color = {1u, 2u, 3u, 255u},
+                .muted_color = {4u, 5u, 6u, 255u},
+                .disabled_color = {7u, 8u, 9u, 255u},
+            }),
+        "light theme should store token text style");
+    result |= Require(
+        EcsUiThemeSetTextStyle(
+            world,
+            dark_theme,
+            text_field_style_token,
+            (EcsUiTextStyle){
+                .color = {101u, 102u, 103u, 255u},
+                .muted_color = {104u, 105u, 106u, 255u},
+                .disabled_color = {107u, 108u, 109u, 255u},
+            }),
+        "dark theme should store token text style");
+    result |= Require(
         EcsUiThemeSetBoxStyle(
             world,
             light_theme,
@@ -1076,6 +1101,28 @@ int main(void)
                 .padding = 15.0f,
             }),
         "dark theme should store action token box style");
+    result |= Require(
+        EcsUiThemeSetTextStyle(
+            world,
+            light_theme,
+            primary_action_style_token,
+            (EcsUiTextStyle){
+                .color = {11u, 12u, 13u, 255u},
+                .muted_color = {14u, 15u, 16u, 255u},
+                .disabled_color = {17u, 18u, 19u, 255u},
+            }),
+        "light theme should store action token text style");
+    result |= Require(
+        EcsUiThemeSetTextStyle(
+            world,
+            dark_theme,
+            primary_action_style_token,
+            (EcsUiTextStyle){
+                .color = {111u, 112u, 113u, 255u},
+                .muted_color = {114u, 115u, 116u, 255u},
+                .disabled_color = {117u, 118u, 119u, 255u},
+            }),
+        "dark theme should store action token text style");
     result |= Require(
         EcsUiSetActiveTheme(world, light_theme),
         "light theme should become active");
@@ -1154,6 +1201,15 @@ int main(void)
                 .highlight_background = {92u, 82u, 72u, 255u},
                 .radius = 0.2f,
                 .padding = 7.0f,
+            });
+        ecs_set(
+            world,
+            direct_field,
+            EcsUiTextStyle,
+            {
+                .color = {201u, 202u, 203u, 255u},
+                .muted_color = {204u, 205u, 206u, 255u},
+                .disabled_color = {207u, 208u, 209u, 255u},
             });
         ecs_entity_t terminal_preview = Custom(
             &builder,
@@ -1263,6 +1319,13 @@ int main(void)
             tree.nodes[2u].box_style.background.a == 255u,
         "button token box style should be copied");
     result |= Require(
+        tree.nodes[2u].has_text_style &&
+            tree.nodes[2u].text_style.color.r == 11u &&
+            tree.nodes[2u].text_style.color.g == 12u &&
+            tree.nodes[2u].text_style.color.b == 13u &&
+            tree.nodes[2u].text_style.disabled_color.r == 17u,
+        "button token text style should be copied");
+    result |= Require(
         ecs_has_pair(
             world,
             tree.nodes[7u].entity,
@@ -1283,6 +1346,13 @@ int main(void)
             tree.nodes[7u].box_style.background.b == 30u &&
             tree.nodes[7u].box_style.background.a == 255u,
         "pressable box style color should be copied");
+    result |= Require(
+        tree.nodes[7u].has_text_style &&
+            tree.nodes[7u].text_style.color.r == 1u &&
+            tree.nodes[7u].text_style.color.g == 2u &&
+            tree.nodes[7u].text_style.color.b == 3u &&
+            tree.nodes[7u].text_style.disabled_color.r == 7u,
+        "pressable token text style should be copied");
     result |= RequireNear(
         tree.nodes[7u].box_style.padding,
         9.0f,
@@ -1301,6 +1371,13 @@ int main(void)
             tree.nodes[9u].box_style.background.a == 255u,
         "direct box style should override style token");
     result |= Require(
+        tree.nodes[9u].has_text_style &&
+            tree.nodes[9u].text_style.color.r == 201u &&
+            tree.nodes[9u].text_style.color.g == 202u &&
+            tree.nodes[9u].text_style.color.b == 203u &&
+            tree.nodes[9u].text_style.disabled_color.r == 207u,
+        "direct text style should override style token");
+    result |= Require(
         EcsUiSetActiveTheme(world, dark_theme),
         "dark theme should become active");
     result |= Require(
@@ -1318,12 +1395,26 @@ int main(void)
             tree.nodes[2u].box_style.background.a == 255u,
         "theme switch should update action token box style");
     result |= Require(
+        tree.nodes[2u].has_text_style &&
+            tree.nodes[2u].text_style.color.r == 111u &&
+            tree.nodes[2u].text_style.color.g == 112u &&
+            tree.nodes[2u].text_style.color.b == 113u &&
+            tree.nodes[2u].text_style.disabled_color.r == 117u,
+        "theme switch should update action token text style");
+    result |= Require(
         tree.nodes[7u].has_box_style &&
             tree.nodes[7u].box_style.background.r == 210u &&
             tree.nodes[7u].box_style.background.g == 220u &&
             tree.nodes[7u].box_style.background.b == 230u &&
             tree.nodes[7u].box_style.background.a == 255u,
         "theme switch should update token box style");
+    result |= Require(
+        tree.nodes[7u].has_text_style &&
+            tree.nodes[7u].text_style.color.r == 101u &&
+            tree.nodes[7u].text_style.color.g == 102u &&
+            tree.nodes[7u].text_style.color.b == 103u &&
+            tree.nodes[7u].text_style.disabled_color.r == 107u,
+        "theme switch should update token text style");
     result |= RequireNear(
         tree.nodes[7u].box_style.padding,
         11.0f,
@@ -1336,6 +1427,13 @@ int main(void)
             tree.nodes[9u].box_style.background.b == 70u &&
             tree.nodes[9u].box_style.background.a == 255u,
         "direct box style should still override switched style token");
+    result |= Require(
+        tree.nodes[9u].has_text_style &&
+            tree.nodes[9u].text_style.color.r == 201u &&
+            tree.nodes[9u].text_style.color.g == 202u &&
+            tree.nodes[9u].text_style.color.b == 203u &&
+            tree.nodes[9u].text_style.disabled_color.r == 207u,
+        "direct text style should still override switched style token");
 
     ecs_entities_t ordered = ecs_get_ordered_children(world, home_stack);
     result |= Require(ordered.count == 5, "ordered child count mismatch");

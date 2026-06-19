@@ -2,8 +2,8 @@
 
 #include "demo_anim.h"
 #include "demo_text_input.h"
-#include "demo_theme.h"
 #include "demo_ui.h"
+#include "demo_ui_action_button.h"
 
 #include <raylib.h>
 
@@ -192,13 +192,13 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .gap = 10.0f,
             .padding = 0.0f,
         });
-    EcsUiBeginButton(
+    ecs_entity_t create_button = DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = "CreateItem",
-            .variant = ECS_UI_BUTTON_PRIMARY,
+            .tone = DEMO_UI_ACTION_BUTTON_PRIMARY,
             .on_click = refs->add_item_action,
-            .style_token = DemoThemePrimaryActionStyleToken(world),
+            .disabled = true,
         });
     (void)EcsUiAddIcon(
         &builder,
@@ -214,13 +214,12 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .role = ECS_UI_TEXT_BUTTON,
         });
     EcsUiEnd(&builder);
-    EcsUiBeginButton(
+    DemoUiBeginActionButton(
         &builder,
-        (EcsUiButtonDesc){
+        (DemoUiActionButtonDesc){
             .id = "DismissPresentation",
-            .variant = ECS_UI_BUTTON_SUBTLE,
+            .tone = DEMO_UI_ACTION_BUTTON_SUBTLE,
             .on_click = refs->dismiss_presentation_action,
-            .style_token = DemoThemeSubtleActionStyleToken(world),
         });
     (void)EcsUiAddText(
         &builder,
@@ -242,6 +241,8 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             {
                 .mode = ECS_UI_HIT_TEST_CAPTURE,
             });
+        (void)DemoAddItemFormSetUiNodes(world, create_button);
+        (void)DemoAddItemFormProject(world);
         (void)EcsUiNavSetPresentationUiNode(world, presentation, sheet);
         return sheet;
     }
@@ -272,6 +273,7 @@ static void DemoNavProjectPresentationUiSystem(ecs_iter_t *it)
                 it->world,
                 sheet,
                 DemoAnimPresentationValue(it->world, it->entities[i]));
+            (void)DemoAddItemFormProject(it->world);
         }
     }
 }

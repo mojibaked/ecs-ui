@@ -154,6 +154,78 @@ static bool DemoThemeInstallStyles(ecs_world_t *world)
             .radius = 0.08f,
             .padding = 12.0f,
         }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        dark,
+        field_style,
+        (EcsUiTextStyle){
+            .color = {243u, 247u, 247u, 255u},
+            .muted_color = {142u, 161u, 164u, 255u},
+            .disabled_color = {142u, 161u, 164u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        light,
+        field_style,
+        (EcsUiTextStyle){
+            .color = {20u, 31u, 34u, 255u},
+            .muted_color = {80u, 99u, 102u, 255u},
+            .disabled_color = {105u, 119u, 121u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        dark,
+        primary_action_style,
+        (EcsUiTextStyle){
+            .color = {16u, 20u, 25u, 255u},
+            .muted_color = {16u, 20u, 25u, 255u},
+            .disabled_color = {142u, 161u, 164u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        light,
+        primary_action_style,
+        (EcsUiTextStyle){
+            .color = {245u, 252u, 250u, 255u},
+            .muted_color = {245u, 252u, 250u, 255u},
+            .disabled_color = {105u, 119u, 121u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        dark,
+        subtle_action_style,
+        (EcsUiTextStyle){
+            .color = {245u, 252u, 250u, 255u},
+            .muted_color = {210u, 224u, 224u, 255u},
+            .disabled_color = {142u, 161u, 164u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        light,
+        subtle_action_style,
+        (EcsUiTextStyle){
+            .color = {20u, 31u, 34u, 255u},
+            .muted_color = {80u, 99u, 102u, 255u},
+            .disabled_color = {105u, 119u, 121u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        dark,
+        danger_action_style,
+        (EcsUiTextStyle){
+            .color = {16u, 20u, 25u, 255u},
+            .muted_color = {16u, 20u, 25u, 255u},
+            .disabled_color = {142u, 161u, 164u, 255u},
+        }) && ok;
+    ok = EcsUiThemeSetTextStyle(
+        world,
+        light,
+        danger_action_style,
+        (EcsUiTextStyle){
+            .color = {245u, 252u, 250u, 255u},
+            .muted_color = {245u, 252u, 250u, 255u},
+            .disabled_color = {105u, 119u, 121u, 255u},
+        }) && ok;
     return ok;
 }
 

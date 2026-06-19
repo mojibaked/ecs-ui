@@ -7,6 +7,7 @@ ECS_COMPONENT_DECLARE(EcsUiNodeId);
 ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
+ECS_COMPONENT_DECLARE(EcsUiTextStyle);
 ECS_COMPONENT_DECLARE(EcsUiButton);
 ECS_COMPONENT_DECLARE(EcsUiPressable);
 ECS_COMPONENT_DECLARE(EcsUiText);
@@ -69,10 +70,28 @@ static const EcsUiBoxStyle *EcsUiResolveBoxStyle(
         NULL;
 }
 
+static const EcsUiTextStyle *EcsUiResolveTextStyle(
+    const ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    const EcsUiTextStyle *text_style =
+        entity != 0 ? ecs_get(world, entity, EcsUiTextStyle) : NULL;
+    if (text_style != NULL) {
+        return text_style;
+    }
+
+    ecs_entity_t style_token =
+        entity != 0 ? ecs_get_target(world, entity, EcsUiUsesStyle, 0) : 0;
+    return style_token != 0 ?
+        ecs_get(world, style_token, EcsUiTextStyle) :
+        NULL;
+}
+
 static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 {
     ecs_remove(world, entity, EcsUiStack);
     ecs_remove(world, entity, EcsUiBoxStyle);
+    ecs_remove(world, entity, EcsUiTextStyle);
     ecs_remove(world, entity, EcsUiButton);
     ecs_remove(world, entity, EcsUiPressable);
     ecs_remove(world, entity, EcsUiText);
@@ -209,6 +228,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiNode);
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
     ECS_COMPONENT_DEFINE(world, EcsUiBoxStyle);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextStyle);
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
     ECS_COMPONENT_DEFINE(world, EcsUiPressable);
     ECS_COMPONENT_DEFINE(world, EcsUiText);
@@ -370,6 +390,30 @@ bool EcsUiThemeSetBoxStyle(
     return true;
 }
 
+bool EcsUiThemeSetTextStyle(
+    ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token,
+    EcsUiTextStyle style)
+{
+    if (world == NULL || theme == 0 || style_token == 0 ||
+        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiTheme)) {
+        return false;
+    }
+
+    ecs_entity_t source =
+        EcsUiFindThemeStyleSource(world, theme, style_token);
+    if (source == 0) {
+        source = ecs_new_w_pair(world, EcsChildOf, theme);
+        if (source == 0) {
+            return false;
+        }
+        ecs_add_pair(world, source, EcsUiThemeStyle, style_token);
+    }
+    ecs_set_ptr(world, source, EcsUiTextStyle, &style);
+    return true;
+}
+
 bool EcsUiThemeApply(ecs_world_t *world)
 {
     if (world == NULL || !EcsUiThemeReady()) {
@@ -390,9 +434,19 @@ bool EcsUiThemeApply(ecs_world_t *world)
             const EcsUiBoxStyle *box_style =
                 ecs_get(world, source, EcsUiBoxStyle);
             if (style_token == 0 || box_style == NULL) {
+                const EcsUiTextStyle *text_style =
+                    ecs_get(world, source, EcsUiTextStyle);
+                if (style_token != 0 && text_style != NULL) {
+                    ecs_set_ptr(world, style_token, EcsUiTextStyle, text_style);
+                }
                 continue;
             }
             ecs_set_ptr(world, style_token, EcsUiBoxStyle, box_style);
+            const EcsUiTextStyle *text_style =
+                ecs_get(world, source, EcsUiTextStyle);
+            if (text_style != NULL) {
+                ecs_set_ptr(world, style_token, EcsUiTextStyle, text_style);
+            }
         }
     }
     return true;
@@ -645,6 +699,12 @@ static uint32_t EcsUiReadNode(
     if (box_style != NULL) {
         snapshot->box_style = *box_style;
         snapshot->has_box_style = true;
+    }
+
+    const EcsUiTextStyle *text_style = EcsUiResolveTextStyle(world, entity);
+    if (text_style != NULL) {
+        snapshot->text_style = *text_style;
+        snapshot->has_text_style = true;
     }
 
     const EcsUiButton *button = ecs_get(world, entity, EcsUiButton);
