@@ -116,6 +116,21 @@ typedef struct EcsUiColor {
     uint8_t a;
 } EcsUiColor;
 
+typedef struct EcsUiTheme {
+    EcsUiColor root_background;
+    EcsUiColor surface;
+    EcsUiColor surface_subtle;
+    EcsUiColor button;
+    EcsUiColor button_primary;
+    EcsUiColor button_subtle;
+    EcsUiColor button_danger;
+    EcsUiColor button_disabled;
+    EcsUiColor text;
+    EcsUiColor text_muted;
+    EcsUiColor text_inverse;
+    float radius;
+} EcsUiTheme;
+
 typedef struct EcsUiBoxStyle {
     EcsUiColor background;
     EcsUiColor hover_background;
@@ -328,11 +343,12 @@ extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);
 extern ECS_TAG_DECLARE(EcsUiOnClick);
 extern ECS_TAG_DECLARE(EcsUiUsesStyle);
-extern ECS_TAG_DECLARE(EcsUiTheme);
+extern ECS_TAG_DECLARE(EcsUiThemeTag);
 extern ECS_TAG_DECLARE(EcsUiActiveTheme);
 extern ECS_TAG_DECLARE(EcsUiThemeStyle);
 
 void EcsUiImport(ecs_world_t *world);
+EcsUiTheme EcsUiThemeDefault(void);
 
 ecs_entity_t EcsUiStyleTokenRoot(ecs_world_t *world);
 ecs_entity_t EcsUiStyleToken(ecs_world_t *world, const char *id);

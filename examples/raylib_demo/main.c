@@ -9,25 +9,38 @@
 
 #include <raylib.h>
 
-static EcsUiRaylibTheme DemoMainRaylibTheme(const ecs_world_t *ui_world)
+static EcsUiTheme DemoMainRaylibTheme(const ecs_world_t *ui_world)
 {
-    EcsUiRaylibTheme theme = EcsUiRaylibThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     if (!DemoThemeIsLight(ui_world)) {
         return theme;
     }
 
-    theme.root_background = (Color){239, 244, 242, 255};
-    theme.surface = (Color){251, 253, 252, 255};
-    theme.surface_subtle = (Color){232, 240, 238, 255};
-    theme.button = (Color){218, 232, 229, 255};
-    theme.button_primary = (Color){25, 171, 151, 255};
-    theme.button_subtle = (Color){207, 221, 219, 255};
-    theme.button_danger = (Color){218, 82, 62, 255};
-    theme.button_disabled = (Color){204, 211, 211, 255};
-    theme.text = (Color){20, 31, 34, 255};
-    theme.text_muted = (Color){80, 99, 102, 255};
-    theme.text_inverse = (Color){245, 252, 250, 255};
+    theme.root_background = (EcsUiColor){239u, 244u, 242u, 255u};
+    theme.surface = (EcsUiColor){251u, 253u, 252u, 255u};
+    theme.surface_subtle = (EcsUiColor){232u, 240u, 238u, 255u};
+    theme.button = (EcsUiColor){218u, 232u, 229u, 255u};
+    theme.button_primary = (EcsUiColor){25u, 171u, 151u, 255u};
+    theme.button_subtle = (EcsUiColor){207u, 221u, 219u, 255u};
+    theme.button_danger = (EcsUiColor){218u, 82u, 62u, 255u};
+    theme.button_disabled = (EcsUiColor){204u, 211u, 211u, 255u};
+    theme.text = (EcsUiColor){20u, 31u, 34u, 255u};
+    theme.text_muted = (EcsUiColor){80u, 99u, 102u, 255u};
+    theme.text_inverse = (EcsUiColor){245u, 252u, 250u, 255u};
     return theme;
+}
+
+static Color DemoMainClearColor(const EcsUiTheme *theme)
+{
+    if (theme == NULL) {
+        return BLACK;
+    }
+    return (Color){
+        .r = theme->root_background.r,
+        .g = theme->root_background.g,
+        .b = theme->root_background.b,
+        .a = theme->root_background.a,
+    };
 }
 
 int main(void)
@@ -90,9 +103,9 @@ int main(void)
             (void)EcsUiReadTree(ui_world, root, &tree);
         }
 
-        EcsUiRaylibTheme theme = DemoMainRaylibTheme(ui_world);
+        EcsUiTheme theme = DemoMainRaylibTheme(ui_world);
         BeginDrawing();
-        ClearBackground(theme.root_background);
+        ClearBackground(DemoMainClearColor(&theme));
         EcsUiRaylibDrawTreeEx(&tree, bounds, &theme, &draw_options);
         EndDrawing();
     }

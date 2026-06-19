@@ -286,28 +286,28 @@ static float EcsUiRaylibPreferredHeight(
 }
 
 static Color EcsUiRaylibButtonColor(
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     EcsUiButton button)
 {
     if (button.disabled) {
-        return theme->button_disabled;
+        return EcsUiRaylibColor(theme->button_disabled);
     }
 
     switch (button.variant) {
     case ECS_UI_BUTTON_PRIMARY:
-        return theme->button_primary;
+        return EcsUiRaylibColor(theme->button_primary);
     case ECS_UI_BUTTON_SUBTLE:
-        return theme->button_subtle;
+        return EcsUiRaylibColor(theme->button_subtle);
     case ECS_UI_BUTTON_DANGER:
-        return theme->button_danger;
+        return EcsUiRaylibColor(theme->button_danger);
     case ECS_UI_BUTTON_DEFAULT:
     default:
-        return theme->button;
+        return EcsUiRaylibColor(theme->button);
     }
 }
 
 static Color EcsUiRaylibTextColor(
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     EcsUiTextRole role,
     bool inverse,
     EcsUiTextStyle text_style,
@@ -326,17 +326,17 @@ static Color EcsUiRaylibTextColor(
         }
     }
     if (inverse) {
-        return theme->text_inverse;
+        return EcsUiRaylibColor(theme->text_inverse);
     }
     if (role == ECS_UI_TEXT_CAPTION) {
-        return theme->text_muted;
+        return EcsUiRaylibColor(theme->text_muted);
     }
-    return theme->text;
+    return EcsUiRaylibColor(theme->text);
 }
 
 static float EcsUiRaylibBoxRadius(
     const EcsUiTreeNodeSnapshot *node,
-    const EcsUiRaylibTheme *theme)
+    const EcsUiTheme *theme)
 {
     if (node != NULL && node->has_box_style && node->box_style.radius > 0.0f) {
         return node->box_style.radius;
@@ -366,11 +366,11 @@ static Color EcsUiRaylibStackColor(
 }
 
 static Color EcsUiRaylibPressableColor(
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node,
     bool hovered)
 {
-    Color fill = theme->button_subtle;
+    Color fill = EcsUiRaylibColor(theme->button_subtle);
     if (node != NULL && node->has_box_style) {
         fill = EcsUiRaylibColor(node->box_style.background);
         if (node->pressable.disabled) {
@@ -553,7 +553,7 @@ static Rectangle EcsUiRaylibPlacedChildBounds(
 
 static void EcsUiRaylibDrawTextFieldView(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *field_node,
     Rectangle bounds,
     bool inverse_text,
@@ -652,7 +652,9 @@ static void EcsUiRaylibDrawTextFieldView(
                 .width = selected_size.x,
                 .height = all_size.y,
             },
-            EcsUiRaylibApplyOpacity(ColorAlpha(theme->button_primary, 0.35f), opacity));
+            EcsUiRaylibApplyOpacity(
+                ColorAlpha(EcsUiRaylibColor(theme->button_primary), 0.35f),
+                opacity));
     }
 
     DrawTextEx(GetFontDefault(), text, position, font_size, 1.0f, text_color);
@@ -674,7 +676,7 @@ static void EcsUiRaylibDrawTextFieldView(
 
 static void EcsUiRaylibDrawNode(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
     Rectangle bounds,
@@ -686,7 +688,7 @@ static void EcsUiRaylibDrawNode(
 
 static void EcsUiRaylibDrawChildrenVertical(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
     Rectangle bounds,
@@ -731,7 +733,7 @@ static void EcsUiRaylibDrawChildrenVertical(
 
 static void EcsUiRaylibDrawChildrenHorizontal(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
     Rectangle bounds,
@@ -796,7 +798,7 @@ static void EcsUiRaylibDrawChildrenHorizontal(
 
 static void EcsUiRaylibDrawNode(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
     Rectangle bounds,
@@ -825,7 +827,9 @@ static void EcsUiRaylibDrawNode(
     case ECS_UI_NODE_ROOT:
         DrawRectangleRec(
             node_bounds,
-            EcsUiRaylibApplyOpacity(theme->root_background, node_opacity));
+            EcsUiRaylibApplyOpacity(
+                EcsUiRaylibColor(theme->root_background),
+                node_opacity));
         EcsUiRaylibDrawChildrenVertical(
             tree,
             theme,
@@ -844,7 +848,9 @@ static void EcsUiRaylibDrawNode(
             theme->radius,
             8,
             EcsUiRaylibApplyOpacity(
-                EcsUiRaylibStackColor(node, theme->surface),
+                EcsUiRaylibStackColor(
+                    node,
+                    EcsUiRaylibColor(theme->surface)),
                 node_opacity));
         EcsUiRaylibDrawChildrenVertical(
             tree,
@@ -864,7 +870,9 @@ static void EcsUiRaylibDrawNode(
             theme->radius,
             8,
             EcsUiRaylibApplyOpacity(
-                EcsUiRaylibStackColor(node, theme->surface_subtle),
+                EcsUiRaylibStackColor(
+                    node,
+                    EcsUiRaylibColor(theme->surface_subtle)),
                 node_opacity));
         EcsUiRaylibDrawChildrenHorizontal(
             tree,
@@ -884,7 +892,9 @@ static void EcsUiRaylibDrawNode(
             theme->radius,
             8,
             EcsUiRaylibApplyOpacity(
-                EcsUiRaylibStackColor(node, theme->surface),
+                EcsUiRaylibStackColor(
+                    node,
+                    EcsUiRaylibColor(theme->surface)),
                 node_opacity));
         Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
         uint32_t child = node->first_child;
@@ -1021,18 +1031,24 @@ static void EcsUiRaylibDrawNode(
                 node_bounds,
                 theme->radius,
                 8,
-                EcsUiRaylibApplyOpacity(theme->surface_subtle, node_opacity));
+                EcsUiRaylibApplyOpacity(
+                    EcsUiRaylibColor(theme->surface_subtle),
+                    node_opacity));
             DrawRectangleRoundedLines(
                 node_bounds,
                 theme->radius,
                 8,
-                EcsUiRaylibApplyOpacity(theme->text_muted, node_opacity));
+                EcsUiRaylibApplyOpacity(
+                    EcsUiRaylibColor(theme->text_muted),
+                    node_opacity));
             EcsUiRaylibDrawTextLine(
                 node->custom.kind,
                 EcsUiRaylibInset(node_bounds, 12.0f),
                 EcsUiRaylibTextSize(ECS_UI_TEXT_CAPTION),
                 EcsUiRaylibDefaultTextLayout(),
-                EcsUiRaylibApplyOpacity(theme->text_muted, node_opacity));
+                EcsUiRaylibApplyOpacity(
+                    EcsUiRaylibColor(theme->text_muted),
+                    node_opacity));
         }
         break;
     case ECS_UI_NODE_NONE:
@@ -1564,28 +1580,10 @@ static void EcsUiRaylibCollectPointerEvents(
     }
 }
 
-EcsUiRaylibTheme EcsUiRaylibThemeDefault(void)
-{
-    return (EcsUiRaylibTheme){
-        .root_background = {16, 20, 25, 255},
-        .surface = {24, 32, 37, 255},
-        .surface_subtle = {18, 27, 31, 255},
-        .button = {38, 72, 76, 255},
-        .button_primary = {49, 211, 186, 255},
-        .button_subtle = {88, 111, 116, 255},
-        .button_danger = {255, 125, 95, 255},
-        .button_disabled = {70, 78, 82, 255},
-        .text = {243, 247, 247, 255},
-        .text_muted = {142, 161, 164, 255},
-        .text_inverse = {16, 20, 25, 255},
-        .radius = 0.12f,
-    };
-}
-
 void EcsUiRaylibDrawTree(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
-    const EcsUiRaylibTheme *theme)
+    const EcsUiTheme *theme)
 {
     EcsUiRaylibDrawTreeEx(tree, bounds, theme, NULL);
 }
@@ -1593,7 +1591,7 @@ void EcsUiRaylibDrawTree(
 void EcsUiRaylibDrawTreeEx(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options)
 {
     if (tree == NULL || tree->count == 0u || theme == NULL) {

@@ -9,21 +9,6 @@
 extern "C" {
 #endif
 
-typedef struct EcsUiRaylibTheme {
-    Color root_background;
-    Color surface;
-    Color surface_subtle;
-    Color button;
-    Color button_primary;
-    Color button_subtle;
-    Color button_danger;
-    Color button_disabled;
-    Color text;
-    Color text_muted;
-    Color text_inverse;
-    float radius;
-} EcsUiRaylibTheme;
-
 typedef void (*EcsUiRaylibCustomDrawFn)(
     const EcsUiTreeNodeSnapshot *node,
     Rectangle bounds,
@@ -35,15 +20,14 @@ typedef struct EcsUiRaylibDrawOptions {
     void *user_data;
 } EcsUiRaylibDrawOptions;
 
-EcsUiRaylibTheme EcsUiRaylibThemeDefault(void);
 void EcsUiRaylibDrawTree(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
-    const EcsUiRaylibTheme *theme);
+    const EcsUiTheme *theme);
 void EcsUiRaylibDrawTreeEx(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
-    const EcsUiRaylibTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options);
 void EcsUiRaylibCollectEvents(
     const EcsUiTreeSnapshot *tree,

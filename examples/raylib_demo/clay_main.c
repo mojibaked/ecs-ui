@@ -24,28 +24,28 @@ static void DemoClayHandleErrors(Clay_ErrorData error_data)
     TraceLog(LOG_WARNING, "CLAY: %s", message);
 }
 
-static EcsUiClayTheme DemoClayTheme(const ecs_world_t *ui_world)
+static EcsUiTheme DemoClayTheme(const ecs_world_t *ui_world)
 {
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     if (!DemoThemeIsLight(ui_world)) {
         return theme;
     }
 
-    theme.root_background = (Clay_Color){239.0f, 244.0f, 242.0f, 255.0f};
-    theme.surface = (Clay_Color){251.0f, 253.0f, 252.0f, 255.0f};
-    theme.surface_subtle = (Clay_Color){232.0f, 240.0f, 238.0f, 255.0f};
-    theme.button = (Clay_Color){218.0f, 232.0f, 229.0f, 255.0f};
-    theme.button_primary = (Clay_Color){25.0f, 171.0f, 151.0f, 255.0f};
-    theme.button_subtle = (Clay_Color){207.0f, 221.0f, 219.0f, 255.0f};
-    theme.button_danger = (Clay_Color){218.0f, 82.0f, 62.0f, 255.0f};
-    theme.button_disabled = (Clay_Color){204.0f, 211.0f, 211.0f, 255.0f};
-    theme.text = (Clay_Color){20.0f, 31.0f, 34.0f, 255.0f};
-    theme.text_muted = (Clay_Color){80.0f, 99.0f, 102.0f, 255.0f};
-    theme.text_inverse = (Clay_Color){245.0f, 252.0f, 250.0f, 255.0f};
+    theme.root_background = (EcsUiColor){239u, 244u, 242u, 255u};
+    theme.surface = (EcsUiColor){251u, 253u, 252u, 255u};
+    theme.surface_subtle = (EcsUiColor){232u, 240u, 238u, 255u};
+    theme.button = (EcsUiColor){218u, 232u, 229u, 255u};
+    theme.button_primary = (EcsUiColor){25u, 171u, 151u, 255u};
+    theme.button_subtle = (EcsUiColor){207u, 221u, 219u, 255u};
+    theme.button_danger = (EcsUiColor){218u, 82u, 62u, 255u};
+    theme.button_disabled = (EcsUiColor){204u, 211u, 211u, 255u};
+    theme.text = (EcsUiColor){20u, 31u, 34u, 255u};
+    theme.text_muted = (EcsUiColor){80u, 99u, 102u, 255u};
+    theme.text_inverse = (EcsUiColor){245u, 252u, 250u, 255u};
     return theme;
 }
 
-static Color DemoClayClearColor(const EcsUiClayTheme *theme)
+static Color DemoClayClearColor(const EcsUiTheme *theme)
 {
     if (theme == NULL) {
         return BLACK;
@@ -187,7 +187,7 @@ static EcsUiClayLayoutOptions DemoClayLayoutOptions(void)
 
 static Clay_RenderCommandArray DemoClayEmitRenderCommands(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiClayLayoutOptions *layout_options,
     EcsUiClayInteractionFrame *frame)
 {
@@ -242,7 +242,7 @@ int main(void)
     ecs_entity_t root = DemoUiBuild(ui_world);
 
     while (!WindowShouldClose()) {
-        EcsUiClayTheme theme = DemoClayTheme(ui_world);
+        EcsUiTheme theme = DemoClayTheme(ui_world);
         EcsUiClayLayoutOptions layout_options = DemoClayLayoutOptions();
         Clay_SetLayoutDimensions((Clay_Dimensions){
             .width = (float)GetScreenWidth(),

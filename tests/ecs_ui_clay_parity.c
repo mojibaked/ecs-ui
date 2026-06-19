@@ -304,7 +304,7 @@ static void CollectTreeFrameEvents(
         });
     }
     Clay_BeginLayout();
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     EcsUiClayEmitTreeEx(tree, &theme, options, &frame);
     (void)Clay_EndLayout();
     Clay_SetPointerState(
@@ -458,7 +458,7 @@ static int TestDuplicateAuthoredIdsDoNotCollide(void)
         "test tree should contain duplicate authored label ids");
 
     ResetClayErrors();
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
     Clay_SetLayoutDimensions((Clay_Dimensions){
         .width = options.bounds.width,
@@ -590,7 +590,7 @@ static int TestTextStyleInheritanceEmitsClayForegroundColor(void)
         "text style tree read failed");
 
     ResetClayErrors();
-    EcsUiClayTheme clay_theme = EcsUiClayThemeDefault();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = LayoutOptions(360.0f, 220.0f);
     Clay_SetLayoutDimensions((Clay_Dimensions){
         .width = options.bounds.width,
@@ -1122,7 +1122,7 @@ static int TestZStackBoxStyleEmitsBackgroundColor(void)
         "zstack color tree read failed");
 
     ResetClayErrors();
-    EcsUiClayTheme clay_theme = EcsUiClayThemeDefault();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = LayoutOptions(100.0f, 60.0f);
     Clay_SetLayoutDimensions((Clay_Dimensions){
         .width = options.bounds.width,
@@ -1303,7 +1303,7 @@ static int TestZStackPlacedTextRendersInRetainedBounds(void)
         "placed text tree read failed");
 
     ResetClayErrors();
-    EcsUiClayTheme clay_theme = EcsUiClayThemeDefault();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = {
         .bounds = {20.0f, 30.0f, 200.0f, 100.0f},
         .z_index = 23,
@@ -1402,7 +1402,7 @@ static int TestOverlappingRetainedTreesRouteTopmost(void)
     EcsUiClayInteractionStateInit(&state);
     EcsUiClayInteractionFrame frame = {0};
     EcsUiEventList events = {0};
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     EcsUiClayPointerState press = {
         .x = 20.0f,
         .y = 20.0f,
@@ -1485,7 +1485,7 @@ static int TestLayoutOptionsCapturePointerBlocksEarlierTree(void)
         EcsUiReadTree(world, blocker_root, &blocker_tree),
         "capture option blocker tree read failed");
 
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 240.0f);
     EcsUiClayLayoutOptions blocker_options = LayoutOptions(320.0f, 240.0f);
     blocker_options.z_index = 10;
@@ -1570,7 +1570,7 @@ static int TestFloatingCaptureBlocksRetainedTree(void)
     EcsUiClayInteractionStateInit(&state);
     EcsUiClayInteractionFrame frame = {0};
     EcsUiEventList events = {0};
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 240.0f);
     EcsUiClayPointerState pointer = {
         .x = 20.0f,
@@ -1650,7 +1650,7 @@ static int TestFloatingPassthroughAllowsRetainedTree(void)
     EcsUiClayInteractionStateInit(&state);
     EcsUiClayInteractionFrame frame = {0};
     EcsUiEventList events = {0};
-    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiTheme theme = EcsUiThemeDefault();
     EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 240.0f);
     EcsUiClayPointerState pointer = {
         .x = 20.0f,

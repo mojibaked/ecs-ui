@@ -11,20 +11,6 @@ extern "C" {
 
 #define ECS_UI_CLAY_INTERACTION_TARGET_MAX 4096u
 
-typedef struct EcsUiClayTheme {
-    Clay_Color root_background;
-    Clay_Color surface;
-    Clay_Color surface_subtle;
-    Clay_Color button;
-    Clay_Color button_primary;
-    Clay_Color button_subtle;
-    Clay_Color button_danger;
-    Clay_Color button_disabled;
-    Clay_Color text;
-    Clay_Color text_muted;
-    Clay_Color text_inverse;
-} EcsUiClayTheme;
-
 typedef struct EcsUiClayLayoutOptions {
     Clay_BoundingBox bounds;
     Clay_FloatingAttachPoints attach_points;
@@ -82,18 +68,17 @@ typedef struct EcsUiClayInteractionFrame {
     bool truncated;
 } EcsUiClayInteractionFrame;
 
-EcsUiClayTheme EcsUiClayThemeDefault(void);
 void EcsUiClayInteractionStateInit(EcsUiClayInteractionState *state);
 void EcsUiClayInteractionFrameBegin(
     EcsUiClayInteractionFrame *frame,
     EcsUiClayInteractionState *state);
 void EcsUiClayEmitTree(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     EcsUiClayInteractionFrame *frame);
 void EcsUiClayEmitTreeEx(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiClayLayoutOptions *options,
     EcsUiClayInteractionFrame *frame);
 void EcsUiClayCollectFrameEvents(

@@ -189,7 +189,7 @@ static Clay_TextAlignment EcsUiClayTextAlign(EcsUiAlign align)
 }
 
 static Clay_Color EcsUiClayTextColor(
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     EcsUiTextRole role,
     bool inverse,
     EcsUiTextStyle text_style,
@@ -208,16 +208,16 @@ static Clay_Color EcsUiClayTextColor(
         }
     }
     if (inverse) {
-        return theme->text_inverse;
+        return EcsUiClayColor(theme->text_inverse);
     }
     if (role == ECS_UI_TEXT_CAPTION) {
-        return theme->text_muted;
+        return EcsUiClayColor(theme->text_muted);
     }
-    return theme->text;
+    return EcsUiClayColor(theme->text);
 }
 
 static Clay_TextElementConfig *EcsUiClayTextConfig(
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     EcsUiTextRole role,
     bool inverse,
     EcsUiTextStyle text_style,
@@ -243,27 +243,27 @@ static Clay_TextElementConfig *EcsUiClayTextConfig(
 }
 
 static Clay_Color EcsUiClayButtonColor(
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
 {
     if (node != NULL && node->button.disabled) {
-        return theme->button_disabled;
+        return EcsUiClayColor(theme->button_disabled);
     }
 
-    Clay_Color fill = theme->button;
+    Clay_Color fill = EcsUiClayColor(theme->button);
     switch (node != NULL ? node->button.variant : ECS_UI_BUTTON_DEFAULT) {
     case ECS_UI_BUTTON_PRIMARY:
-        fill = theme->button_primary;
+        fill = EcsUiClayColor(theme->button_primary);
         break;
     case ECS_UI_BUTTON_SUBTLE:
-        fill = theme->button_subtle;
+        fill = EcsUiClayColor(theme->button_subtle);
         break;
     case ECS_UI_BUTTON_DANGER:
-        fill = theme->button_danger;
+        fill = EcsUiClayColor(theme->button_danger);
         break;
     case ECS_UI_BUTTON_DEFAULT:
     default:
-        fill = theme->button;
+        fill = EcsUiClayColor(theme->button);
         break;
     }
 
@@ -425,10 +425,10 @@ static Clay_ElementDeclaration EcsUiClayContainerDeclaration(
 }
 
 static Clay_Color EcsUiClayPressableColor(
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
 {
-    Clay_Color fill = theme->button_subtle;
+    Clay_Color fill = EcsUiClayColor(theme->button_subtle);
     if (node == NULL || !node->has_box_style) {
         return EcsUiClayLerpColor(
             fill,
@@ -587,7 +587,7 @@ static Clay_LayoutConfig EcsUiClayFlowLayout(
 
 static void EcsUiClayEmitNode(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -597,7 +597,7 @@ static void EcsUiClayEmitNode(
     EcsUiClayInteractionFrame *frame);
 static void EcsUiClayEmitNodeContent(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -608,7 +608,7 @@ static void EcsUiClayEmitNodeContent(
 
 static void EcsUiClayEmitChildren(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -678,7 +678,7 @@ static Clay_String EcsUiClayStringRange(
 
 static void EcsUiClayEmitInlineTextRange(
     const EcsUiTreeNodeSnapshot *node,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t start,
     uint32_t end,
     bool inverse_text,
@@ -706,7 +706,7 @@ static void EcsUiClayEmitInlineTextRange(
 
 static void EcsUiClayEmitTextContent(
     const EcsUiTreeNodeSnapshot *node,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     bool inverse_text,
     EcsUiTextStyle text_style,
     bool has_text_style,
@@ -741,7 +741,7 @@ static void EcsUiClayEmitTextContent(
 static void EcsUiClayEmitTextFieldCaret(
     const EcsUiTreeNodeSnapshot *value_node,
     const EcsUiTextFieldView *view,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     bool inverse_text,
     EcsUiTextStyle text_style,
     bool has_text_style,
@@ -780,7 +780,7 @@ static void EcsUiClayEmitTextFieldCaret(
 
 static void EcsUiClayEmitSelectedTextRange(
     const EcsUiTreeNodeSnapshot *node,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t start,
     uint32_t end,
     bool inverse_text,
@@ -795,7 +795,7 @@ static void EcsUiClayEmitSelectedTextRange(
 
     char clay_id[ECS_UI_ID_MAX * 2u] = {0};
     EcsUiClayElementId(node, "_Selection", clay_id, sizeof(clay_id));
-    Clay_Color selection = theme->button_primary;
+    Clay_Color selection = EcsUiClayColor(theme->button_primary);
     selection.a *= 0.35f;
     CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
         .layout = {
@@ -820,7 +820,7 @@ static void EcsUiClayEmitSelectedTextRange(
 
 static void EcsUiClayEmitTextFieldValue(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *field_node,
     uint32_t value_index,
     bool inverse_text,
@@ -961,7 +961,7 @@ static void EcsUiClayEmitTextFieldValue(
 
 static void EcsUiClayEmitTextFieldChildren(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1149,7 +1149,7 @@ static void EcsUiClayRegisterWrapperBlocker(
 
 static void EcsUiClayEmitStack(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     Clay_Color background,
     float radius,
@@ -1204,7 +1204,7 @@ static void EcsUiClayEmitStack(
 
 static void EcsUiClayEmitZStack(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1229,8 +1229,8 @@ static void EcsUiClayEmitZStack(
         EcsUiClayContainerDeclaration(
             layout,
             node,
-            theme->surface,
-            8.0f,
+            EcsUiClayColor(theme->surface),
+            theme->radius,
             opacity)) {
         uint32_t child = node->first_child;
         int16_t z_index = 1;
@@ -1358,7 +1358,7 @@ static void EcsUiClayEmitZStack(
 
 static void EcsUiClayEmitOffsetNode(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1412,7 +1412,7 @@ static void EcsUiClayEmitOffsetNode(
 
 static void EcsUiClayEmitNode(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1454,7 +1454,7 @@ static void EcsUiClayEmitNode(
 
 static void EcsUiClayEmitNodeContent(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     uint32_t index,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1477,7 +1477,7 @@ static void EcsUiClayEmitNodeContent(
             tree,
             theme,
             index,
-            theme->root_background,
+            EcsUiClayColor(theme->root_background),
             0.0f,
             inverse_text,
             node_text_style,
@@ -1491,8 +1491,8 @@ static void EcsUiClayEmitNodeContent(
             tree,
             theme,
             index,
-            theme->surface,
-            8.0f,
+            EcsUiClayColor(theme->surface),
+            theme->radius,
             inverse_text,
             node_text_style,
             node_has_text_style,
@@ -1505,8 +1505,8 @@ static void EcsUiClayEmitNodeContent(
             tree,
             theme,
             index,
-            theme->surface_subtle,
-            8.0f,
+            EcsUiClayColor(theme->surface_subtle),
+            theme->radius,
             inverse_text,
             node_text_style,
             node_has_text_style,
@@ -1554,7 +1554,7 @@ static void EcsUiClayEmitNodeContent(
             .backgroundColor = EcsUiClayApplyOpacity(
                 EcsUiClayButtonColor(theme, node),
                 opacity),
-            .cornerRadius = EcsUiClayCornerRadius(node, 8.0f),
+            .cornerRadius = EcsUiClayCornerRadius(node, theme->radius),
         }) {
             EcsUiClayEmitChildren(
                 tree,
@@ -1597,7 +1597,7 @@ static void EcsUiClayEmitNodeContent(
             .backgroundColor = EcsUiClayApplyOpacity(
                 EcsUiClayPressableColor(theme, node),
                 opacity),
-            .cornerRadius = EcsUiClayCornerRadius(node, 8.0f),
+            .cornerRadius = EcsUiClayCornerRadius(node, theme->radius),
         }) {
             if (node->has_text_field_view) {
                 EcsUiClayEmitTextFieldChildren(
@@ -1698,9 +1698,9 @@ static void EcsUiClayEmitNodeContent(
                 },
             },
             .backgroundColor = EcsUiClayApplyOpacity(
-                theme->surface_subtle,
+                EcsUiClayColor(theme->surface_subtle),
                 opacity),
-            .cornerRadius = EcsUiClayCornerRadius(node, 8.0f),
+            .cornerRadius = EcsUiClayCornerRadius(node, theme->radius),
             .custom = {
                 .customData = (void *)node,
             },
@@ -1713,26 +1713,9 @@ static void EcsUiClayEmitNodeContent(
     }
 }
 
-EcsUiClayTheme EcsUiClayThemeDefault(void)
-{
-    return (EcsUiClayTheme){
-        .root_background = {16.0f, 20.0f, 25.0f, 255.0f},
-        .surface = {24.0f, 32.0f, 37.0f, 255.0f},
-        .surface_subtle = {18.0f, 27.0f, 31.0f, 255.0f},
-        .button = {38.0f, 72.0f, 76.0f, 255.0f},
-        .button_primary = {49.0f, 211.0f, 186.0f, 255.0f},
-        .button_subtle = {88.0f, 111.0f, 116.0f, 255.0f},
-        .button_danger = {255.0f, 125.0f, 95.0f, 255.0f},
-        .button_disabled = {70.0f, 78.0f, 82.0f, 255.0f},
-        .text = {243.0f, 247.0f, 247.0f, 255.0f},
-        .text_muted = {142.0f, 161.0f, 164.0f, 255.0f},
-        .text_inverse = {16.0f, 20.0f, 25.0f, 255.0f},
-    };
-}
-
 void EcsUiClayEmitTree(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     EcsUiClayInteractionFrame *frame)
 {
     EcsUiClayEmitTreeEx(tree, theme, NULL, frame);
@@ -1740,7 +1723,7 @@ void EcsUiClayEmitTree(
 
 void EcsUiClayEmitTreeEx(
     const EcsUiTreeSnapshot *tree,
-    const EcsUiClayTheme *theme,
+    const EcsUiTheme *theme,
     const EcsUiClayLayoutOptions *options,
     EcsUiClayInteractionFrame *frame)
 {

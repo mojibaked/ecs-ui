@@ -850,7 +850,7 @@ int main(void)
     result |= Require(
         ecs_has_id(world, EcsUiUsesStyle, EcsExclusive),
         "EcsUiUsesStyle should be exclusive");
-    result |= Require(EcsUiTheme != 0, "EcsUiTheme should be registered");
+    result |= Require(EcsUiThemeTag != 0, "EcsUiThemeTag should be registered");
     result |= Require(
         ecs_has_id(world, EcsUiActiveTheme, EcsExclusive),
         "EcsUiActiveTheme should be exclusive");

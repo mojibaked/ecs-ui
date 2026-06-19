@@ -23,7 +23,7 @@ ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
 ECS_TAG_DECLARE(EcsUiOnClick);
 ECS_TAG_DECLARE(EcsUiUsesStyle);
-ECS_TAG_DECLARE(EcsUiTheme);
+ECS_TAG_DECLARE(EcsUiThemeTag);
 ECS_TAG_DECLARE(EcsUiActiveTheme);
 ECS_TAG_DECLARE(EcsUiThemeStyle);
 
@@ -110,8 +110,26 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 
 static bool EcsUiThemeReady(void)
 {
-    return EcsUiTheme != 0 && EcsUiActiveTheme != 0 &&
+    return EcsUiThemeTag != 0 && EcsUiActiveTheme != 0 &&
         EcsUiThemeStyle != 0;
+}
+
+EcsUiTheme EcsUiThemeDefault(void)
+{
+    return (EcsUiTheme){
+        .root_background = {16u, 20u, 25u, 255u},
+        .surface = {24u, 32u, 37u, 255u},
+        .surface_subtle = {18u, 27u, 31u, 255u},
+        .button = {38u, 72u, 76u, 255u},
+        .button_primary = {49u, 211u, 186u, 255u},
+        .button_subtle = {88u, 111u, 116u, 255u},
+        .button_danger = {255u, 125u, 95u, 255u},
+        .button_disabled = {70u, 78u, 82u, 255u},
+        .text = {243u, 247u, 247u, 255u},
+        .text_muted = {142u, 161u, 164u, 255u},
+        .text_inverse = {16u, 20u, 25u, 255u},
+        .radius = 0.16f,
+    };
 }
 
 static ecs_entity_t EcsUiThemeRootEntity(const ecs_world_t *world)
@@ -254,7 +272,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiInteractive);
     ECS_TAG_DEFINE(world, EcsUiOnClick);
     ECS_TAG_DEFINE(world, EcsUiUsesStyle);
-    ECS_TAG_DEFINE(world, EcsUiTheme);
+    ECS_TAG_DEFINE(world, EcsUiThemeTag);
     ECS_TAG_DEFINE(world, EcsUiActiveTheme);
     ECS_TAG_DEFINE(world, EcsUiThemeStyle);
     ecs_add_id(world, EcsUiOnClick, EcsExclusive);
@@ -344,7 +362,7 @@ ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id)
         .sep = "",
     });
     if (theme != 0) {
-        ecs_add_id(world, theme, EcsUiTheme);
+        ecs_add_id(world, theme, EcsUiThemeTag);
         ecs_add_id(world, theme, EcsOrderedChildren);
     }
     return theme;
@@ -353,7 +371,7 @@ ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id)
 bool EcsUiSetActiveTheme(ecs_world_t *world, ecs_entity_t theme)
 {
     if (world == NULL || theme == 0 || !EcsUiThemeReady() ||
-        !ecs_has_id(world, theme, EcsUiTheme)) {
+        !ecs_has_id(world, theme, EcsUiThemeTag)) {
         return false;
     }
 
@@ -386,7 +404,7 @@ bool EcsUiThemeSetBoxStyle(
     EcsUiBoxStyle style)
 {
     if (world == NULL || theme == 0 || style_token == 0 ||
-        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiTheme)) {
+        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiThemeTag)) {
         return false;
     }
 
@@ -410,7 +428,7 @@ bool EcsUiThemeSetTextStyle(
     EcsUiTextStyle style)
 {
     if (world == NULL || theme == 0 || style_token == 0 ||
-        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiTheme)) {
+        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiThemeTag)) {
         return false;
     }
 
