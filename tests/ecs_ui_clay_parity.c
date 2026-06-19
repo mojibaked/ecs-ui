@@ -1153,6 +1153,96 @@ static int TestOverlappingRetainedTreesRouteTopmost(void)
     return result;
 }
 
+static int TestLayoutOptionsCapturePointerBlocksEarlierTree(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t action = CreateAction(world, "CaptureOptionAction");
+    ecs_entity_t target_root = EcsUiRootEntity(world, "CaptureOptionTargetRoot");
+    EcsUiBuilder target_builder = EcsUiBuilderBegin(world, target_root);
+    ecs_entity_t target = EcsUiAddCustom(
+        &target_builder,
+        (EcsUiCustomDesc){
+            .id = "CaptureOptionTarget",
+            .kind = "target",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+            .on_click = action,
+        });
+    EcsUiBuilderEnd(&target_builder);
+    result |= Require(
+        EcsUiBuilderOk(&target_builder),
+        "capture option target builder failed");
+
+    ecs_entity_t blocker_root = EcsUiRootEntity(world, "CaptureOptionBlockerRoot");
+    EcsUiTreeSnapshot target_tree = {0};
+    EcsUiTreeSnapshot blocker_tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, target_root, &target_tree),
+        "capture option target tree read failed");
+    result |= Require(
+        EcsUiReadTree(world, blocker_root, &blocker_tree),
+        "capture option blocker tree read failed");
+
+    EcsUiClayTheme theme = EcsUiClayThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 240.0f);
+    EcsUiClayLayoutOptions blocker_options = LayoutOptions(320.0f, 240.0f);
+    blocker_options.z_index = 10;
+    EcsUiClayPointerState press = {
+        .x = 20.0f,
+        .y = 20.0f,
+        .time = 50.0,
+        .down = true,
+        .pressed = true,
+    };
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrameBegin(&frame, &state);
+    Clay_SetLayoutDimensions((Clay_Dimensions){.width = 320.0f, .height = 240.0f});
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&target_tree, &theme, &options, &frame);
+    EcsUiClayEmitTreeEx(&blocker_tree, &theme, &blocker_options, &frame);
+    (void)Clay_EndLayout();
+    Clay_SetPointerState((Clay_Vector2){press.x, press.y}, press.down);
+    EcsUiClayCollectFrameEvents(&frame, press, &events);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "default bounded emit should pass through pointer capture");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        target,
+        "CaptureOptionTarget");
+
+    state = (EcsUiClayInteractionState){0};
+    EcsUiClayInteractionStateInit(&state);
+    press.time = 51.0;
+    blocker_options.capture_pointer = true;
+    EcsUiClayInteractionFrameBegin(&frame, &state);
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&target_tree, &theme, &options, &frame);
+    EcsUiClayEmitTreeEx(&blocker_tree, &theme, &blocker_options, &frame);
+    (void)Clay_EndLayout();
+    Clay_SetPointerState((Clay_Vector2){press.x, press.y}, press.down);
+    EcsUiClayCollectFrameEvents(&frame, press, &events);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "capturing bounded emit should block earlier retained tree");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestFloatingCaptureBlocksRetainedTree(void)
 {
     int result = 0;
@@ -1329,6 +1419,7 @@ int main(void)
     result |= TestActionStackEmitsPointerEvents();
     result |= TestPointerCaptureLifecycle();
     result |= TestOverlappingRetainedTreesRouteTopmost();
+    result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
     result |= TestFloatingCaptureBlocksRetainedTree();
     result |= TestFloatingPassthroughAllowsRetainedTree();

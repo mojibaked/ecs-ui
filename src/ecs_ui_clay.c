@@ -1595,10 +1595,12 @@ void EcsUiClayEmitTreeEx(
             },
             .zIndex = options->z_index,
             .attachPoints = {
-                .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                .element = options->attach_points.element,
+                .parent = options->attach_points.parent,
             },
-            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+            .pointerCaptureMode = options->capture_pointer ?
+                CLAY_POINTER_CAPTURE_MODE_CAPTURE :
+                CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
             .attachTo = CLAY_ATTACH_TO_ROOT,
         },
     }) {
