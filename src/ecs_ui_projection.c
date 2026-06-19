@@ -233,11 +233,10 @@ void EcsUiProjectionCollectionBufferInit(
         return;
     }
 
-    *buffer = (EcsUiProjectionCollectionBuffer){
-        .item_size = item_size,
-        .truncated = item_size == 0u ||
-            item_size > (size_t)ECS_UI_PROJECTION_ITEM_MAX,
-    };
+    buffer->item_size = item_size;
+    buffer->item_count = 0u;
+    buffer->truncated = item_size == 0u ||
+        item_size > (size_t)ECS_UI_PROJECTION_ITEM_MAX;
 }
 
 bool EcsUiProjectionCollectionBufferPush(
