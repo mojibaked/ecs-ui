@@ -1,5 +1,6 @@
 #include "ecs_ui/ecs_ui.h"
 #include "ecs_ui/ecs_ui_animation.h"
+#include "ecs_ui/ecs_ui_gesture.h"
 #include "ecs_ui/ecs_ui_navigation.h"
 #include "ecs_ui/ecs_ui_projection.h"
 #include "ecs_ui/ecs_ui_text_input.h"
@@ -329,6 +330,209 @@ static void TestProjectionUpdateEntityRoot(
     projection->update_count += 1u;
 }
 
+static int TestGestureArenaPanThreshold(void)
+{
+    int result = 0;
+    EcsUiGestureArena arena;
+    EcsUiGestureArenaInit(&arena);
+    EcsUiGestureEvent event = {0};
+    const ecs_entity_t target = (ecs_entity_t)123;
+    const EcsUiPanRecognizerDesc desc = {
+        .target = target,
+        .enabled = true,
+        .hit = true,
+        .threshold = 10.0f,
+    };
+
+    result |= Require(
+        !EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 10.0f,
+                .y = 20.0f,
+                .time = 1000.0,
+                .down = true,
+                .pressed = true,
+            },
+            desc,
+            &event),
+        "threshold pan should wait for movement before starting");
+    result |= Require(
+        arena.active && !arena.accepted,
+        "threshold pan should arm arena before acceptance");
+    result |= Require(
+        !EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 15.0f,
+                .y = 20.0f,
+                .time = 1010.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "threshold pan should ignore sub-threshold movement");
+    result |= Require(
+        arena.active && !arena.accepted,
+        "threshold pan should remain pending below threshold");
+    result |= Require(
+        EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 21.0f,
+                .y = 20.0f,
+                .time = 1020.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "threshold pan should emit when movement crosses threshold");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PAN_STARTED &&
+            event.target == target,
+        "threshold pan should emit start event");
+    result |= RequireNear(
+        event.delta_x,
+        11.0f,
+        0.0001f,
+        "threshold pan total delta mismatch");
+    result |= RequireNear(
+        event.frame_delta_x,
+        6.0f,
+        0.0001f,
+        "threshold pan frame delta mismatch");
+    result |= Require(
+        arena.active && arena.accepted,
+        "threshold pan should accept arena after threshold");
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 24.0f,
+                .y = 30.0f,
+                .time = 1030.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "threshold pan should emit update event");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PAN_UPDATED,
+        "threshold pan update type mismatch");
+    result |= RequireNear(
+        event.frame_delta_y,
+        10.0f,
+        0.0001f,
+        "threshold pan update frame delta mismatch");
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 24.0f,
+                .y = 34.0f,
+                .time = 1040.0,
+                .released = true,
+            },
+            desc,
+            &event),
+        "threshold pan should emit end event");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PAN_ENDED,
+        "threshold pan end type mismatch");
+    result |= RequireNear(
+        event.delta_y,
+        14.0f,
+        0.0001f,
+        "threshold pan end total delta mismatch");
+    result |= RequireNear(
+        event.frame_delta_y,
+        4.0f,
+        0.0001f,
+        "threshold pan end frame delta mismatch");
+    result |= Require(!arena.active, "threshold pan should clear on end");
+
+    return result;
+}
+
+static int TestGestureArenaPanImmediateAndCancel(void)
+{
+    int result = 0;
+    EcsUiGestureArena arena;
+    EcsUiGestureArenaInit(&arena);
+    EcsUiGestureEvent event = {0};
+    const ecs_entity_t target = (ecs_entity_t)456;
+    EcsUiPanRecognizerDesc desc = {
+        .target = target,
+        .enabled = true,
+        .hit = true,
+        .threshold = 0.0f,
+    };
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 4.0f,
+                .y = 8.0f,
+                .time = 10.0,
+                .down = true,
+                .pressed = true,
+            },
+            desc,
+            &event),
+        "zero-threshold pan should start immediately");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PAN_STARTED &&
+            arena.active && arena.accepted,
+        "zero-threshold pan start mismatch");
+
+    result |= Require(
+        EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 9.0f,
+                .y = 12.0f,
+                .time = 20.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "zero-threshold pan should update");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_PAN_UPDATED,
+        "zero-threshold pan update type mismatch");
+    result |= RequireNear(
+        event.frame_delta_x,
+        5.0f,
+        0.0001f,
+        "zero-threshold pan frame dx mismatch");
+
+    desc.enabled = false;
+    result |= Require(
+        EcsUiGestureArenaUpdatePan(
+            &arena,
+            (EcsUiPointerSample){
+                .x = 9.0f,
+                .y = 12.0f,
+                .time = 20.0,
+                .down = true,
+            },
+            desc,
+            &event),
+        "disabled active pan should cancel");
+    result |= Require(
+        event.type == ECS_UI_GESTURE_EVENT_CANCELLED,
+        "disabled active pan cancel type mismatch");
+    result |= Require(!arena.active, "cancelled pan should clear arena");
+    result |= Require(
+        !EcsUiGestureArenaCancel(&arena, &event),
+        "inactive arena cancel should not emit");
+
+    return result;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -344,6 +548,8 @@ int main(void)
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     ECS_COMPONENT_DEFINE(world, TestProjectionUiItem);
     int result = 0;
+    result |= TestGestureArenaPanThreshold();
+    result |= TestGestureArenaPanImmediateAndCancel();
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
         "EcsUiOnClick should be exclusive");
