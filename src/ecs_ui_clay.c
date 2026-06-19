@@ -1823,6 +1823,22 @@ static void EcsUiClayPushCapturedPointerEvent(
     (void)EcsUiEventListPush(events, &event);
 }
 
+static bool EcsUiClayTreeContainsEntity(
+    const EcsUiTreeSnapshot *tree,
+    ecs_entity_t entity)
+{
+    if (tree == NULL || entity == 0) {
+        return false;
+    }
+
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (tree->nodes[i].entity == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void EcsUiClayCollectPointerEvents(
     const EcsUiTreeSnapshot *tree,
     EcsUiClayRect bounds,
@@ -1834,6 +1850,11 @@ static void EcsUiClayCollectPointerEvents(
     }
 
     if (g_ecs_ui_clay_pointer_capture.active) {
+        if (!EcsUiClayTreeContainsEntity(
+                tree,
+                g_ecs_ui_clay_pointer_capture.node)) {
+            return;
+        }
         if (pointer.down) {
             EcsUiClayPushCapturedPointerEvent(
                 events,

@@ -912,6 +912,121 @@ static int TestZStackCapturePreventsBackgroundFallthrough(void)
     return result;
 }
 
+static int TestPointerCaptureIsScopedToOwningTree(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t action_a = CreateAction(world, "ActionA");
+    ecs_entity_t action_b = CreateAction(world, "ActionB");
+    ecs_entity_t root_a = EcsUiRootEntity(world, "CaptureScopeRootA");
+    EcsUiBuilder builder_a = EcsUiBuilderBegin(world, root_a);
+    ecs_entity_t target_a = EcsUiAddCustom(
+        &builder_a,
+        (EcsUiCustomDesc){
+            .id = "TargetA",
+            .kind = "target",
+            .preferred_width = 120.0f,
+            .preferred_height = 60.0f,
+            .on_click = action_a,
+        });
+    EcsUiBuilderEnd(&builder_a);
+    result |= Require(EcsUiBuilderOk(&builder_a), "capture scope A builder failed");
+
+    ecs_entity_t root_b = EcsUiRootEntity(world, "CaptureScopeRootB");
+    EcsUiBuilder builder_b = EcsUiBuilderBegin(world, root_b);
+    ecs_entity_t target_b = EcsUiAddCustom(
+        &builder_b,
+        (EcsUiCustomDesc){
+            .id = "TargetB",
+            .kind = "target",
+            .preferred_width = 120.0f,
+            .preferred_height = 60.0f,
+            .on_click = action_b,
+        });
+    EcsUiBuilderEnd(&builder_b);
+    result |= Require(EcsUiBuilderOk(&builder_b), "capture scope B builder failed");
+
+    EcsUiTreeSnapshot tree_a = {0};
+    EcsUiTreeSnapshot tree_b = {0};
+    result |= Require(EcsUiReadTree(world, root_a, &tree_a), "tree A read failed");
+    result |= Require(EcsUiReadTree(world, root_b, &tree_b), "tree B read failed");
+
+    EcsUiClayLayoutOptions options = {
+        .bounds = {0.0f, 0.0f, 120.0f, 60.0f},
+    };
+    EcsUiEventList events = {0};
+    EcsUiClayCollectEventsEx(
+        &tree_a,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 30.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &events);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "tree A press should start pointer capture");
+    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_PRESSED, target_a, "TargetA");
+
+    EcsUiClayCollectEventsEx(
+        &tree_b,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 30.1,
+            .released = true,
+        },
+        &options,
+        &events);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "non-owning tree should not consume captured release");
+
+    EcsUiClayCollectEventsEx(
+        &tree_a,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 30.2,
+            .released = true,
+        },
+        &options,
+        &events);
+    result |= RequireEventCount(
+        &events,
+        2u,
+        "owning tree should receive captured release");
+    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_DRAG_ENDED, target_a, "TargetA");
+    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_CLICKED, target_a, "TargetA");
+
+    EcsUiClayCollectEventsEx(
+        &tree_b,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 30.3,
+        },
+        &options,
+        &events);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "capture should clear after owning tree release");
+    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_HOVERED, target_b, "TargetB");
+
+    ecs_fini(world);
+    return result;
+}
+
 int main(void)
 {
     void *clay_memory = NULL;
@@ -925,6 +1040,7 @@ int main(void)
     result |= TestVisualOpacitySkipsHitTesting();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestPointerCaptureLifecycle();
+    result |= TestPointerCaptureIsScopedToOwningTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
 
     free(clay_memory);
