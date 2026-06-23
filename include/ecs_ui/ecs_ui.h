@@ -42,6 +42,12 @@ typedef enum EcsUiAlign {
     ECS_UI_ALIGN_END = 2,
 } EcsUiAlign;
 
+typedef enum EcsUiSizing {
+    ECS_UI_SIZE_AUTO = 0,
+    ECS_UI_SIZE_GROW = 1,
+    ECS_UI_SIZE_FIT = 2,
+} EcsUiSizing;
+
 typedef enum EcsUiButtonVariant {
     ECS_UI_BUTTON_DEFAULT = 0,
     ECS_UI_BUTTON_PRIMARY = 1,
@@ -107,6 +113,8 @@ typedef struct EcsUiStack {
     float preferred_height;
     EcsUiAlign align_x;
     EcsUiAlign align_y;
+    EcsUiSizing width_sizing;
+    EcsUiSizing height_sizing;
 } EcsUiStack;
 
 typedef struct EcsUiColor {
@@ -174,6 +182,8 @@ typedef struct EcsUiCustom {
     char kind[ECS_UI_ID_MAX];
     float preferred_width;
     float preferred_height;
+    EcsUiSizing width_sizing;
+    EcsUiSizing height_sizing;
 } EcsUiCustom;
 
 typedef struct EcsUiVisual {
@@ -216,6 +226,8 @@ typedef struct EcsUiStackDesc {
     float preferred_height;
     EcsUiAlign align_x;
     EcsUiAlign align_y;
+    EcsUiSizing width_sizing;
+    EcsUiSizing height_sizing;
 } EcsUiStackDesc;
 
 typedef struct EcsUiButtonDesc {
@@ -251,6 +263,8 @@ typedef struct EcsUiCustomDesc {
     float preferred_width;
     float preferred_height;
     ecs_entity_t on_click;
+    EcsUiSizing width_sizing;
+    EcsUiSizing height_sizing;
 } EcsUiCustomDesc;
 
 typedef struct EcsUiBuilder {

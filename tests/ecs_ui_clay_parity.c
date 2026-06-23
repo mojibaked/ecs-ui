@@ -361,6 +361,30 @@ static uint32_t CountNodeId(const EcsUiTreeSnapshot *tree, const char *id)
     return count;
 }
 
+static Clay_RenderCommand *FindCustomCommand(
+    Clay_RenderCommandArray *commands,
+    const char *node_id)
+{
+    if (commands == NULL || node_id == NULL) {
+        return NULL;
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_CUSTOM) {
+            continue;
+        }
+
+        const EcsUiTreeNodeSnapshot *node =
+            command->renderData.custom.customData;
+        if (node != NULL && strcmp(node->id, node_id) == 0) {
+            return command;
+        }
+    }
+    return NULL;
+}
+
 static int RequireEventCount(
     const EcsUiEventList *events,
     uint32_t expected,
@@ -1144,6 +1168,112 @@ static int TestZStackBoxStyleEmitsBackgroundColor(void)
     return result;
 }
 
+static int TestGrowSizingFillsWardrobeShell(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create grow sizing world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "GrowSizingRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TopBar",
+            .kind = "bar",
+            .preferred_height = 20.0f,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "Body",
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "CanvasHost",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "Canvas",
+            .kind = "canvas",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "SidePanel",
+            .preferred_width = 80.0f,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "BottomBar",
+            .kind = "bar",
+            .preferred_height = 30.0f,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "grow sizing builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "grow sizing tree read failed");
+
+    ResetClayErrors();
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(300.0f, 200.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    Clay_RenderCommand *canvas = FindCustomCommand(&commands, "Canvas");
+    result |= Require(canvas != NULL, "canvas custom command should be emitted");
+    if (canvas != NULL) {
+        result |= RequireNear(
+            canvas->boundingBox.x,
+            0.0f,
+            0.001f,
+            "canvas should start at shell left edge");
+        result |= RequireNear(
+            canvas->boundingBox.y,
+            20.0f,
+            0.001f,
+            "canvas should start below top bar");
+        result |= RequireNear(
+            canvas->boundingBox.width,
+            220.0f,
+            0.001f,
+            "canvas should fill remaining width beside side panel");
+        result |= RequireNear(
+            canvas->boundingBox.height,
+            150.0f,
+            0.001f,
+            "canvas should fill height between fixed bars");
+    }
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "grow sizing layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestZStackPlacementAnchorsHitBounds(void)
 {
     int result = 0;
@@ -1719,6 +1849,7 @@ int main(void)
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
     result |= TestZStackBoxStyleEmitsBackgroundColor();
+    result |= TestGrowSizingFillsWardrobeShell();
     result |= TestZStackPlacementAnchorsHitBounds();
     result |= TestZStackPlacedTextRendersInRetainedBounds();
     result |= TestFloatingCaptureBlocksRetainedTree();

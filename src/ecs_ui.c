@@ -240,6 +240,8 @@ static ecs_entity_t EcsUiBeginStack(
         .preferred_height = desc.preferred_height,
         .align_x = desc.align_x,
         .align_y = desc.align_y,
+        .width_sizing = desc.width_sizing,
+        .height_sizing = desc.height_sizing,
     };
     ecs_set_ptr(builder->world, entity, EcsUiStack, &stack);
     EcsUiPushParent(builder, entity);
@@ -670,6 +672,8 @@ ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
     EcsUiCustom custom = {
         .preferred_width = desc.preferred_width,
         .preferred_height = desc.preferred_height,
+        .width_sizing = desc.width_sizing,
+        .height_sizing = desc.height_sizing,
     };
     EcsUiCopyString(custom.kind, sizeof(custom.kind), desc.kind);
     ecs_set_ptr(builder->world, entity, EcsUiCustom, &custom);

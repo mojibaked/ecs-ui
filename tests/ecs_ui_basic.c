@@ -1825,6 +1825,8 @@ int main(void)
                 .preferred_height = 30.0f,
                 .align_x = ECS_UI_ALIGN_CENTER,
                 .align_y = ECS_UI_ALIGN_END,
+                .width_sizing = ECS_UI_SIZE_FIT,
+                .height_sizing = ECS_UI_SIZE_GROW,
             }) {
             Icon(&builder, {.id = "FooterIcon", .name = "plus"});
             Text(
@@ -1893,6 +1895,8 @@ int main(void)
                 .kind = "terminal",
                 .preferred_width = 320.0f,
                 .preferred_height = 120.0f,
+                .width_sizing = ECS_UI_SIZE_GROW,
+                .height_sizing = ECS_UI_SIZE_FIT,
             });
         ecs_set(
             world,
@@ -1962,12 +1966,20 @@ int main(void)
             tree.nodes[4u].stack.align_y == ECS_UI_ALIGN_END,
         "stack alignment should be copied");
     result |= Require(
+        tree.nodes[4u].stack.width_sizing == ECS_UI_SIZE_FIT &&
+            tree.nodes[4u].stack.height_sizing == ECS_UI_SIZE_GROW,
+        "stack sizing should be copied");
+    result |= Require(
         strcmp(tree.nodes[11u].custom.kind, "terminal") == 0,
         "custom kind not copied");
     result |= Require(
         tree.nodes[11u].custom.preferred_width == 320.0f &&
             tree.nodes[11u].custom.preferred_height == 120.0f,
         "custom preferred size not copied");
+    result |= Require(
+        tree.nodes[11u].custom.width_sizing == ECS_UI_SIZE_GROW &&
+            tree.nodes[11u].custom.height_sizing == ECS_UI_SIZE_FIT,
+        "custom sizing should be copied");
     result |= Require(
         tree.nodes[11u].hit_test.mode == ECS_UI_HIT_TEST_CAPTURE,
         "custom hit-test mode should be copied");

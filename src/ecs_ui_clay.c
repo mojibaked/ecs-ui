@@ -362,6 +362,31 @@ static Clay_SizingAxis EcsUiClayPlacementSizing(float value)
     return CLAY_SIZING_GROW(0);
 }
 
+static Clay_SizingAxis EcsUiClayApplySizing(
+    EcsUiSizing sizing,
+    Clay_SizingAxis inferred)
+{
+    switch (sizing) {
+    case ECS_UI_SIZE_GROW:
+        return CLAY_SIZING_GROW(0);
+    case ECS_UI_SIZE_FIT:
+        return CLAY_SIZING_FIT(0);
+    case ECS_UI_SIZE_AUTO:
+    default:
+        return inferred;
+    }
+}
+
+static Clay_SizingAxis EcsUiClayApplyCustomSizing(
+    EcsUiSizing sizing,
+    Clay_SizingAxis inferred)
+{
+    if (sizing == ECS_UI_SIZE_GROW) {
+        return CLAY_SIZING_GROW(0);
+    }
+    return inferred;
+}
+
 static float EcsUiClayPressableHeight(const EcsUiTreeNodeSnapshot *node)
 {
     if (node == NULL || node->pressable.preferred_height <= 0.0f) {
@@ -472,7 +497,9 @@ static float EcsUiClayPreferredHeight(
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     const float padding = EcsUiClayClampPositive(node->stack.padding);
     const float gap = EcsUiClayClampPositive(node->stack.gap);
-    if (EcsUiClayNodeIsStack(node) && node->stack.preferred_height > 0.0f) {
+    if (EcsUiClayNodeIsStack(node) &&
+        node->stack.height_sizing == ECS_UI_SIZE_AUTO &&
+        node->stack.preferred_height > 0.0f) {
         return node->stack.preferred_height;
     }
 
@@ -486,6 +513,9 @@ static float EcsUiClayPreferredHeight(
     case ECS_UI_NODE_PRESSABLE:
         return EcsUiClayPressableHeight(node);
     case ECS_UI_NODE_CUSTOM:
+        if (node->custom.height_sizing == ECS_UI_SIZE_GROW) {
+            return 0.0f;
+        }
         return EcsUiClayCustomHeight(node);
     case ECS_UI_NODE_HSTACK: {
         float height = 0.0f;
@@ -572,11 +602,34 @@ static Clay_LayoutConfig EcsUiClayFlowLayout(
         if (node->stack.preferred_height > 0.0f) {
             height = CLAY_SIZING_FIXED(node->stack.preferred_height);
         }
+        width = EcsUiClayApplySizing(node->stack.width_sizing, width);
+        height = EcsUiClayApplySizing(node->stack.height_sizing, height);
     } else if (node->kind == ECS_UI_NODE_CUSTOM &&
         node->custom.preferred_width > 0.0f) {
         width = CLAY_SIZING_FIXED(node->custom.preferred_width);
     }
+    if (node->kind == ECS_UI_NODE_CUSTOM) {
+        width = EcsUiClayApplyCustomSizing(node->custom.width_sizing, width);
+        height = EcsUiClayApplyCustomSizing(node->custom.height_sizing, height);
+    }
 
+    return (Clay_LayoutConfig){
+        .sizing = {
+            .width = width,
+            .height = height,
+        },
+    };
+}
+
+static Clay_LayoutConfig EcsUiClayCustomLayout(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    Clay_SizingAxis width = CLAY_SIZING_GROW(0);
+    Clay_SizingAxis height = CLAY_SIZING_FIXED(EcsUiClayCustomHeight(node));
+    if (node != NULL) {
+        width = EcsUiClayApplyCustomSizing(node->custom.width_sizing, width);
+        height = EcsUiClayApplyCustomSizing(node->custom.height_sizing, height);
+    }
     return (Clay_LayoutConfig){
         .sizing = {
             .width = width,
@@ -1691,12 +1744,7 @@ static void EcsUiClayEmitNodeContent(
             index,
             Clay_GetElementId(EcsUiClayString(clay_id)));
         CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
-            .layout = {
-                .sizing = {
-                    .width = CLAY_SIZING_GROW(0),
-                    .height = CLAY_SIZING_FIXED(EcsUiClayCustomHeight(node)),
-                },
-            },
+            .layout = EcsUiClayCustomLayout(node),
             .backgroundColor = EcsUiClayApplyOpacity(
                 EcsUiClayColor(theme->surface_subtle),
                 opacity),
