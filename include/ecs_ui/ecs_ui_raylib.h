@@ -34,6 +34,15 @@ void EcsUiRaylibCollectEvents(
     Rectangle bounds,
     EcsUiEventList *events);
 
+/*
+ * Override the font used for all UI text. Pass a caller-owned font (e.g. a TTF
+ * atlas) for crisp text at any size; the renderer does not take ownership and
+ * the font must outlive its use. Defaults to raylib's bitmap GetFontDefault().
+ */
+void EcsUiRaylibSetFont(Font font);
+/* Revert to GetFontDefault(). */
+void EcsUiRaylibResetFont(void);
+
 #ifdef __cplusplus
 }
 #endif

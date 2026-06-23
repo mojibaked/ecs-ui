@@ -3,6 +3,32 @@
 #include <stdio.h>
 #include <string.h>
 
+/*
+ * Optional font override. The renderer draws all text with GetFontDefault() —
+ * raylib's 10px bitmap font, which only looks crisp at multiples of 10. Callers
+ * can supply a higher-resolution font (e.g. a TTF atlas) via EcsUiRaylibSetFont
+ * to stay sharp at any size. The renderer never takes ownership of the font.
+ */
+static Font g_ecs_ui_raylib_font = {0};
+static bool g_ecs_ui_raylib_font_set = false;
+
+static Font EcsUiRaylibActiveFont(void)
+{
+    return g_ecs_ui_raylib_font_set ? g_ecs_ui_raylib_font : GetFontDefault();
+}
+
+void EcsUiRaylibSetFont(Font font)
+{
+    g_ecs_ui_raylib_font = font;
+    g_ecs_ui_raylib_font_set = true;
+}
+
+void EcsUiRaylibResetFont(void)
+{
+    g_ecs_ui_raylib_font = (Font){0};
+    g_ecs_ui_raylib_font_set = false;
+}
+
 static float EcsUiRaylibMaxFloat(float a, float b)
 {
     return a > b ? a : b;
@@ -432,7 +458,7 @@ static void EcsUiRaylibDrawTextLine(
     Color color)
 {
     const char *value = text != NULL ? text : "";
-    Vector2 text_size = MeasureTextEx(GetFontDefault(), value, font_size, 1.0f);
+    Vector2 text_size = MeasureTextEx(EcsUiRaylibActiveFont(), value, font_size, 1.0f);
     const float extra_x = bounds.width - text_size.x;
     const float extra_y = bounds.height - text_size.y;
     Vector2 position = {
@@ -445,7 +471,7 @@ static void EcsUiRaylibDrawTextLine(
             extra_y > 0.0f ? extra_y : 0.0f,
             layout.align_y),
     };
-    DrawTextEx(GetFontDefault(), value, position, font_size, 1.0f, color);
+    DrawTextEx(EcsUiRaylibActiveFont(), value, position, font_size, 1.0f, color);
 }
 
 static Vector2 EcsUiRaylibNaturalNodeSize(
@@ -458,7 +484,7 @@ static Vector2 EcsUiRaylibNaturalNodeSize(
     case ECS_UI_NODE_TEXT: {
         const float font_size = EcsUiRaylibTextSize(node->text.role);
         Vector2 text_size = MeasureTextEx(
-            GetFontDefault(),
+            EcsUiRaylibActiveFont(),
             node->text.text,
             font_size,
             1.0f);
@@ -469,7 +495,7 @@ static Vector2 EcsUiRaylibNaturalNodeSize(
     }
     case ECS_UI_NODE_ICON: {
         Vector2 text_size = MeasureTextEx(
-            GetFontDefault(),
+            EcsUiRaylibActiveFont(),
             node->icon.name,
             18.0f,
             1.0f);
@@ -606,9 +632,9 @@ static void EcsUiRaylibDrawTextFieldView(
         0u,
         cursor);
     const Vector2 prefix_size =
-        MeasureTextEx(GetFontDefault(), prefix, font_size, 1.0f);
+        MeasureTextEx(EcsUiRaylibActiveFont(), prefix, font_size, 1.0f);
     const Vector2 all_size =
-        MeasureTextEx(GetFontDefault(), text, font_size, 1.0f);
+        MeasureTextEx(EcsUiRaylibActiveFont(), text, font_size, 1.0f);
     const Vector2 position = {
         .x = bounds.x,
         .y = bounds.y + ((bounds.height - all_size.y) * 0.5f),
@@ -642,9 +668,9 @@ static void EcsUiRaylibDrawTextFieldView(
             selection_start,
             selection_end);
         const Vector2 before_size =
-            MeasureTextEx(GetFontDefault(), before_selection, font_size, 1.0f);
+            MeasureTextEx(EcsUiRaylibActiveFont(), before_selection, font_size, 1.0f);
         const Vector2 selected_size =
-            MeasureTextEx(GetFontDefault(), selected, font_size, 1.0f);
+            MeasureTextEx(EcsUiRaylibActiveFont(), selected, font_size, 1.0f);
         DrawRectangleRec(
             (Rectangle){
                 .x = position.x + before_size.x,
@@ -657,7 +683,7 @@ static void EcsUiRaylibDrawTextFieldView(
                 opacity));
     }
 
-    DrawTextEx(GetFontDefault(), text, position, font_size, 1.0f, text_color);
+    DrawTextEx(EcsUiRaylibActiveFont(), text, position, font_size, 1.0f, text_color);
     if (field_node->text_field_view.focused) {
         const float caret_width =
             field_node->text_field_view.caret_width > 0.0f ?
