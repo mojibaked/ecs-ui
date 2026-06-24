@@ -392,6 +392,56 @@ static Color EcsUiRaylibStackColor(
     return EcsUiRaylibColor(node->box_style.background);
 }
 
+static void EcsUiRaylibDrawBoxBorder(
+    Rectangle bounds,
+    const EcsUiTreeNodeSnapshot *node,
+    float opacity)
+{
+    if (node == NULL || !node->has_box_style ||
+        node->box_style.border_width <= 0.0f ||
+        node->box_style.border_color.a == 0u ||
+        bounds.width <= 0.0f || bounds.height <= 0.0f) {
+        return;
+    }
+
+    float width = EcsUiRaylibClampPositive(node->box_style.border_width);
+    if (width <= 0.0f) {
+        return;
+    }
+    if (width > bounds.width) {
+        width = bounds.width;
+    }
+    if (width > bounds.height) {
+        width = bounds.height;
+    }
+
+    Color color = EcsUiRaylibApplyOpacity(
+        EcsUiRaylibColor(node->box_style.border_color),
+        opacity);
+    DrawRectangleRec(
+        (Rectangle){bounds.x, bounds.y, width, bounds.height},
+        color);
+    DrawRectangleRec(
+        (Rectangle){
+            bounds.x + bounds.width - width,
+            bounds.y,
+            width,
+            bounds.height,
+        },
+        color);
+    DrawRectangleRec(
+        (Rectangle){bounds.x, bounds.y, bounds.width, width},
+        color);
+    DrawRectangleRec(
+        (Rectangle){
+            bounds.x,
+            bounds.y + bounds.height - width,
+            bounds.width,
+            width,
+        },
+        color);
+}
+
 static Color EcsUiRaylibPressableColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node,
@@ -868,6 +918,7 @@ static void EcsUiRaylibDrawNode(
             node_has_text_style,
             text_disabled,
             node_opacity);
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_VSTACK:
         DrawRectangleRounded(
@@ -890,6 +941,7 @@ static void EcsUiRaylibDrawNode(
             node_has_text_style,
             text_disabled,
             node_opacity);
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_HSTACK:
         DrawRectangleRounded(
@@ -912,6 +964,7 @@ static void EcsUiRaylibDrawNode(
             node_has_text_style,
             text_disabled,
             node_opacity);
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_ZSTACK: {
         DrawRectangleRounded(
@@ -941,6 +994,7 @@ static void EcsUiRaylibDrawNode(
                 node_opacity);
             child = tree->nodes[child].next_sibling;
         }
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     }
     case ECS_UI_NODE_BUTTON: {
@@ -972,6 +1026,7 @@ static void EcsUiRaylibDrawNode(
             node_has_text_style,
             text_disabled || node->button.disabled,
             node_opacity);
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     }
     case ECS_UI_NODE_PRESSABLE: {
@@ -1010,6 +1065,7 @@ static void EcsUiRaylibDrawNode(
                 text_disabled || node->pressable.disabled,
                 node_opacity);
         }
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     }
     case ECS_UI_NODE_TEXT:
@@ -1077,6 +1133,7 @@ static void EcsUiRaylibDrawNode(
                     EcsUiRaylibColor(theme->text_muted),
                     node_opacity));
         }
+        EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_NONE:
     default:

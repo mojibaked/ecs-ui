@@ -244,6 +244,13 @@ static ecs_entity_t EcsUiBeginStack(
         .height_sizing = desc.height_sizing,
     };
     ecs_set_ptr(builder->world, entity, EcsUiStack, &stack);
+    if (desc.style_token != 0 &&
+        !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
+        builder->failed = true;
+    }
+    if (desc.style != NULL) {
+        ecs_set_ptr(builder->world, entity, EcsUiBoxStyle, desc.style);
+    }
     EcsUiPushParent(builder, entity);
     return entity;
 }

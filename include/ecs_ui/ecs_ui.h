@@ -146,6 +146,8 @@ typedef struct EcsUiBoxStyle {
     EcsUiColor highlight_background;
     float radius;
     float padding;
+    EcsUiColor border_color;
+    float border_width;
 } EcsUiBoxStyle;
 
 typedef struct EcsUiTextStyle {
@@ -228,6 +230,8 @@ typedef struct EcsUiStackDesc {
     EcsUiAlign align_y;
     EcsUiSizing width_sizing;
     EcsUiSizing height_sizing;
+    ecs_entity_t style_token;
+    const EcsUiBoxStyle *style;
 } EcsUiStackDesc;
 
 typedef struct EcsUiButtonDesc {

@@ -433,6 +433,34 @@ static Clay_CornerRadius EcsUiClayCornerRadius(
     };
 }
 
+static Clay_BorderElementConfig EcsUiClayBorder(
+    const EcsUiTreeNodeSnapshot *node,
+    float opacity)
+{
+    if (node == NULL || !node->has_box_style ||
+        node->box_style.border_width <= 0.0f ||
+        node->box_style.border_color.a == 0u) {
+        return (Clay_BorderElementConfig){0};
+    }
+
+    const uint16_t width = EcsUiClayU16(node->box_style.border_width);
+    if (width == 0u) {
+        return (Clay_BorderElementConfig){0};
+    }
+
+    return (Clay_BorderElementConfig){
+        .color = EcsUiClayApplyOpacity(
+            EcsUiClayColor(node->box_style.border_color),
+            opacity),
+        .width = {
+            .left = width,
+            .right = width,
+            .top = width,
+            .bottom = width,
+        },
+    };
+}
+
 static Clay_ElementDeclaration EcsUiClayContainerDeclaration(
     Clay_LayoutConfig layout,
     const EcsUiTreeNodeSnapshot *node,
@@ -446,6 +474,7 @@ static Clay_ElementDeclaration EcsUiClayContainerDeclaration(
             EcsUiClayContainerBackground(node, fallback_background),
             opacity),
         .cornerRadius = EcsUiClayCornerRadius(node, fallback_radius),
+        .border = EcsUiClayBorder(node, opacity),
     };
 }
 
@@ -1608,6 +1637,7 @@ static void EcsUiClayEmitNodeContent(
                 EcsUiClayButtonColor(theme, node),
                 opacity),
             .cornerRadius = EcsUiClayCornerRadius(node, theme->radius),
+            .border = EcsUiClayBorder(node, opacity),
         }) {
             EcsUiClayEmitChildren(
                 tree,
@@ -1651,6 +1681,7 @@ static void EcsUiClayEmitNodeContent(
                 EcsUiClayPressableColor(theme, node),
                 opacity),
             .cornerRadius = EcsUiClayCornerRadius(node, theme->radius),
+            .border = EcsUiClayBorder(node, opacity),
         }) {
             if (node->has_text_field_view) {
                 EcsUiClayEmitTextFieldChildren(
@@ -1749,6 +1780,7 @@ static void EcsUiClayEmitNodeContent(
                 EcsUiClayColor(theme->surface_subtle),
                 opacity),
             .cornerRadius = EcsUiClayCornerRadius(node, theme->radius),
+            .border = EcsUiClayBorder(node, opacity),
             .custom = {
                 .customData = (void *)node,
             },

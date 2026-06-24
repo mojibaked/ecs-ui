@@ -270,6 +270,36 @@ static int RequireClayRectangleColor(
     return 1;
 }
 
+static int RequireClayBorder(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor expected_color,
+    uint16_t expected_width,
+    const char *message)
+{
+    if (commands == NULL) {
+        return Require(false, "missing Clay border command inputs");
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_BORDER) {
+            continue;
+        }
+
+        Clay_BorderRenderData *border = &command->renderData.border;
+        if (border->width.left == expected_width &&
+            border->width.right == expected_width &&
+            border->width.top == expected_width &&
+            border->width.bottom == expected_width) {
+            return RequireClayColor(border->color, expected_color, message);
+        }
+    }
+
+    (void)fprintf(stderr, "%s: border command not found\n", message);
+    return 1;
+}
+
 static void ResetClayErrors(void)
 {
     memset(&g_clay_errors, 0, sizeof(g_clay_errors));
@@ -1168,6 +1198,260 @@ static int TestZStackBoxStyleEmitsBackgroundColor(void)
     return result;
 }
 
+static int TestStackStyleTokenEmitsBackgroundColor(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create stack token color world");
+    }
+
+    const EcsUiColor key_color = {
+        .r = 76u,
+        .g = 61u,
+        .b = 139u,
+        .a = 255u,
+    };
+    ecs_entity_t stack_style = EcsUiStyleToken(world, "StackBackground");
+    ecs_set(world, stack_style, EcsUiBoxStyle, {
+        .background = key_color,
+        .radius = 4.0f,
+    });
+
+    ecs_entity_t root = EcsUiRootEntity(world, "StackTokenRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t stack = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "StackTokenTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+            .style_token = stack_style,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "stack token builder failed");
+    result |= Require(
+        ecs_get_target(world, stack, EcsUiUsesStyle, 0) == stack_style,
+        "stack desc should attach style token");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "stack token tree read failed");
+    result |= Require(
+        tree.count >= 2u &&
+            tree.nodes[1u].has_box_style &&
+            tree.nodes[1u].box_style.background.r == key_color.r &&
+            tree.nodes[1u].box_style.background.g == key_color.g &&
+            tree.nodes[1u].box_style.background.b == key_color.b &&
+            tree.nodes[1u].box_style.background.a == key_color.a,
+        "stack token box style should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayRectangleColor(
+        &commands,
+        key_color,
+        "stack style token should emit its box style background");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "stack token color layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestStackDirectStyleEmitsBackgroundAndBorder(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create stack direct style world");
+    }
+
+    const EcsUiColor token_color = {
+        .r = 18u,
+        .g = 88u,
+        .b = 112u,
+        .a = 255u,
+    };
+    const EcsUiColor direct_color = {
+        .r = 142u,
+        .g = 73u,
+        .b = 44u,
+        .a = 255u,
+    };
+    const EcsUiColor border_color = {
+        .r = 13u,
+        .g = 201u,
+        .b = 154u,
+        .a = 255u,
+    };
+    ecs_entity_t token_style = EcsUiStyleToken(world, "StackDirectFallback");
+    ecs_set(world, token_style, EcsUiBoxStyle, {
+        .background = token_color,
+    });
+
+    ecs_entity_t root = EcsUiRootEntity(world, "StackDirectRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t stack = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "StackDirectTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+            .style_token = token_style,
+            .style = &(EcsUiBoxStyle){
+                .background = direct_color,
+                .border_color = border_color,
+                .border_width = 2.0f,
+            },
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "stack direct builder failed");
+    result |= Require(
+        ecs_get_target(world, stack, EcsUiUsesStyle, 0) == token_style,
+        "stack direct style should still attach style token");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "stack direct style tree read failed");
+    result |= Require(
+        tree.count >= 2u &&
+            tree.nodes[1u].has_box_style &&
+            tree.nodes[1u].box_style.background.r == direct_color.r &&
+            tree.nodes[1u].box_style.background.g == direct_color.g &&
+            tree.nodes[1u].box_style.background.b == direct_color.b &&
+            tree.nodes[1u].box_style.background.a == direct_color.a,
+        "direct stack style should win over token style");
+    result |= Require(
+        tree.count >= 2u &&
+            tree.nodes[1u].box_style.border_color.r == border_color.r &&
+            tree.nodes[1u].box_style.border_color.g == border_color.g &&
+            tree.nodes[1u].box_style.border_color.b == border_color.b &&
+            tree.nodes[1u].box_style.border_color.a == border_color.a,
+        "direct stack border color should be snapshotted");
+    result |= RequireNear(
+        tree.count >= 2u ? tree.nodes[1u].box_style.border_width : 0.0f,
+        2.0f,
+        0.0001f,
+        "direct stack border width should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayRectangleColor(
+        &commands,
+        direct_color,
+        "direct stack style should emit its background");
+    result |= RequireClayBorder(
+        &commands,
+        border_color,
+        2u,
+        "direct stack style should emit its border");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "stack direct style layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestBoxStyleBorderEmitsBorderCommand(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create border command world");
+    }
+
+    const EcsUiColor border_color = {
+        .r = 221u,
+        .g = 35u,
+        .b = 90u,
+        .a = 255u,
+    };
+    const float border_width = 3.0f;
+    ecs_entity_t root = EcsUiRootEntity(world, "BorderRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t stack = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "BorderTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "border builder failed");
+
+    ecs_set(world, stack, EcsUiBoxStyle, {
+        .border_color = border_color,
+        .border_width = border_width,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "border tree read failed");
+    result |= Require(
+        tree.count >= 2u &&
+            tree.nodes[1u].has_box_style &&
+            tree.nodes[1u].box_style.border_color.r == border_color.r &&
+            tree.nodes[1u].box_style.border_color.g == border_color.g &&
+            tree.nodes[1u].box_style.border_color.b == border_color.b &&
+            tree.nodes[1u].box_style.border_color.a == border_color.a,
+        "border color should be snapshotted");
+    result |= RequireNear(
+        tree.count >= 2u ? tree.nodes[1u].box_style.border_width : 0.0f,
+        border_width,
+        0.0001f,
+        "border width should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayBorder(
+        &commands,
+        border_color,
+        3u,
+        "box style border should emit uniform Clay border command");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "border layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestGrowSizingFillsWardrobeShell(void)
 {
     int result = 0;
@@ -1849,6 +2133,9 @@ int main(void)
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
     result |= TestZStackBoxStyleEmitsBackgroundColor();
+    result |= TestStackStyleTokenEmitsBackgroundColor();
+    result |= TestStackDirectStyleEmitsBackgroundAndBorder();
+    result |= TestBoxStyleBorderEmitsBorderCommand();
     result |= TestGrowSizingFillsWardrobeShell();
     result |= TestZStackPlacementAnchorsHitBounds();
     result |= TestZStackPlacedTextRendersInRetainedBounds();
