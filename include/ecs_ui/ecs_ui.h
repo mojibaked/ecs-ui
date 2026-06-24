@@ -55,6 +55,12 @@ typedef enum EcsUiButtonVariant {
     ECS_UI_BUTTON_DANGER = 3,
 } EcsUiButtonVariant;
 
+typedef enum EcsUiBevel {
+    ECS_UI_BEVEL_NONE = 0,
+    ECS_UI_BEVEL_RAISED = 1,
+    ECS_UI_BEVEL_SUNKEN = 2,
+} EcsUiBevel;
+
 typedef enum EcsUiTextRole {
     ECS_UI_TEXT_BODY = 0,
     ECS_UI_TEXT_TITLE = 1,
@@ -148,6 +154,9 @@ typedef struct EcsUiBoxStyle {
     float padding;
     EcsUiColor border_color;
     float border_width;
+    EcsUiBevel bevel;
+    EcsUiColor bevel_light;
+    EcsUiColor bevel_dark;
 } EcsUiBoxStyle;
 
 typedef struct EcsUiTextStyle {

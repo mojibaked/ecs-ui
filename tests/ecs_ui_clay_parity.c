@@ -339,6 +339,148 @@ static int RequireClayBorder(
     return 1;
 }
 
+static bool ClayColorEquals(Clay_Color actual, EcsUiColor expected)
+{
+    return (uint8_t)actual.r == expected.r &&
+        (uint8_t)actual.g == expected.g &&
+        (uint8_t)actual.b == expected.b &&
+        (uint8_t)actual.a == expected.a;
+}
+
+typedef struct TestClayEdgeSummary {
+    bool has_horizontal;
+    bool has_vertical;
+    float min_horizontal_y;
+    float max_horizontal_y;
+    float min_vertical_x;
+    float max_vertical_x;
+} TestClayEdgeSummary;
+
+static void CollectClayEdgeRectangles(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor color,
+    TestClayEdgeSummary *out)
+{
+    if (commands == NULL || out == NULL) {
+        return;
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_RECTANGLE ||
+            !ClayColorEquals(
+                command->renderData.rectangle.backgroundColor,
+                color)) {
+            continue;
+        }
+
+        Clay_BoundingBox bounds = command->boundingBox;
+        const bool horizontal =
+            bounds.width > 4.0f && bounds.height > 0.0f &&
+            bounds.height <= 1.01f;
+        const bool vertical =
+            bounds.height > 4.0f && bounds.width > 0.0f &&
+            bounds.width <= 1.01f;
+        if (horizontal) {
+            if (!out->has_horizontal || bounds.y < out->min_horizontal_y) {
+                out->min_horizontal_y = bounds.y;
+            }
+            if (!out->has_horizontal || bounds.y > out->max_horizontal_y) {
+                out->max_horizontal_y = bounds.y;
+            }
+            out->has_horizontal = true;
+        }
+        if (vertical) {
+            if (!out->has_vertical || bounds.x < out->min_vertical_x) {
+                out->min_vertical_x = bounds.x;
+            }
+            if (!out->has_vertical || bounds.x > out->max_vertical_x) {
+                out->max_vertical_x = bounds.x;
+            }
+            out->has_vertical = true;
+        }
+    }
+}
+
+static int RequireClayBevelEdges(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor top_left_color,
+    EcsUiColor bottom_right_color,
+    const char *message)
+{
+    TestClayEdgeSummary top_left = {0};
+    TestClayEdgeSummary bottom_right = {0};
+    CollectClayEdgeRectangles(commands, top_left_color, &top_left);
+    CollectClayEdgeRectangles(commands, bottom_right_color, &bottom_right);
+
+    int result = 0;
+    result |= Require(
+        top_left.has_horizontal,
+        "bevel top edge command not found");
+    result |= Require(
+        top_left.has_vertical,
+        "bevel left edge command not found");
+    result |= Require(
+        bottom_right.has_horizontal,
+        "bevel bottom edge command not found");
+    result |= Require(
+        bottom_right.has_vertical,
+        "bevel right edge command not found");
+    if (result != 0) {
+        (void)fprintf(stderr, "%s\n", message);
+        return result;
+    }
+
+    result |= Require(
+        top_left.min_horizontal_y < bottom_right.max_horizontal_y,
+        "bevel top edge should be above bottom edge");
+    result |= Require(
+        top_left.min_vertical_x < bottom_right.max_vertical_x,
+        "bevel left edge should be left of right edge");
+    if (result != 0) {
+        (void)fprintf(stderr, "%s\n", message);
+    }
+    return result;
+}
+
+static int RequireNoClayBevelEdges(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor color,
+    const char *message)
+{
+    TestClayEdgeSummary edges = {0};
+    CollectClayEdgeRectangles(commands, color, &edges);
+    if (edges.has_horizontal || edges.has_vertical) {
+        (void)fprintf(stderr, "%s: unexpected bevel edge color found\n", message);
+        return 1;
+    }
+    return 0;
+}
+
+static int RequireNoClayBorderColor(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor color,
+    const char *message)
+{
+    if (commands == NULL) {
+        return Require(false, "missing Clay border command inputs");
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_BORDER) {
+            continue;
+        }
+        if (ClayColorEquals(command->renderData.border.color, color)) {
+            (void)fprintf(stderr, "%s: unexpected Clay border found\n", message);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ResetClayErrors(void)
 {
     memset(&g_clay_errors, 0, sizeof(g_clay_errors));
@@ -1558,6 +1700,258 @@ static int TestBoxStyleBorderEmitsBorderCommand(void)
     return result;
 }
 
+static int TestRaisedBevelEmitsLightTopLeftDarkBottomRightEdges(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create raised bevel world");
+    }
+
+    const EcsUiColor background = {
+        .r = 32u,
+        .g = 38u,
+        .b = 44u,
+        .a = 255u,
+    };
+    const EcsUiColor light = {
+        .r = 236u,
+        .g = 224u,
+        .b = 196u,
+        .a = 255u,
+    };
+    const EcsUiColor dark = {
+        .r = 22u,
+        .g = 20u,
+        .b = 28u,
+        .a = 255u,
+    };
+    const EcsUiColor border = {
+        .r = 201u,
+        .g = 31u,
+        .b = 91u,
+        .a = 255u,
+    };
+
+    ecs_entity_t root = EcsUiRootEntity(world, "RaisedBevelRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "RaisedBevelTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+            .style = &(EcsUiBoxStyle){
+                .background = background,
+                .border_color = border,
+                .border_width = 4.0f,
+                .bevel = ECS_UI_BEVEL_RAISED,
+                .bevel_light = light,
+                .bevel_dark = dark,
+            },
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "raised bevel builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "raised bevel tree read failed");
+    result |= Require(
+        tree.count >= 2u &&
+            tree.nodes[1u].has_box_style &&
+            tree.nodes[1u].box_style.bevel == ECS_UI_BEVEL_RAISED,
+        "raised bevel should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayRectangleColor(
+        &commands,
+        background,
+        "raised bevel should still emit its background");
+    result |= RequireClayBevelEdges(
+        &commands,
+        light,
+        dark,
+        "raised bevel should emit light top/left and dark bottom/right");
+    result |= RequireNoClayBorderColor(
+        &commands,
+        border,
+        "raised bevel should suppress uniform border");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "raised bevel layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestSunkenBevelEmitsDarkTopLeftLightBottomRightEdges(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create sunken bevel world");
+    }
+
+    const EcsUiColor light = {
+        .r = 214u,
+        .g = 238u,
+        .b = 241u,
+        .a = 255u,
+    };
+    const EcsUiColor dark = {
+        .r = 18u,
+        .g = 33u,
+        .b = 41u,
+        .a = 255u,
+    };
+
+    ecs_entity_t root = EcsUiRootEntity(world, "SunkenBevelRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "SunkenBevelTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+            .style = &(EcsUiBoxStyle){
+                .background = {
+                    .r = 41u,
+                    .g = 47u,
+                    .b = 54u,
+                    .a = 255u,
+                },
+                .bevel = ECS_UI_BEVEL_SUNKEN,
+                .bevel_light = light,
+                .bevel_dark = dark,
+            },
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "sunken bevel builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "sunken bevel tree read failed");
+    result |= Require(
+        tree.count >= 2u &&
+            tree.nodes[1u].has_box_style &&
+            tree.nodes[1u].box_style.bevel == ECS_UI_BEVEL_SUNKEN,
+        "sunken bevel should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayBevelEdges(
+        &commands,
+        dark,
+        light,
+        "sunken bevel should emit dark top/left and light bottom/right");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "sunken bevel layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNoBevelEmitsNoBevelEdges(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create no bevel world");
+    }
+
+    const EcsUiColor light = {
+        .r = 245u,
+        .g = 211u,
+        .b = 141u,
+        .a = 255u,
+    };
+    const EcsUiColor dark = {
+        .r = 13u,
+        .g = 17u,
+        .b = 23u,
+        .a = 255u,
+    };
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NoBevelRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NoBevelTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+            .style = &(EcsUiBoxStyle){
+                .background = {
+                    .r = 49u,
+                    .g = 56u,
+                    .b = 64u,
+                    .a = 255u,
+                },
+                .bevel = ECS_UI_BEVEL_NONE,
+                .bevel_light = light,
+                .bevel_dark = dark,
+            },
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "no bevel builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "no bevel tree read failed");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireNoClayBevelEdges(
+        &commands,
+        light,
+        "no bevel should not emit light bevel edges");
+    result |= RequireNoClayBevelEdges(
+        &commands,
+        dark,
+        "no bevel should not emit dark bevel edges");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "no bevel layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestGrowSizingFillsWardrobeShell(void)
 {
     int result = 0;
@@ -2243,6 +2637,9 @@ int main(void)
     result |= TestStackStyleTokenEmitsBackgroundColor();
     result |= TestStackDirectStyleEmitsBackgroundAndBorder();
     result |= TestBoxStyleBorderEmitsBorderCommand();
+    result |= TestRaisedBevelEmitsLightTopLeftDarkBottomRightEdges();
+    result |= TestSunkenBevelEmitsDarkTopLeftLightBottomRightEdges();
+    result |= TestNoBevelEmitsNoBevelEdges();
     result |= TestGrowSizingFillsWardrobeShell();
     result |= TestZStackPlacementAnchorsHitBounds();
     result |= TestZStackPlacedTextRendersInRetainedBounds();

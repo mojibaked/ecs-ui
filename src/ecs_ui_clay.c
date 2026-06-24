@@ -420,10 +420,27 @@ static Clay_Color EcsUiClayTransparent(void)
     return (Clay_Color){0};
 }
 
+static bool EcsUiClayHasBevel(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL && node->has_box_style &&
+        node->box_style.bevel != ECS_UI_BEVEL_NONE;
+}
+
+static bool EcsUiClayHasDrawableBevel(const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiClayHasBevel(node) &&
+        node->box_style.bevel_light.a != 0u &&
+        node->box_style.bevel_dark.a != 0u;
+}
+
 static Clay_CornerRadius EcsUiClayCornerRadius(
     const EcsUiTreeNodeSnapshot *node,
     float fallback)
 {
+    if (EcsUiClayHasBevel(node)) {
+        return (Clay_CornerRadius){0};
+    }
+
     float radius = fallback;
     if (node != NULL && node->has_box_style && node->box_style.radius > 0.0f) {
         radius = node->box_style.radius < 1.0f ?
@@ -442,6 +459,10 @@ static Clay_BorderElementConfig EcsUiClayBorder(
     const EcsUiTreeNodeSnapshot *node,
     float opacity)
 {
+    if (EcsUiClayHasBevel(node)) {
+        return (Clay_BorderElementConfig){0};
+    }
+
     if (node == NULL || !node->has_box_style ||
         node->box_style.border_width <= 0.0f ||
         node->box_style.border_color.a == 0u) {
@@ -1237,6 +1258,104 @@ static void EcsUiClayRegisterWrapperBlocker(
         true);
 }
 
+static Clay_Color EcsUiClayBevelTopLeftColor(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiClayColor(
+        node->box_style.bevel == ECS_UI_BEVEL_SUNKEN ?
+            node->box_style.bevel_dark :
+            node->box_style.bevel_light);
+}
+
+static Clay_Color EcsUiClayBevelBottomRightColor(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiClayColor(
+        node->box_style.bevel == ECS_UI_BEVEL_SUNKEN ?
+            node->box_style.bevel_light :
+            node->box_style.bevel_dark);
+}
+
+static void EcsUiClayEmitBevelEdge(
+    const EcsUiTreeNodeSnapshot *node,
+    const char *suffix,
+    Clay_Color color,
+    Clay_SizingAxis width,
+    Clay_SizingAxis height,
+    Clay_FloatingAttachPointType element_attach,
+    Clay_FloatingAttachPointType parent_attach,
+    float opacity)
+{
+    char clay_id[ECS_UI_ID_MAX * 2u] = {0};
+    EcsUiClayElementId(node, suffix, clay_id, sizeof(clay_id));
+    CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
+        .layout = {
+            .sizing = {
+                .width = width,
+                .height = height,
+            },
+        },
+        .backgroundColor = EcsUiClayApplyOpacity(color, opacity),
+        .floating = {
+            .zIndex = EcsUiClayZIndex(20),
+            .attachPoints = {
+                .element = element_attach,
+                .parent = parent_attach,
+            },
+            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+            .attachTo = CLAY_ATTACH_TO_PARENT,
+        },
+    }) {}
+}
+
+static void EcsUiClayEmitBevel(
+    const EcsUiTreeNodeSnapshot *node,
+    float opacity)
+{
+    if (!EcsUiClayHasDrawableBevel(node)) {
+        return;
+    }
+
+    const Clay_Color top_left = EcsUiClayBevelTopLeftColor(node);
+    const Clay_Color bottom_right = EcsUiClayBevelBottomRightColor(node);
+    EcsUiClayEmitBevelEdge(
+        node,
+        "BevelTop",
+        top_left,
+        CLAY_SIZING_GROW(0),
+        CLAY_SIZING_FIXED(1.0f),
+        CLAY_ATTACH_POINT_LEFT_TOP,
+        CLAY_ATTACH_POINT_LEFT_TOP,
+        opacity);
+    EcsUiClayEmitBevelEdge(
+        node,
+        "BevelLeft",
+        top_left,
+        CLAY_SIZING_FIXED(1.0f),
+        CLAY_SIZING_GROW(0),
+        CLAY_ATTACH_POINT_LEFT_TOP,
+        CLAY_ATTACH_POINT_LEFT_TOP,
+        opacity);
+    EcsUiClayEmitBevelEdge(
+        node,
+        "BevelBottom",
+        bottom_right,
+        CLAY_SIZING_GROW(0),
+        CLAY_SIZING_FIXED(1.0f),
+        CLAY_ATTACH_POINT_LEFT_BOTTOM,
+        CLAY_ATTACH_POINT_LEFT_BOTTOM,
+        opacity);
+    EcsUiClayEmitBevelEdge(
+        node,
+        "BevelRight",
+        bottom_right,
+        CLAY_SIZING_FIXED(1.0f),
+        CLAY_SIZING_GROW(0),
+        CLAY_ATTACH_POINT_RIGHT_TOP,
+        CLAY_ATTACH_POINT_RIGHT_TOP,
+        opacity);
+}
+
 static void EcsUiClayEmitStack(
     const EcsUiTreeSnapshot *tree,
     const EcsUiTheme *theme,
@@ -1289,6 +1408,7 @@ static void EcsUiClayEmitStack(
             text_disabled,
             opacity,
             frame);
+        EcsUiClayEmitBevel(node, opacity);
     }
 }
 
@@ -1443,6 +1563,7 @@ static void EcsUiClayEmitZStack(
             }
             child = tree->nodes[child].next_sibling;
         }
+        EcsUiClayEmitBevel(node, opacity);
     }
 }
 
@@ -1657,6 +1778,7 @@ static void EcsUiClayEmitNodeContent(
                 text_disabled || node->button.disabled,
                 opacity,
                 frame);
+            EcsUiClayEmitBevel(node, opacity);
         }
         break;
     }
@@ -1714,6 +1836,7 @@ static void EcsUiClayEmitNodeContent(
                     opacity,
                     frame);
             }
+            EcsUiClayEmitBevel(node, opacity);
         }
         break;
     }
@@ -1792,7 +1915,9 @@ static void EcsUiClayEmitNodeContent(
             .custom = {
                 .customData = (void *)node,
             },
-        }) {}
+        }) {
+            EcsUiClayEmitBevel(node, opacity);
+        }
         break;
     }
     case ECS_UI_NODE_NONE:
