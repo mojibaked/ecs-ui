@@ -893,6 +893,10 @@ static uint32_t EcsUiReadNode(
     snapshot->first_child = ECS_UI_TREE_INVALID_INDEX;
     snapshot->next_sibling = ECS_UI_TREE_INVALID_INDEX;
     snapshot->visual.opacity = 1.0f;
+    snapshot->hovered = EcsUiHovered != 0 &&
+        ecs_has_id(world, entity, EcsUiHovered);
+    snapshot->hover_within = EcsUiHoverWithin != 0 &&
+        ecs_has_id(world, entity, EcsUiHoverWithin);
 
     const EcsUiNodeId *node_id = ecs_get(world, entity, EcsUiNodeId);
     if (node_id != NULL) {

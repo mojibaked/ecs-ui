@@ -159,6 +159,17 @@ static int TestHoverRevealState(ecs_world_t *world)
     result |= Require(
         ecs_has_id(world, root, EcsUiHoverWithin),
         "root should be hover-within when descendant is hovered");
+    EcsUiTreeSnapshot hover_tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &hover_tree),
+        "hover reveal tree read failed");
+    result |= Require(
+        hover_tree.count >= 3u &&
+            !hover_tree.nodes[1u].hovered &&
+            hover_tree.nodes[1u].hover_within &&
+            hover_tree.nodes[2u].hovered &&
+            hover_tree.nodes[2u].hover_within,
+        "tree snapshot should project hovered and hover-within state");
     visual = ecs_get(world, action, EcsUiVisual);
     result |= Require(visual != NULL, "visible reveal visual should exist");
     if (visual != NULL) {

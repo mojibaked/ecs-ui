@@ -414,7 +414,15 @@ static Clay_Color EcsUiClayContainerBackground(
     if (node == NULL || !node->has_box_style) {
         return fallback;
     }
-    return EcsUiClayStyleColorOr(node->box_style.background, fallback);
+    Clay_Color fill = EcsUiClayStyleColorOr(
+        node->box_style.background,
+        fallback);
+    if (node->hover_within) {
+        fill = EcsUiClayStyleColorOr(
+            node->box_style.hover_background,
+            fill);
+    }
+    return fill;
 }
 
 static Clay_Color EcsUiClayTransparent(void)
@@ -515,6 +523,9 @@ static Clay_Color EcsUiClayPressableColor(
 {
     Clay_Color fill = EcsUiClayColor(theme->button_subtle);
     if (node == NULL || !node->has_box_style) {
+        if (node != NULL && node->hover_within) {
+            fill = EcsUiClayApplyOpacity(fill, 0.86f);
+        }
         return EcsUiClayLerpColor(
             fill,
             (Clay_Color){255.0f, 255.0f, 255.0f, fill.a},
@@ -525,6 +536,10 @@ static Clay_Color EcsUiClayPressableColor(
     if (node->pressable.disabled) {
         fill = EcsUiClayStyleColorOr(
             node->box_style.disabled_background,
+            fill);
+    } else if (node->hover_within) {
+        fill = EcsUiClayStyleColorOr(
+            node->box_style.hover_background,
             fill);
     }
     Clay_Color highlight = EcsUiClayStyleColorOr(

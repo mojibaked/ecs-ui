@@ -1761,6 +1761,197 @@ static int TestZStackBoxStyleEmitsBackgroundColor(void)
     return result;
 }
 
+static int TestStackHoverBackgroundUsesCoreHoverState(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create stack hover world");
+    }
+
+    const EcsUiColor base_color = {
+        .r = 24u,
+        .g = 34u,
+        .b = 44u,
+        .a = 255u,
+    };
+    const EcsUiColor hover_color = {
+        .r = 88u,
+        .g = 98u,
+        .b = 108u,
+        .a = 255u,
+    };
+    ecs_entity_t root = EcsUiRootEntity(world, "StackHoverRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t stack = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "StackHoverTarget",
+            .preferred_width = 100.0f,
+            .preferred_height = 40.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "stack hover builder failed");
+
+    ecs_set(world, stack, EcsUiBoxStyle, {
+        .background = base_color,
+        .hover_background = hover_color,
+        .radius = 3.0f,
+    });
+    result |= Require(
+        EcsUiApplyHoverState(world, stack),
+        "stack hover state should apply");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "stack hover tree read failed");
+    result |= Require(
+        tree.count >= 2u && tree.nodes[1u].hovered &&
+            tree.nodes[1u].hover_within,
+        "stack hover state should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 72.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayRectangleColor(
+        &commands,
+        hover_color,
+        "stack hover should emit hover background");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "stack hover layout should not emit Clay errors");
+
+    result |= Require(
+        EcsUiApplyHoverState(world, 0),
+        "stack empty hover state should apply");
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "stack unhover tree read failed");
+    ResetClayErrors();
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    commands = Clay_EndLayout();
+    result |= RequireClayRectangleColor(
+        &commands,
+        base_color,
+        "unhovered stack should emit base background");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestPressableHoverBackgroundUsesCoreHoverState(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create pressable hover world");
+    }
+
+    const EcsUiColor base_color = {
+        .r = 39u,
+        .g = 49u,
+        .b = 59u,
+        .a = 255u,
+    };
+    const EcsUiColor hover_color = {
+        .r = 121u,
+        .g = 131u,
+        .b = 141u,
+        .a = 255u,
+    };
+    ecs_entity_t action = CreateAction(world, "PressableHoverAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "PressableHoverRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t pressable = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PressableHoverTarget",
+            .on_click = action,
+            .preferred_height = 32.0f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PressableHoverLabel",
+            .text = "hover",
+            .role = ECS_UI_TEXT_BUTTON,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "pressable hover builder failed");
+
+    ecs_set(world, pressable, EcsUiBoxStyle, {
+        .background = base_color,
+        .hover_background = hover_color,
+        .padding = 4.0f,
+    });
+    result |= Require(
+        EcsUiApplyHoverState(world, pressable),
+        "pressable hover state should apply");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "pressable hover tree read failed");
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(160.0f, 64.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireClayRectangleColor(
+        &commands,
+        hover_color,
+        "pressable hover should emit hover background");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "pressable hover layout should not emit Clay errors");
+
+    result |= Require(
+        EcsUiApplyHoverState(world, 0),
+        "pressable empty hover state should apply");
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "pressable unhover tree read failed");
+    ResetClayErrors();
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    commands = Clay_EndLayout();
+    result |= RequireClayRectangleColor(
+        &commands,
+        base_color,
+        "unhovered pressable should emit base background");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestPlainStacksEmitNoDefaultBackground(void)
 {
     int result = 0;
@@ -3017,6 +3208,8 @@ int main(void)
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
     result |= TestZStackBoxStyleEmitsBackgroundColor();
+    result |= TestStackHoverBackgroundUsesCoreHoverState();
+    result |= TestPressableHoverBackgroundUsesCoreHoverState();
     result |= TestPlainStacksEmitNoDefaultBackground();
     result |= TestStackStyleTokenEmitsBackgroundColor();
     result |= TestStackDirectStyleEmitsBackgroundAndBorder();

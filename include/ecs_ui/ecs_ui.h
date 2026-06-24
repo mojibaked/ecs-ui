@@ -316,6 +316,8 @@ typedef struct EcsUiTreeNodeSnapshot {
     bool has_text_layout;
     bool has_placement;
     bool has_text_field_view;
+    bool hovered;
+    bool hover_within;
 } EcsUiTreeNodeSnapshot;
 
 typedef struct EcsUiTreeSnapshot {
