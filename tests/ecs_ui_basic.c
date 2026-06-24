@@ -39,6 +39,48 @@ static int RequireNear(
     return 0;
 }
 
+static float TestColorLuminance(EcsUiColor color)
+{
+    return ((float)color.r * 0.2126f) +
+        ((float)color.g * 0.7152f) +
+        ((float)color.b * 0.0722f);
+}
+
+static uint32_t TestChannelDistance(EcsUiColor a, EcsUiColor b)
+{
+    uint32_t distance =
+        a.r > b.r ? (uint32_t)(a.r - b.r) : (uint32_t)(b.r - a.r);
+    distance +=
+        a.g > b.g ? (uint32_t)(a.g - b.g) : (uint32_t)(b.g - a.g);
+    distance +=
+        a.b > b.b ? (uint32_t)(a.b - b.b) : (uint32_t)(b.b - a.b);
+    return distance;
+}
+
+static int TestThemeDefaultHierarchy(void)
+{
+    int result = 0;
+    EcsUiTheme theme = EcsUiThemeDefault();
+    const float min_luminance_delta = 12.0f;
+    const float root_luminance = TestColorLuminance(theme.root_background);
+    const float surface_luminance = TestColorLuminance(theme.surface);
+    const float subtle_luminance = TestColorLuminance(theme.surface_subtle);
+
+    result |= Require(
+        surface_luminance - root_luminance >= min_luminance_delta,
+        "default theme surface should separate from root background");
+    result |= Require(
+        subtle_luminance - surface_luminance >= min_luminance_delta,
+        "default theme subtle surface should separate from surface");
+    result |= Require(
+        theme.radius >= 0.04f && theme.radius <= 0.06f,
+        "default theme radius should map to roughly 2-3px in Clay");
+    result |= Require(
+        TestChannelDistance(theme.button_primary, theme.button_danger) >= 120u,
+        "default theme warm accent should differ from primary accent");
+    return result;
+}
+
 static int RequireNode(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
@@ -839,6 +881,7 @@ int main(void)
     ECS_COMPONENT_DEFINE(world, TestProjectionItem);
     ECS_COMPONENT_DEFINE(world, TestProjectionUiItem);
     int result = 0;
+    result |= TestThemeDefaultHierarchy();
     result |= TestPlacementAndTextLayoutSnapshot();
     result |= TestGestureArenaPanThreshold();
     result |= TestGestureArenaPanImmediateAndCancel();

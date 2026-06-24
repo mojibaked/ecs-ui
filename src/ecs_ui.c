@@ -117,18 +117,18 @@ static bool EcsUiThemeReady(void)
 EcsUiTheme EcsUiThemeDefault(void)
 {
     return (EcsUiTheme){
-        .root_background = {16u, 20u, 25u, 255u},
-        .surface = {24u, 32u, 37u, 255u},
-        .surface_subtle = {18u, 27u, 31u, 255u},
-        .button = {38u, 72u, 76u, 255u},
+        .root_background = {10u, 14u, 18u, 255u},
+        .surface = {29u, 36u, 44u, 255u},
+        .surface_subtle = {45u, 55u, 65u, 255u},
+        .button = {57u, 67u, 78u, 255u},
         .button_primary = {49u, 211u, 186u, 255u},
-        .button_subtle = {88u, 111u, 116u, 255u},
-        .button_danger = {255u, 125u, 95u, 255u},
-        .button_disabled = {70u, 78u, 82u, 255u},
+        .button_subtle = {70u, 82u, 94u, 255u},
+        .button_danger = {238u, 118u, 88u, 255u},
+        .button_disabled = {45u, 52u, 60u, 255u},
         .text = {243u, 247u, 247u, 255u},
-        .text_muted = {142u, 161u, 164u, 255u},
-        .text_inverse = {16u, 20u, 25u, 255u},
-        .radius = 0.16f,
+        .text_muted = {154u, 169u, 174u, 255u},
+        .text_inverse = {10u, 14u, 18u, 255u},
+        .radius = 0.05f,
     };
 }
 
