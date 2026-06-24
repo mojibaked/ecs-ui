@@ -285,7 +285,7 @@ static float EcsUiRaylibPreferredHeight(
                 EcsUiRaylibPreferredHeight(tree, child, child_width));
             child = tree->nodes[child].next_sibling;
         }
-        return padding * 2.0f + EcsUiRaylibMaxFloat(height, 44.0f);
+        return padding * 2.0f + height;
     }
     case ECS_UI_NODE_ROOT:
     case ECS_UI_NODE_VSTACK:
@@ -304,7 +304,7 @@ static float EcsUiRaylibPreferredHeight(
             child_count += 1u;
             child = tree->nodes[child].next_sibling;
         }
-        return EcsUiRaylibMaxFloat(height, 44.0f);
+        return height;
     }
     case ECS_UI_NODE_NONE:
     default:

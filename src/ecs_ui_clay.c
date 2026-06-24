@@ -589,7 +589,7 @@ static float EcsUiClayPreferredHeight(
                 EcsUiClayPreferredHeight(tree, child, child_width));
             child = tree->nodes[child].next_sibling;
         }
-        return padding * 2.0f + EcsUiClayMaxFloat(height, 44.0f);
+        return padding * 2.0f + height;
     }
     case ECS_UI_NODE_ROOT:
     case ECS_UI_NODE_VSTACK:
@@ -608,7 +608,7 @@ static float EcsUiClayPreferredHeight(
             child_count += 1u;
             child = tree->nodes[child].next_sibling;
         }
-        return EcsUiClayMaxFloat(height, 44.0f);
+        return height;
     }
     case ECS_UI_NODE_NONE:
     default:
@@ -685,7 +685,10 @@ static Clay_LayoutConfig EcsUiClayFlowLayout(
 static Clay_LayoutConfig EcsUiClayCustomLayout(
     const EcsUiTreeNodeSnapshot *node)
 {
-    Clay_SizingAxis width = CLAY_SIZING_GROW(0);
+    Clay_SizingAxis width =
+        (node != NULL && node->custom.preferred_width > 0.0f) ?
+            CLAY_SIZING_FIXED(node->custom.preferred_width) :
+            CLAY_SIZING_GROW(0);
     Clay_SizingAxis height = CLAY_SIZING_FIXED(EcsUiClayCustomHeight(node));
     if (node != NULL) {
         width = EcsUiClayApplyCustomSizing(node->custom.width_sizing, width);
