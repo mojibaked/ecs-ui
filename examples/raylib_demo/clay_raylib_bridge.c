@@ -221,11 +221,28 @@ void EcsUiClayRaylibRenderEx(
         case CLAY_RENDER_COMMAND_TYPE_CUSTOM: {
             Clay_CustomRenderData *custom = &command->renderData.custom;
             const EcsUiTreeNodeSnapshot *node = custom->customData;
+            const float opacity = custom->backgroundColor.a / 255.0f;
+            if (node != NULL && node->kind == ECS_UI_NODE_ICON) {
+                if (options != NULL && options->icon_draw != NULL) {
+                    options->icon_draw(
+                        node,
+                        bounds,
+                        opacity,
+                        options->user_data);
+                } else if (options != NULL && options->custom_draw != NULL) {
+                    options->custom_draw(
+                        node,
+                        bounds,
+                        opacity,
+                        options->user_data);
+                }
+                break;
+            }
             if (options != NULL && options->custom_draw != NULL) {
                 options->custom_draw(
                     node,
                     bounds,
-                    custom->backgroundColor.a / 255.0f,
+                    opacity,
                     options->user_data);
             } else {
                 EcsUiClayRaylibRenderCustomFallback(node, bounds, custom);

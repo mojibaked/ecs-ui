@@ -5,6 +5,8 @@
 
 static int16_t g_ecs_ui_clay_z_index_base;
 
+#define ECS_UI_CLAY_ICON_SIZE 16.0f
+
 static Clay_String EcsUiClayString(const char *text)
 {
     return (Clay_String){
@@ -565,7 +567,7 @@ static float EcsUiClayPreferredHeight(
     case ECS_UI_NODE_TEXT:
         return EcsUiClayTextSize(node->text.role) + 8.0f;
     case ECS_UI_NODE_ICON:
-        return 24.0f;
+        return ECS_UI_CLAY_ICON_SIZE;
     case ECS_UI_NODE_BUTTON:
         return 46.0f;
     case ECS_UI_NODE_PRESSABLE:
@@ -627,7 +629,8 @@ static Clay_LayoutConfig EcsUiClayFlowLayout(
         height = CLAY_SIZING_FIXED(EcsUiClayTextSize(node->text.role) + 8.0f);
         break;
     case ECS_UI_NODE_ICON:
-        height = CLAY_SIZING_FIXED(24.0f);
+        width = CLAY_SIZING_FIXED(ECS_UI_CLAY_ICON_SIZE);
+        height = CLAY_SIZING_FIXED(ECS_UI_CLAY_ICON_SIZE);
         break;
     case ECS_UI_NODE_BUTTON:
         height = CLAY_SIZING_FIXED(46.0f);
@@ -1873,27 +1876,25 @@ static void EcsUiClayEmitNodeContent(
     case ECS_UI_NODE_ICON: {
         char clay_id[ECS_UI_ID_MAX * 2u] = {0};
         EcsUiClayElementId(node, NULL, clay_id, sizeof(clay_id));
+        EcsUiClayRegisterNodeTarget(
+            frame,
+            tree,
+            index,
+            Clay_GetElementId(EcsUiClayString(clay_id)));
         CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
             .layout = {
                 .sizing = {
-                    .height = CLAY_SIZING_FIXED(24.0f),
-                },
-                .childAlignment = {
-                    .y = CLAY_ALIGN_Y_CENTER,
+                    .width = CLAY_SIZING_FIXED(ECS_UI_CLAY_ICON_SIZE),
+                    .height = CLAY_SIZING_FIXED(ECS_UI_CLAY_ICON_SIZE),
                 },
             },
+            .backgroundColor = EcsUiClayApplyOpacity(
+                (Clay_Color){0.0f, 0.0f, 0.0f, 255.0f},
+                opacity),
+            .custom = {
+                .customData = (void *)node,
+            },
         }) {
-            CLAY_TEXT(
-                EcsUiClayString(node->icon.name),
-                EcsUiClayTextConfig(
-                    theme,
-                    ECS_UI_TEXT_LABEL,
-                    inverse_text,
-                    node_text_style,
-                    node_has_text_style,
-                    text_disabled,
-                    EcsUiClayDefaultTextLayout(),
-                    opacity));
         }
         break;
     }

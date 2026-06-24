@@ -572,6 +572,22 @@ static uint32_t CountNodeId(const EcsUiTreeSnapshot *tree, const char *id)
     return count;
 }
 
+static const EcsUiTreeNodeSnapshot *FindTreeNode(
+    const EcsUiTreeSnapshot *tree,
+    const char *id)
+{
+    if (tree == NULL || id == NULL) {
+        return NULL;
+    }
+
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (strcmp(tree->nodes[i].id, id) == 0) {
+            return &tree->nodes[i];
+        }
+    }
+    return NULL;
+}
+
 static Clay_RenderCommand *FindCustomCommand(
     Clay_RenderCommandArray *commands,
     const char *node_id)
@@ -590,6 +606,29 @@ static Clay_RenderCommand *FindCustomCommand(
         const EcsUiTreeNodeSnapshot *node =
             command->renderData.custom.customData;
         if (node != NULL && strcmp(node->id, node_id) == 0) {
+            return command;
+        }
+    }
+    return NULL;
+}
+
+static Clay_RenderCommand *FindTextCommand(
+    Clay_RenderCommandArray *commands,
+    const char *text)
+{
+    if (commands == NULL || text == NULL) {
+        return NULL;
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_TEXT) {
+            continue;
+        }
+
+        Clay_TextRenderData *text_data = &command->renderData.text;
+        if (ClayStringSliceEquals(text_data->stringContents, text)) {
             return command;
         }
     }
@@ -848,19 +887,78 @@ static int TestTextStyleInheritanceEmitsClayForegroundColor(void)
         "normal text child should inherit parent text style color");
     result |= RequireClayTextColor(
         &commands,
-        "normal-symbol",
-        normal_style.color,
-        "normal icon child should inherit parent text style color");
-    result |= RequireClayTextColor(
-        &commands,
         "disabled pressable text",
         disabled_style.disabled_color,
         "disabled pressable text child should inherit disabled text color");
-    result |= RequireClayTextColor(
-        &commands,
-        "disabled-symbol",
-        disabled_style.disabled_color,
-        "disabled pressable icon child should inherit disabled text color");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestIconEmitsCustomCommand(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "IconCustomRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "ResolverIcon",
+            .name = "slice-b-symbol",
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "icon custom builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "icon custom tree read failed");
+    const EcsUiTreeNodeSnapshot *icon_node =
+        FindTreeNode(&tree, "ResolverIcon");
+    result |= Require(icon_node != NULL, "icon node should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(120.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    Clay_RenderCommand *icon_command =
+        FindCustomCommand(&commands, "ResolverIcon");
+    result |= Require(
+        icon_command != NULL,
+        "icon should emit a Clay custom command");
+    result |= Require(
+        FindTextCommand(&commands, "slice-b-symbol") == NULL,
+        "icon should not emit its name as a Clay text command");
+    if (icon_command != NULL && icon_node != NULL) {
+        result |= Require(
+            icon_command->renderData.custom.customData == icon_node,
+            "icon custom command should carry the snapshot node");
+        result |= RequireNear(
+            icon_command->boundingBox.width,
+            16.0f,
+            0.001f,
+            "icon custom command should be 16px wide");
+        result |= RequireNear(
+            icon_command->boundingBox.height,
+            16.0f,
+            0.001f,
+            "icon custom command should be 16px tall");
+    }
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "icon custom layout should not emit Clay errors");
 
     ecs_fini(world);
     return result;
@@ -2625,6 +2723,7 @@ int main(void)
 
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();
+    result |= TestIconEmitsCustomCommand();
     result |= TestVisualOpacitySkipsHitTesting();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestActionStackEmitsPointerEvents();
