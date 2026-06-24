@@ -85,6 +85,9 @@ void EcsUiClayCollectFrameEvents(
     EcsUiClayInteractionFrame *frame,
     EcsUiClayPointerState pointer,
     EcsUiEventList *events);
+bool EcsUiClayApplyInteractionFrame(
+    ecs_world_t *world,
+    const EcsUiClayInteractionFrame *frame);
 bool EcsUiClayInteractionFrameTreePointerInside(
     const EcsUiClayInteractionFrame *frame,
     ecs_entity_t tree);

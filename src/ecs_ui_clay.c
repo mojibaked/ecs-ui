@@ -2328,6 +2328,15 @@ void EcsUiClayCollectFrameEvents(
     }
 }
 
+bool EcsUiClayApplyInteractionFrame(
+    ecs_world_t *world,
+    const EcsUiClayInteractionFrame *frame)
+{
+    return EcsUiApplyHoverState(
+        world,
+        frame != NULL ? frame->resolved_node : 0);
+}
+
 bool EcsUiClayInteractionFrameTreePointerInside(
     const EcsUiClayInteractionFrame *frame,
     ecs_entity_t tree)

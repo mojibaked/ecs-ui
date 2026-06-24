@@ -1053,6 +1053,290 @@ static int TestVisualOpacitySkipsHitTesting(void)
     return result;
 }
 
+static int TestRevealOnHoverRowActionsFallThrough(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create reveal world");
+    }
+
+    ecs_entity_t row_action = CreateAction(world, "RevealRowAction");
+    ecs_entity_t duplicate_action =
+        CreateAction(world, "RevealDuplicateAction");
+    ecs_entity_t delete_action = CreateAction(world, "RevealDeleteAction");
+    const EcsUiBoxStyle action_style = {
+        .padding = 2.0f,
+    };
+    ecs_entity_t root = EcsUiRootEntity(world, "RevealRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t row = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "RevealRow",
+            .preferred_width = 200.0f,
+            .preferred_height = 20.0f,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    ecs_add_pair(world, row, EcsUiOnClick, row_action);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "RevealLabel",
+            .kind = "label",
+            .preferred_height = 20.0f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "RevealActions",
+            .gap = 2.0f,
+            .preferred_width = 46.0f,
+            .preferred_height = 20.0f,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DuplicateWrap",
+            .preferred_width = 22.0f,
+            .preferred_height = 20.0f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    ecs_entity_t duplicate_button = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "DuplicateButton",
+            .on_click = duplicate_action,
+            .preferred_height = 20.0f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DuplicateIcon",
+            .text = "D",
+            .role = ECS_UI_TEXT_CAPTION,
+        });
+    ecs_set_ptr(world, duplicate_button, EcsUiBoxStyle, &action_style);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DeleteWrap",
+            .preferred_width = 22.0f,
+            .preferred_height = 20.0f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    ecs_entity_t delete_button = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "DeleteButton",
+            .on_click = delete_action,
+            .preferred_height = 20.0f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DeleteIcon",
+            .text = "X",
+            .role = ECS_UI_TEXT_CAPTION,
+        });
+    ecs_set_ptr(world, delete_button, EcsUiBoxStyle, &action_style);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "reveal row builder failed");
+    result |= Require(
+        EcsUiSetRevealOnHover(world, duplicate_button, row),
+        "duplicate reveal relationship should be set");
+    result |= Require(
+        EcsUiSetRevealOnHover(world, delete_button, row),
+        "delete reveal relationship should be set");
+
+    const EcsUiVisual *duplicate_visual =
+        ecs_get(world, duplicate_button, EcsUiVisual);
+    result |= Require(
+        duplicate_visual != NULL && duplicate_visual->opacity == 0.0f,
+        "duplicate should start hidden");
+
+    EcsUiTreeSnapshot tree = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(220.0f, 40.0f);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiClayInteractionFrame frame = {0};
+
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "reveal row hidden tree read failed");
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 10.0f,
+            .time = 30.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "hidden row action press should go to row");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        row,
+        "RevealRow");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        row,
+        "RevealRow");
+    result |= Require(
+        events.count > 1u && events.events[1u].action == row_action,
+        "row press should carry row action");
+    result |= Require(
+        EcsUiClayApplyInteractionFrame(world, &frame),
+        "reveal row hover frame should apply");
+    duplicate_visual = ecs_get(world, duplicate_button, EcsUiVisual);
+    result |= Require(
+        duplicate_visual != NULL && duplicate_visual->opacity == 1.0f,
+        "duplicate should reveal when row is hovered");
+
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "reveal row visible tree read failed");
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 10.0f,
+            .time = 30.1,
+            .released = true,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        2u,
+        "row release should click captured row after reveal");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_CLICKED,
+        row,
+        "RevealRow");
+    result |= Require(
+        events.count > 1u && events.events[1u].action == row_action,
+        "row click should carry row action");
+
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "reveal button visible tree read failed");
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 162.0f,
+            .y = 10.0f,
+            .time = 31.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "revealed duplicate press should hit duplicate button");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        duplicate_button,
+        "DuplicateButton");
+    result |= Require(
+        events.count > 1u && events.events[1u].action == duplicate_action,
+        "duplicate press should carry duplicate action");
+    result |= Require(
+        EcsUiClayApplyInteractionFrame(world, &frame),
+        "duplicate hover frame should keep row reveal active");
+
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "reveal duplicate release tree read failed");
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 162.0f,
+            .y = 10.0f,
+            .time = 31.1,
+            .released = true,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        2u,
+        "duplicate release should click duplicate button");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_CLICKED,
+        duplicate_button,
+        "DuplicateButton");
+
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "reveal gap tree read failed");
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 177.0f,
+            .y = 10.0f,
+            .time = 32.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "gap between revealed actions should fall through to row");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        row,
+        "RevealRow");
+    result |= Require(
+        events.count > 1u && events.events[1u].action == row_action,
+        "gap press should carry row action");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestVisualOffsetAffectsHitTesting(void)
 {
     int result = 0;
@@ -2725,6 +3009,7 @@ int main(void)
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();
     result |= TestIconEmitsCustomCommand();
     result |= TestVisualOpacitySkipsHitTesting();
+    result |= TestRevealOnHoverRowActionsFallThrough();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestActionStackEmitsPointerEvents();
     result |= TestPointerCaptureLifecycle();

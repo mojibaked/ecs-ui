@@ -23,6 +23,9 @@ ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
 ECS_TAG_DECLARE(EcsUiOnClick);
 ECS_TAG_DECLARE(EcsUiUsesStyle);
+ECS_TAG_DECLARE(EcsUiHovered);
+ECS_TAG_DECLARE(EcsUiHoverWithin);
+ECS_TAG_DECLARE(EcsUiRevealedByHover);
 ECS_TAG_DECLARE(EcsUiThemeTag);
 ECS_TAG_DECLARE(EcsUiActiveTheme);
 ECS_TAG_DECLARE(EcsUiThemeStyle);
@@ -90,6 +93,11 @@ static const EcsUiTextStyle *EcsUiResolveTextStyle(
         NULL;
 }
 
+static void EcsUiSetVisualOpacity(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    float opacity);
+
 static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 {
     ecs_remove(world, entity, EcsUiStack);
@@ -106,6 +114,14 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     ecs_remove_id(world, entity, EcsUiInteractive);
     ecs_remove_pair(world, entity, EcsUiOnClick, EcsWildcard);
     ecs_remove_pair(world, entity, EcsUiUsesStyle, EcsWildcard);
+    if (EcsUiRevealedByHover != 0) {
+        const bool had_reveal =
+            ecs_get_target(world, entity, EcsUiRevealedByHover, 0) != 0;
+        ecs_remove_pair(world, entity, EcsUiRevealedByHover, EcsWildcard);
+        if (had_reveal) {
+            EcsUiSetVisualOpacity(world, entity, 1.0f);
+        }
+    }
 }
 
 static bool EcsUiThemeReady(void)
@@ -281,11 +297,15 @@ void EcsUiImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiInteractive);
     ECS_TAG_DEFINE(world, EcsUiOnClick);
     ECS_TAG_DEFINE(world, EcsUiUsesStyle);
+    ECS_TAG_DEFINE(world, EcsUiHovered);
+    ECS_TAG_DEFINE(world, EcsUiHoverWithin);
+    ECS_TAG_DEFINE(world, EcsUiRevealedByHover);
     ECS_TAG_DEFINE(world, EcsUiThemeTag);
     ECS_TAG_DEFINE(world, EcsUiActiveTheme);
     ECS_TAG_DEFINE(world, EcsUiThemeStyle);
     ecs_add_id(world, EcsUiOnClick, EcsExclusive);
     ecs_add_id(world, EcsUiUsesStyle, EcsExclusive);
+    ecs_add_id(world, EcsUiRevealedByHover, EcsExclusive);
     ecs_add_id(world, EcsUiActiveTheme, EcsExclusive);
     ecs_add_id(world, EcsUiThemeStyle, EcsExclusive);
 }
@@ -352,6 +372,152 @@ bool EcsUiSetStyleToken(
 
     ecs_add_pair(world, entity, EcsUiUsesStyle, style_token);
     return true;
+}
+
+static void EcsUiSetVisualOpacity(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    float opacity)
+{
+    if (world == NULL || entity == 0) {
+        return;
+    }
+
+    EcsUiVisual visual = {
+        .opacity = 1.0f,
+    };
+    const EcsUiVisual *existing = ecs_get(world, entity, EcsUiVisual);
+    if (existing != NULL) {
+        visual = *existing;
+    }
+    if (visual.opacity == opacity) {
+        return;
+    }
+    visual.opacity = opacity;
+    ecs_set_ptr(world, entity, EcsUiVisual, &visual);
+}
+
+static bool EcsUiRevealTriggerActive(
+    const ecs_world_t *world,
+    ecs_entity_t trigger)
+{
+    return world != NULL && trigger != 0 &&
+        ecs_is_alive(world, trigger) &&
+        ecs_has_id(world, trigger, EcsUiHoverWithin);
+}
+
+static void EcsUiApplyRevealForNode(
+    ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    if (world == NULL || entity == 0 || EcsUiRevealedByHover == 0) {
+        return;
+    }
+
+    ecs_entity_t trigger =
+        ecs_get_target(world, entity, EcsUiRevealedByHover, 0);
+    EcsUiSetVisualOpacity(
+        world,
+        entity,
+        EcsUiRevealTriggerActive(world, trigger) ? 1.0f : 0.0f);
+}
+
+bool EcsUiSetRevealOnHover(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t trigger)
+{
+    if (world == NULL || entity == 0 || EcsUiRevealedByHover == 0) {
+        return false;
+    }
+
+    if (trigger == 0) {
+        trigger = ecs_get_target(world, entity, EcsChildOf, 0);
+    }
+    if (trigger == 0) {
+        return false;
+    }
+
+    ecs_add_pair(world, entity, EcsUiRevealedByHover, trigger);
+    EcsUiApplyRevealForNode(world, entity);
+    return true;
+}
+
+bool EcsUiClearRevealOnHover(ecs_world_t *world, ecs_entity_t entity)
+{
+    if (world == NULL || entity == 0 || EcsUiRevealedByHover == 0) {
+        return false;
+    }
+
+    ecs_remove_pair(world, entity, EcsUiRevealedByHover, EcsWildcard);
+    EcsUiSetVisualOpacity(world, entity, 1.0f);
+    return true;
+}
+
+static void EcsUiRemoveTagFromAll(ecs_world_t *world, ecs_entity_t tag)
+{
+    if (world == NULL || tag == 0) {
+        return;
+    }
+
+    bool flush = ecs_defer_begin(world);
+    ecs_iter_t it = ecs_each_id(world, tag);
+    while (ecs_each_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            ecs_remove_id(world, it.entities[i], tag);
+        }
+    }
+    if (flush) {
+        (void)ecs_defer_end(world);
+    }
+}
+
+bool EcsUiApplyHoverState(ecs_world_t *world, ecs_entity_t hovered_node)
+{
+    if (world == NULL || EcsUiHovered == 0 || EcsUiHoverWithin == 0 ||
+        EcsUiRevealedByHover == 0) {
+        return false;
+    }
+
+    EcsUiRemoveTagFromAll(world, EcsUiHovered);
+    EcsUiRemoveTagFromAll(world, EcsUiHoverWithin);
+
+    if (hovered_node != 0 && ecs_is_alive(world, hovered_node)) {
+        ecs_add_id(world, hovered_node, EcsUiHovered);
+        for (ecs_entity_t node = hovered_node; node != 0;
+             node = ecs_get_target(world, node, EcsChildOf, 0)) {
+            ecs_add_id(world, node, EcsUiHoverWithin);
+        }
+    }
+
+    bool flush = ecs_defer_begin(world);
+    ecs_iter_t it =
+        ecs_each_id(world, ecs_pair(EcsUiRevealedByHover, EcsWildcard));
+    while (ecs_each_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            EcsUiApplyRevealForNode(world, it.entities[i]);
+        }
+    }
+    if (flush) {
+        (void)ecs_defer_end(world);
+    }
+
+    return true;
+}
+
+ecs_entity_t EcsUiCurrentHoveredNode(const ecs_world_t *world)
+{
+    if (world == NULL || EcsUiHovered == 0) {
+        return 0;
+    }
+
+    ecs_iter_t it = ecs_each_id(world, EcsUiHovered);
+    while (ecs_each_next(&it)) {
+        if (it.count > 0) {
+            return it.entities[0];
+        }
+    }
+    return 0;
 }
 
 ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id)

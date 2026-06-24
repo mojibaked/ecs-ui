@@ -370,6 +370,9 @@ extern ECS_TAG_DECLARE(EcsUiRoot);
 extern ECS_TAG_DECLARE(EcsUiInteractive);
 extern ECS_TAG_DECLARE(EcsUiOnClick);
 extern ECS_TAG_DECLARE(EcsUiUsesStyle);
+extern ECS_TAG_DECLARE(EcsUiHovered);
+extern ECS_TAG_DECLARE(EcsUiHoverWithin);
+extern ECS_TAG_DECLARE(EcsUiRevealedByHover);
 extern ECS_TAG_DECLARE(EcsUiThemeTag);
 extern ECS_TAG_DECLARE(EcsUiActiveTheme);
 extern ECS_TAG_DECLARE(EcsUiThemeStyle);
@@ -383,6 +386,13 @@ bool EcsUiSetStyleToken(
     ecs_world_t *world,
     ecs_entity_t entity,
     ecs_entity_t style_token);
+bool EcsUiSetRevealOnHover(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t trigger);
+bool EcsUiClearRevealOnHover(ecs_world_t *world, ecs_entity_t entity);
+bool EcsUiApplyHoverState(ecs_world_t *world, ecs_entity_t hovered_node);
+ecs_entity_t EcsUiCurrentHoveredNode(const ecs_world_t *world);
 
 ecs_entity_t EcsUiThemeRoot(ecs_world_t *world);
 ecs_entity_t EcsUiThemeEntity(ecs_world_t *world, const char *id);

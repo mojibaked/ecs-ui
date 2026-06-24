@@ -81,6 +81,167 @@ static int TestThemeDefaultHierarchy(void)
     return result;
 }
 
+static int TestHoverRevealState(ecs_world_t *world)
+{
+    int result = 0;
+    if (world == NULL) {
+        return Require(false, "hover reveal world missing");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "HoverRevealRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t row = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "HoverRow",
+        });
+    ecs_entity_t action = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "HoverAction",
+            .preferred_height = 20.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "hover reveal builder failed");
+
+    ecs_set(world, action, EcsUiVisual, {
+        .opacity = 0.75f,
+        .offset_x = 3.0f,
+        .offset_y = 4.0f,
+        .highlight = 0.5f,
+    });
+    result |= Require(
+        EcsUiSetRevealOnHover(world, action, row),
+        "reveal relationship should be set");
+    result |= Require(
+        ecs_get_target(world, action, EcsUiRevealedByHover, 0) == row,
+        "reveal relationship should target row");
+
+    const EcsUiVisual *visual = ecs_get(world, action, EcsUiVisual);
+    result |= Require(visual != NULL, "hidden reveal visual should exist");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            0.0f,
+            0.0001f,
+            "reveal target should start hidden");
+        result |= RequireNear(
+            visual->offset_x,
+            3.0f,
+            0.0001f,
+            "reveal should preserve visual offset x");
+        result |= RequireNear(
+            visual->offset_y,
+            4.0f,
+            0.0001f,
+            "reveal should preserve visual offset y");
+        result |= RequireNear(
+            visual->highlight,
+            0.5f,
+            0.0001f,
+            "reveal should preserve visual highlight");
+    }
+
+    result |= Require(
+        EcsUiApplyHoverState(world, action),
+        "hover state should apply");
+    result |= Require(
+        EcsUiCurrentHoveredNode(world) == action,
+        "current hovered node should be action");
+    result |= Require(
+        ecs_has_id(world, action, EcsUiHovered),
+        "action should be marked hovered");
+    result |= Require(
+        ecs_has_id(world, row, EcsUiHoverWithin),
+        "row should be hover-within when child is hovered");
+    result |= Require(
+        ecs_has_id(world, root, EcsUiHoverWithin),
+        "root should be hover-within when descendant is hovered");
+    visual = ecs_get(world, action, EcsUiVisual);
+    result |= Require(visual != NULL, "visible reveal visual should exist");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            1.0f,
+            0.0001f,
+            "hovered reveal target should be visible");
+        result |= RequireNear(
+            visual->offset_x,
+            3.0f,
+            0.0001f,
+            "visible reveal should preserve offset x");
+    }
+
+    result |= Require(
+        EcsUiApplyHoverState(world, 0),
+        "empty hover state should apply");
+    result |= Require(
+        EcsUiCurrentHoveredNode(world) == 0,
+        "empty hover state should clear current hover");
+    visual = ecs_get(world, action, EcsUiVisual);
+    result |= Require(visual != NULL, "cleared reveal visual should exist");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            0.0f,
+            0.0001f,
+            "unhovered reveal target should hide again");
+    }
+
+    EcsUiBuilder rebuild = EcsUiBuilderBegin(world, root);
+    row = EcsUiBeginHStack(
+        &rebuild,
+        (EcsUiStackDesc){
+            .id = "HoverRow",
+        });
+    action = EcsUiBeginPressable(
+        &rebuild,
+        (EcsUiPressableDesc){
+            .id = "HoverAction",
+            .preferred_height = 20.0f,
+        });
+    EcsUiEnd(&rebuild);
+    EcsUiEnd(&rebuild);
+    EcsUiBuilderEnd(&rebuild);
+    result |= Require(EcsUiBuilderOk(&rebuild), "hover reveal rebuild failed");
+    result |= Require(
+        ecs_get_target(world, action, EcsUiRevealedByHover, 0) == 0,
+        "rebuild without reveal should remove reveal relationship");
+    visual = ecs_get(world, action, EcsUiVisual);
+    result |= Require(visual != NULL, "rebuilt reveal visual should remain");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            1.0f,
+            0.0001f,
+            "rebuild without reveal should restore opacity");
+    }
+
+    result |= Require(
+        EcsUiSetRevealOnHover(world, action, row),
+        "reveal relationship should reset");
+
+    result |= Require(
+        EcsUiClearRevealOnHover(world, action),
+        "reveal relationship should clear");
+    result |= Require(
+        ecs_get_target(world, action, EcsUiRevealedByHover, 0) == 0,
+        "clear reveal should remove relationship");
+    visual = ecs_get(world, action, EcsUiVisual);
+    result |= Require(visual != NULL, "cleared reveal visual should remain");
+    if (visual != NULL) {
+        result |= RequireNear(
+            visual->opacity,
+            1.0f,
+            0.0001f,
+            "cleared reveal should restore opacity");
+    }
+
+    return result;
+}
+
 static int RequireNode(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
@@ -882,6 +1043,7 @@ int main(void)
     ECS_COMPONENT_DEFINE(world, TestProjectionUiItem);
     int result = 0;
     result |= TestThemeDefaultHierarchy();
+    result |= TestHoverRevealState(world);
     result |= TestPlacementAndTextLayoutSnapshot();
     result |= TestGestureArenaPanThreshold();
     result |= TestGestureArenaPanImmediateAndCancel();
@@ -893,6 +1055,13 @@ int main(void)
     result |= Require(
         ecs_has_id(world, EcsUiUsesStyle, EcsExclusive),
         "EcsUiUsesStyle should be exclusive");
+    result |= Require(EcsUiHovered != 0, "EcsUiHovered should be registered");
+    result |= Require(
+        EcsUiHoverWithin != 0,
+        "EcsUiHoverWithin should be registered");
+    result |= Require(
+        ecs_has_id(world, EcsUiRevealedByHover, EcsExclusive),
+        "EcsUiRevealedByHover should be exclusive");
     result |= Require(EcsUiThemeTag != 0, "EcsUiThemeTag should be registered");
     result |= Require(
         ecs_has_id(world, EcsUiActiveTheme, EcsExclusive),
