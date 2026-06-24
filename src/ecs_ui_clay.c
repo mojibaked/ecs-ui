@@ -415,6 +415,11 @@ static Clay_Color EcsUiClayContainerBackground(
     return EcsUiClayStyleColorOr(node->box_style.background, fallback);
 }
 
+static Clay_Color EcsUiClayTransparent(void)
+{
+    return (Clay_Color){0};
+}
+
 static Clay_CornerRadius EcsUiClayCornerRadius(
     const EcsUiTreeNodeSnapshot *node,
     float fallback)
@@ -468,12 +473,15 @@ static Clay_ElementDeclaration EcsUiClayContainerDeclaration(
     float fallback_radius,
     float opacity)
 {
+    Clay_Color background =
+        EcsUiClayContainerBackground(node, fallback_background);
+    Clay_CornerRadius radius = background.a != 0.0f ?
+        EcsUiClayCornerRadius(node, fallback_radius) :
+        (Clay_CornerRadius){0};
     return (Clay_ElementDeclaration){
         .layout = layout,
-        .backgroundColor = EcsUiClayApplyOpacity(
-            EcsUiClayContainerBackground(node, fallback_background),
-            opacity),
-        .cornerRadius = EcsUiClayCornerRadius(node, fallback_radius),
+        .backgroundColor = EcsUiClayApplyOpacity(background, opacity),
+        .cornerRadius = radius,
         .border = EcsUiClayBorder(node, opacity),
     };
 }
@@ -1311,8 +1319,8 @@ static void EcsUiClayEmitZStack(
         EcsUiClayContainerDeclaration(
             layout,
             node,
-            EcsUiClayColor(theme->surface),
-            theme->radius,
+            EcsUiClayTransparent(),
+            0.0f,
             opacity)) {
         uint32_t child = node->first_child;
         int16_t z_index = 1;
@@ -1573,8 +1581,8 @@ static void EcsUiClayEmitNodeContent(
             tree,
             theme,
             index,
-            EcsUiClayColor(theme->surface),
-            theme->radius,
+            EcsUiClayTransparent(),
+            0.0f,
             inverse_text,
             node_text_style,
             node_has_text_style,
@@ -1587,8 +1595,8 @@ static void EcsUiClayEmitNodeContent(
             tree,
             theme,
             index,
-            EcsUiClayColor(theme->surface_subtle),
-            theme->radius,
+            EcsUiClayTransparent(),
+            0.0f,
             inverse_text,
             node_text_style,
             node_has_text_style,

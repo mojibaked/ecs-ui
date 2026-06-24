@@ -270,6 +270,45 @@ static int RequireClayRectangleColor(
     return 1;
 }
 
+static int RequireOnlyTransparentOrClayRectangleColor(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor allowed,
+    const char *message)
+{
+    if (commands == NULL) {
+        return Require(false, "missing Clay rectangle command inputs");
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_RECTANGLE) {
+            continue;
+        }
+
+        Clay_Color color = command->renderData.rectangle.backgroundColor;
+        if ((uint8_t)color.a == 0u) {
+            continue;
+        }
+        if ((uint8_t)color.r != allowed.r ||
+            (uint8_t)color.g != allowed.g ||
+            (uint8_t)color.b != allowed.b ||
+            (uint8_t)color.a != allowed.a) {
+            (void)fprintf(
+                stderr,
+                "%s: unexpected opaque rectangle color {%u,%u,%u,%u}\n",
+                message,
+                (unsigned int)(uint8_t)color.r,
+                (unsigned int)(uint8_t)color.g,
+                (unsigned int)(uint8_t)color.b,
+                (unsigned int)(uint8_t)color.a);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int RequireClayBorder(
     Clay_RenderCommandArray *commands,
     EcsUiColor expected_color,
@@ -1193,6 +1232,73 @@ static int TestZStackBoxStyleEmitsBackgroundColor(void)
     result |= Require(
         g_clay_errors.count == 0u,
         "zstack color layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestPlainStacksEmitNoDefaultBackground(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create transparent stack world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "TransparentStackRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlainVStack",
+            .preferred_width = 80.0f,
+            .preferred_height = 24.0f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlainHStack",
+            .preferred_width = 80.0f,
+            .preferred_height = 24.0f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlainZStack",
+            .preferred_width = 80.0f,
+            .preferred_height = 24.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "transparent stack builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "transparent stack tree read failed");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(160.0f, 120.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    result |= RequireOnlyTransparentOrClayRectangleColor(
+        &commands,
+        clay_theme.root_background,
+        "plain stacks should not emit opaque stack rectangles");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "transparent stack layout should not emit Clay errors");
 
     ecs_fini(world);
     return result;
@@ -2133,6 +2239,7 @@ int main(void)
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();
     result |= TestZStackBoxStyleEmitsBackgroundColor();
+    result |= TestPlainStacksEmitNoDefaultBackground();
     result |= TestStackStyleTokenEmitsBackgroundColor();
     result |= TestStackDirectStyleEmitsBackgroundAndBorder();
     result |= TestBoxStyleBorderEmitsBorderCommand();

@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <string.h>
 
+static const EcsUiBoxStyle DEMO_ITEM_ROW_STYLE = {
+    .background = {18u, 27u, 31u, 255u},
+    .radius = 0.08f,
+};
+
 void DemoUiApplyItemSelectionStyle(
     ecs_world_t *world,
     ecs_entity_t source,
@@ -194,6 +199,7 @@ ecs_entity_t DemoUiCreateItemRow(
             .id = row_id,
             .gap = 8.0f,
             .padding = 6.0f,
+            .style = &DEMO_ITEM_ROW_STYLE,
         });
     ecs_entity_t select_button = DemoUiBeginActionButton(
         &builder,

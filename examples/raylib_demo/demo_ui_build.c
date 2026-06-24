@@ -8,6 +8,16 @@
 #include <stdio.h>
 #include <string.h>
 
+static const EcsUiBoxStyle DEMO_PANEL_STYLE = {
+    .background = {24u, 32u, 37u, 255u},
+    .radius = 0.10f,
+};
+
+static const EcsUiBoxStyle DEMO_PANEL_SUBTLE_STYLE = {
+    .background = {18u, 27u, 31u, 255u},
+    .radius = 0.10f,
+};
+
 ecs_entity_t DemoUiBuild(ecs_world_t *world)
 {
     ecs_entity_t root = EcsUiRootEntity(world, "RaylibDemo");
@@ -39,8 +49,22 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
     ecs_entity_t theme_text = 0;
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
 
-    ZStack(&builder, {.id = "DemoViewport", .gap = 0.0f, .padding = 0.0f}) {
-        VStack(&builder, {.id = "DemoStack", .gap = 12.0f, .padding = 24.0f}) {
+    ZStack(
+        &builder,
+        {
+            .id = "DemoViewport",
+            .gap = 0.0f,
+            .padding = 0.0f,
+            .style = &DEMO_PANEL_STYLE,
+        }) {
+        VStack(
+            &builder,
+            {
+                .id = "DemoStack",
+                .gap = 12.0f,
+                .padding = 24.0f,
+                .style = &DEMO_PANEL_STYLE,
+            }) {
             Text(
                 &builder,
                 {
@@ -55,7 +79,14 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                     .text = "Flecs-authored UI rendered with raylib",
                     .role = ECS_UI_TEXT_CAPTION,
                 });
-            HStack(&builder, {.id = "Actions", .gap = 10.0f, .padding = 0.0f}) {
+            HStack(
+                &builder,
+                {
+                    .id = "Actions",
+                    .gap = 10.0f,
+                    .padding = 0.0f,
+                    .style = &DEMO_PANEL_SUBTLE_STYLE,
+                }) {
                 DemoUiActionButton(
                     &builder,
                     {
@@ -88,7 +119,14 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                         });
                 }
             }
-            VStack(&builder, {.id = "Inspector", .gap = 6.0f, .padding = 14.0f}) {
+            VStack(
+                &builder,
+                {
+                    .id = "Inspector",
+                    .gap = 6.0f,
+                    .padding = 14.0f,
+                    .style = &DEMO_PANEL_STYLE,
+                }) {
                 Text(
                     &builder,
                     {
@@ -105,7 +143,14 @@ ecs_entity_t DemoUiBuild(ecs_world_t *world)
                         });
             }
             (void)DemoTerminalBuildPreview(world, &builder);
-            VStack(&builder, {.id = "ItemList", .gap = 6.0f, .padding = 14.0f}) {
+            VStack(
+                &builder,
+                {
+                    .id = "ItemList",
+                    .gap = 6.0f,
+                    .padding = 14.0f,
+                    .style = &DEMO_PANEL_STYLE,
+                }) {
                 Text(
                     &builder,
                     {

@@ -381,15 +381,32 @@ static float EcsUiRaylibBoxPadding(
     return fallback;
 }
 
-static Color EcsUiRaylibStackColor(
-    const EcsUiTreeNodeSnapshot *node,
-    Color fallback)
+static Color EcsUiRaylibStackColor(const EcsUiTreeNodeSnapshot *node)
 {
     if (node == NULL || !node->has_box_style ||
         node->box_style.background.a == 0u) {
-        return fallback;
+        return (Color){0};
     }
     return EcsUiRaylibColor(node->box_style.background);
+}
+
+static void EcsUiRaylibDrawStackBackground(
+    Rectangle bounds,
+    const EcsUiTreeNodeSnapshot *node,
+    float opacity)
+{
+    Color fill = EcsUiRaylibStackColor(node);
+    if (fill.a == 0u) {
+        return;
+    }
+
+    const float radius =
+        node != NULL && node->has_box_style ? node->box_style.radius : 0.0f;
+    DrawRectangleRounded(
+        bounds,
+        radius,
+        8,
+        EcsUiRaylibApplyOpacity(fill, opacity));
 }
 
 static void EcsUiRaylibDrawBoxBorder(
@@ -921,15 +938,7 @@ static void EcsUiRaylibDrawNode(
         EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_VSTACK:
-        DrawRectangleRounded(
-            node_bounds,
-            theme->radius,
-            8,
-            EcsUiRaylibApplyOpacity(
-                EcsUiRaylibStackColor(
-                    node,
-                    EcsUiRaylibColor(theme->surface)),
-                node_opacity));
+        EcsUiRaylibDrawStackBackground(node_bounds, node, node_opacity);
         EcsUiRaylibDrawChildrenVertical(
             tree,
             theme,
@@ -944,15 +953,7 @@ static void EcsUiRaylibDrawNode(
         EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_HSTACK:
-        DrawRectangleRounded(
-            node_bounds,
-            theme->radius,
-            8,
-            EcsUiRaylibApplyOpacity(
-                EcsUiRaylibStackColor(
-                    node,
-                    EcsUiRaylibColor(theme->surface_subtle)),
-                node_opacity));
+        EcsUiRaylibDrawStackBackground(node_bounds, node, node_opacity);
         EcsUiRaylibDrawChildrenHorizontal(
             tree,
             theme,
@@ -967,15 +968,7 @@ static void EcsUiRaylibDrawNode(
         EcsUiRaylibDrawBoxBorder(node_bounds, node, node_opacity);
         break;
     case ECS_UI_NODE_ZSTACK: {
-        DrawRectangleRounded(
-            node_bounds,
-            theme->radius,
-            8,
-            EcsUiRaylibApplyOpacity(
-                EcsUiRaylibStackColor(
-                    node,
-                    EcsUiRaylibColor(theme->surface)),
-                node_opacity));
+        EcsUiRaylibDrawStackBackground(node_bounds, node, node_opacity);
         Rectangle inner = EcsUiRaylibInset(node_bounds, node->stack.padding);
         uint32_t child = node->first_child;
         while (child != ECS_UI_TREE_INVALID_INDEX) {

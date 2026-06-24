@@ -12,6 +12,16 @@ ECS_TAG_DECLARE(DemoBeginPresentationDragRequest);
 ECS_COMPONENT_DECLARE(DemoUpdatePresentationDragRequest);
 ECS_COMPONENT_DECLARE(DemoEndPresentationDragRequest);
 
+static const EcsUiBoxStyle DEMO_NAV_PANEL_STYLE = {
+    .background = {24u, 32u, 37u, 255u},
+    .radius = 0.10f,
+};
+
+static const EcsUiBoxStyle DEMO_NAV_PANEL_SUBTLE_STYLE = {
+    .background = {18u, 27u, 31u, 255u},
+    .radius = 0.10f,
+};
+
 static float DemoNavClamp01(float value)
 {
     if (value < 0.0f) {
@@ -146,6 +156,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
                 .id = "AddItemSheet",
                 .gap = 12.0f,
                 .padding = 24.0f,
+                .style = &DEMO_NAV_PANEL_STYLE,
             });
     (void)EcsUiAddCustom(
         &builder,
@@ -191,6 +202,7 @@ static ecs_entity_t DemoNavCreateAddItemSheet(
             .id = "AddItemSheetActions",
             .gap = 10.0f,
             .padding = 0.0f,
+            .style = &DEMO_NAV_PANEL_SUBTLE_STYLE,
         });
     ecs_entity_t create_button = DemoUiBeginActionButton(
         &builder,
