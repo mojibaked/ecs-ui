@@ -2272,10 +2272,18 @@ static void EcsUiClayMarkPointerInsideTargets(
     if (frame == NULL) {
         return;
     }
+    frame->inside_target_count = 0u;
+    frame->pressable_target_count = 0u;
     Clay_ElementIdArray pointer_over_ids = Clay_GetPointerOverIds();
     for (uint32_t i = 0u; i < frame->target_count; i += 1u) {
+        if (frame->targets[i].pressable && !frame->targets[i].disabled) {
+            frame->pressable_target_count += 1u;
+        }
         frame->targets[i].inside =
             EcsUiClayTargetIsInside(&frame->targets[i], pointer_over_ids);
+        if (frame->targets[i].inside) {
+            frame->inside_target_count += 1u;
+        }
     }
 }
 
@@ -2315,55 +2323,86 @@ void EcsUiClayCollectFrameEvents(
     EcsUiClayInteractionTarget *resolved = EcsUiClayResolveTarget(frame);
     frame->resolved_tree = resolved != NULL ? resolved->tree : 0;
     frame->resolved_node = resolved != NULL ? resolved->node : 0;
+    frame->resolved_action = resolved != NULL ? resolved->action : 0;
+    frame->resolved_pressable = resolved != NULL && resolved->pressable;
+    if (resolved != NULL) {
+        (void)snprintf(
+            frame->resolved_node_id,
+            sizeof(frame->resolved_node_id),
+            "%s",
+            resolved->node_id);
+    }
 
     EcsUiClayPointerCapture *capture = &frame->state->capture;
     if (capture->active) {
         EcsUiClayInteractionTarget *captured_target =
             EcsUiClayFindCaptureTarget(frame, capture);
         if (captured_target == NULL) {
+            frame->capture_missing_target = true;
+            frame->capture_missing_node = capture->node;
+            frame->capture_missing_action = capture->action;
+            (void)snprintf(
+                frame->capture_missing_node_id,
+                sizeof(frame->capture_missing_node_id),
+                "%s",
+                capture->node_id);
             *capture = (EcsUiClayPointerCapture){0};
-            return;
-        }
-
-        if (EcsUiClayCaptureCovered(captured_target, resolved)) {
-            EcsUiClayPushCapturedPointerEvent(
-                events,
-                capture,
-                ECS_UI_EVENT_DRAG_ENDED,
-                pointer);
-            *capture = (EcsUiClayPointerCapture){0};
-            return;
-        }
-
-        if (EcsUiClayPointerDownForButton(pointer, capture->button)) {
-            EcsUiClayPushCapturedPointerEvent(
-                events,
-                capture,
-                ECS_UI_EVENT_DRAGGED,
-                pointer);
-        }
-        if (EcsUiClayPointerReleasedForButton(pointer, capture->button)) {
-            const bool did_drag =
-                EcsUiClayDistanceSquared(
-                    pointer,
-                    capture->start_x,
-                    capture->start_y) > 36.0f;
-            const bool click_eligible = captured_target->inside;
-            EcsUiClayPushCapturedPointerEvent(
-                events,
-                capture,
-                ECS_UI_EVENT_DRAG_ENDED,
-                pointer);
-            if (!did_drag && click_eligible) {
+        } else {
+            if (EcsUiClayCaptureCovered(captured_target, resolved)) {
                 EcsUiClayPushCapturedPointerEvent(
                     events,
                     capture,
-                    ECS_UI_EVENT_CLICKED,
+                    ECS_UI_EVENT_DRAG_ENDED,
                     pointer);
+                *capture = (EcsUiClayPointerCapture){0};
+                return;
             }
-            *capture = (EcsUiClayPointerCapture){0};
+
+            const bool button_down =
+                EcsUiClayPointerDownForButton(pointer, capture->button);
+            const bool button_released =
+                EcsUiClayPointerReleasedForButton(pointer, capture->button);
+            if (button_down) {
+                EcsUiClayPushCapturedPointerEvent(
+                    events,
+                    capture,
+                    ECS_UI_EVENT_DRAGGED,
+                    pointer);
+                return;
+            }
+            if (button_released || !button_down) {
+                if (!button_released) {
+                    frame->capture_missed_release = true;
+                    frame->capture_missed_release_node = capture->node;
+                    frame->capture_missed_release_action = capture->action;
+                    (void)snprintf(
+                        frame->capture_missed_release_node_id,
+                        sizeof(frame->capture_missed_release_node_id),
+                        "%s",
+                        capture->node_id);
+                }
+                const bool did_drag =
+                    EcsUiClayDistanceSquared(
+                        pointer,
+                        capture->start_x,
+                        capture->start_y) > 36.0f;
+                const bool click_eligible = captured_target->inside;
+                EcsUiClayPushCapturedPointerEvent(
+                    events,
+                    capture,
+                    ECS_UI_EVENT_DRAG_ENDED,
+                    pointer);
+                if (!did_drag && click_eligible) {
+                    EcsUiClayPushCapturedPointerEvent(
+                        events,
+                        capture,
+                        ECS_UI_EVENT_CLICKED,
+                        pointer);
+                }
+                *capture = (EcsUiClayPointerCapture){0};
+            }
+            return;
         }
-        return;
     }
 
     if (resolved == NULL || !resolved->pressable) {

@@ -1789,6 +1789,136 @@ static int TestPointerCaptureLifecycle(void)
         0u,
         "pointer capture should clear after release");
 
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 10.4,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "second press should start capture before missed-release regression");
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 10.5,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        2u,
+        "button-up frame without release edge should end capture and click");
+    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_DRAG_ENDED, target, "DragTarget");
+    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_CLICKED, target, "DragTarget");
+    result |= Require(!state.capture.active, "missed release should clear pointer capture");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestPointerCaptureMissingTargetFallsThrough(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t stale_action = CreateAction(world, "StaleAction");
+    ecs_entity_t fresh_action = CreateAction(world, "FreshAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "CaptureRebuildRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t stale_target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "StaleTarget",
+            .kind = "target",
+            .preferred_width = 200.0f,
+            .preferred_height = 60.0f,
+            .on_click = stale_action,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "stale capture builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "stale capture tree read failed");
+    EcsUiClayLayoutOptions options = LayoutOptions(200.0f, 100.0f);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 12.0f,
+            .y = 12.0f,
+            .time = 30.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "initial stale target press should start capture");
+    result |= Require(state.capture.active, "initial stale target capture should be active");
+
+    ecs_delete(world, stale_target);
+    builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t fresh_target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "FreshTarget",
+            .kind = "target",
+            .preferred_width = 200.0f,
+            .preferred_height = 60.0f,
+            .on_click = fresh_action,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "fresh target builder failed");
+
+    tree = (EcsUiTreeSnapshot){0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "fresh capture tree read failed");
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 12.0f,
+            .y = 12.0f,
+            .time = 30.1,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "missing capture target should not eat fresh target press");
+    result |= RequireEvent(&events, 0u, ECS_UI_EVENT_HOVERED, fresh_target, "FreshTarget");
+    result |= RequireEvent(&events, 1u, ECS_UI_EVENT_PRESSED, fresh_target, "FreshTarget");
+    result |= RequireEvent(&events, 2u, ECS_UI_EVENT_DRAG_STARTED, fresh_target, "FreshTarget");
+    result |= Require(state.capture.active && state.capture.node == fresh_target,
+                      "fresh target should own capture after stale capture clears");
+
     ecs_fini(world);
     return result;
 }
@@ -3369,6 +3499,7 @@ int main(void)
     result |= TestActionStackEmitsPointerEvents();
     result |= TestInteractiveStackEmitsSecondaryPress();
     result |= TestPointerCaptureLifecycle();
+    result |= TestPointerCaptureMissingTargetFallsThrough();
     result |= TestOverlappingRetainedTreesRouteTopmost();
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
     result |= TestZStackCapturePreventsBackgroundFallthrough();

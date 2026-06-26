@@ -67,9 +67,22 @@ typedef struct EcsUiClayInteractionFrame {
     EcsUiClayInteractionState *state;
     EcsUiClayInteractionTarget targets[ECS_UI_CLAY_INTERACTION_TARGET_MAX];
     uint32_t target_count;
+    uint32_t inside_target_count;
+    uint32_t pressable_target_count;
     ecs_entity_t resolved_tree;
     ecs_entity_t resolved_node;
+    ecs_entity_t resolved_action;
+    char resolved_node_id[ECS_UI_ID_MAX];
+    bool resolved_pressable;
     bool truncated;
+    bool capture_missing_target;
+    ecs_entity_t capture_missing_node;
+    ecs_entity_t capture_missing_action;
+    char capture_missing_node_id[ECS_UI_ID_MAX];
+    bool capture_missed_release;
+    ecs_entity_t capture_missed_release_node;
+    ecs_entity_t capture_missed_release_action;
+    char capture_missed_release_node_id[ECS_UI_ID_MAX];
 } EcsUiClayInteractionFrame;
 
 void EcsUiClayInteractionStateInit(EcsUiClayInteractionState *state);
