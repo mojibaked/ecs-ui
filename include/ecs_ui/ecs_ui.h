@@ -94,6 +94,7 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_TEXT_COPY = 21,
     ECS_UI_EVENT_TEXT_CUT = 22,
     ECS_UI_EVENT_TEXT_PASTE = 23,
+    ECS_UI_EVENT_SECONDARY_PRESSED = 24,
 } EcsUiEventType;
 
 typedef enum EcsUiPointerButton {

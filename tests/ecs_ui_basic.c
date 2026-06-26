@@ -2,6 +2,7 @@
 #include "ecs_ui/ecs_ui_animation.h"
 #include "ecs_ui/ecs_ui_gesture.h"
 #include "ecs_ui/ecs_ui_navigation.h"
+#include "ecs_ui/ecs_ui_overlay.h"
 #include "ecs_ui/ecs_ui_projection.h"
 #include "ecs_ui/ecs_ui_text_input.h"
 
@@ -274,6 +275,137 @@ static int RequireNode(
         return 1;
     }
     return 0;
+}
+
+static int TestOverlayState(void)
+{
+    int result = 0;
+    EcsUiOverlayState state = {0};
+    EcsUiOverlayInit(&state);
+
+    const EcsUiOverlayId menu_id = EcsUiOverlayHashId("WardrobeRowMenu");
+    const EcsUiOverlayId child_id =
+        EcsUiOverlayHashId("WardrobeRowSubmenu");
+    result |= Require(menu_id != 0u, "overlay hash should be nonzero");
+    result |= Require(
+        menu_id == EcsUiOverlayHashId("WardrobeRowMenu"),
+        "overlay hash should be stable");
+    result |= Require(menu_id != child_id, "overlay hash should distinguish ids");
+
+    result |= Require(
+        EcsUiOverlayOpenMenu(
+            &state,
+            menu_id,
+            0u,
+            (EcsUiOverlayRect){10.0f, 20.0f, 1.0f, 1.0f}),
+        "menu overlay should open");
+    result |= Require(
+        EcsUiOverlayLayerCount(&state) == 1u,
+        "overlay layer count should include opened menu");
+    result |= Require(
+        EcsUiOverlayIsOpen(&state, menu_id),
+        "menu overlay should report open");
+
+    EcsUiOverlayBeginFrame(&state, (EcsUiOverlayInput){0});
+    result |= Require(
+        EcsUiOverlayBlocksPointer(&state) &&
+            EcsUiOverlayBlocksKeyboard(&state),
+        "open menu should block base pointer and keyboard input");
+    result |= Require(
+        EcsUiOverlayRegisterLayerRoot(
+            &state,
+            menu_id,
+            (ecs_entity_t)42u,
+            (EcsUiOverlayRect){10.0f, 20.0f, 120.0f, 80.0f}),
+        "menu layer root should register");
+    const EcsUiOverlayLayer *layer =
+        EcsUiOverlayFindLayer(&state, menu_id);
+    result |= Require(
+        layer != NULL && layer->root == (ecs_entity_t)42u &&
+            EcsUiOverlayRectContains(layer->bounds, 20.0f, 30.0f),
+        "menu layer should expose registered root and bounds");
+
+    result |= Require(
+        EcsUiOverlayOpenMenu(
+            &state,
+            child_id,
+            menu_id,
+            (EcsUiOverlayRect){130.0f, 20.0f, 1.0f, 1.0f}),
+        "child menu overlay should open");
+    result |= Require(
+        EcsUiOverlayCloseDescendants(&state, menu_id),
+        "closing descendants should close child menu");
+    result |= Require(
+        EcsUiOverlayIsOpen(&state, menu_id) &&
+            !EcsUiOverlayIsOpen(&state, child_id),
+        "closing descendants should keep parent menu open");
+
+    result |= Require(
+        EcsUiOverlayOpenMenu(
+            &state,
+            child_id,
+            menu_id,
+            (EcsUiOverlayRect){130.0f, 20.0f, 1.0f, 1.0f}),
+        "child menu should reopen");
+    EcsUiOverlayBeginFrame(
+        &state,
+        (EcsUiOverlayInput){
+            .x = 300.0f,
+            .y = 300.0f,
+            .primary_pressed = true,
+        });
+    result |= Require(
+        EcsUiOverlayLayerCount(&state) == 0u,
+        "outside pointer press should close menu overlays");
+    result |= Require(
+        EcsUiOverlayBlocksPointer(&state),
+        "outside close frame should still consume the pointer press");
+    EcsUiOverlayBeginFrame(&state, (EcsUiOverlayInput){0});
+    result |= Require(
+        !EcsUiOverlayBlocksPointer(&state),
+        "next frame without overlays should not block pointer input");
+
+    result |= Require(
+        EcsUiOverlayOpenMenu(
+            &state,
+            menu_id,
+            0u,
+            (EcsUiOverlayRect){10.0f, 20.0f, 1.0f, 1.0f}),
+        "menu should reopen for prune test");
+    result |= Require(
+        EcsUiOverlayOpenMenu(
+            &state,
+            child_id,
+            menu_id,
+            (EcsUiOverlayRect){130.0f, 20.0f, 1.0f, 1.0f}),
+        "unregistered child should open for prune");
+    EcsUiOverlayBeginFrame(&state, (EcsUiOverlayInput){0});
+    result |= Require(
+        EcsUiOverlayRegisterLayerRoot(
+            &state,
+            menu_id,
+            (ecs_entity_t)43u,
+            (EcsUiOverlayRect){10.0f, 20.0f, 120.0f, 80.0f}),
+        "registered menu should survive prune");
+    result |= Require(
+        EcsUiOverlayPruneUnregistered(&state),
+        "prune should remove unregistered overlays");
+    result |= Require(
+        EcsUiOverlayIsOpen(&state, menu_id) &&
+            !EcsUiOverlayIsOpen(&state, child_id),
+        "prune should keep registered menu and remove unregistered child");
+
+    EcsUiOverlayBeginFrame(
+        &state,
+        (EcsUiOverlayInput){.cancel_pressed = true});
+    result |= Require(
+        EcsUiOverlayLayerCount(&state) == 0u,
+        "cancel should close top menu");
+    result |= Require(
+        EcsUiOverlayBlocksKeyboard(&state),
+        "cancel close frame should consume keyboard input");
+
+    return result;
 }
 
 typedef struct TestProjectionItem {
@@ -1060,6 +1192,7 @@ int main(void)
     result |= TestGestureArenaPanImmediateAndCancel();
     result |= TestGestureArenaPressCapture();
     result |= TestGestureArenaPressCancel();
+    result |= TestOverlayState();
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
         "EcsUiOnClick should be exclusive");

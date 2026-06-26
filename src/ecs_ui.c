@@ -224,6 +224,19 @@ static ecs_entity_t EcsUiCreateNode(
     return entity;
 }
 
+static void EcsUiSetActionPair(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t relation,
+    ecs_entity_t action)
+{
+    if (world == NULL || entity == 0 || relation == 0 || action == 0) {
+        return;
+    }
+    ecs_add_id(world, entity, EcsUiInteractive);
+    ecs_add_pair(world, entity, relation, action);
+}
+
 static void EcsUiPushParent(EcsUiBuilder *builder, ecs_entity_t entity)
 {
     if (builder == NULL || entity == 0) {
@@ -753,9 +766,11 @@ ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
     };
     ecs_set_ptr(builder->world, entity, EcsUiButton, &button);
     ecs_add_id(builder->world, entity, EcsUiInteractive);
-    if (desc.on_click != 0) {
-        ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
-    }
+    EcsUiSetActionPair(
+        builder->world,
+        entity,
+        EcsUiOnClick,
+        desc.on_click);
     if (desc.style_token != 0 &&
         !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
         builder->failed = true;
@@ -780,9 +795,11 @@ ecs_entity_t EcsUiBeginPressable(
     };
     ecs_set_ptr(builder->world, entity, EcsUiPressable, &pressable);
     ecs_add_id(builder->world, entity, EcsUiInteractive);
-    if (desc.on_click != 0) {
-        ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
-    }
+    EcsUiSetActionPair(
+        builder->world,
+        entity,
+        EcsUiOnClick,
+        desc.on_click);
     if (desc.style_token != 0 &&
         !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
         builder->failed = true;
@@ -850,10 +867,11 @@ ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
     };
     EcsUiCopyString(custom.kind, sizeof(custom.kind), desc.kind);
     ecs_set_ptr(builder->world, entity, EcsUiCustom, &custom);
-    if (desc.on_click != 0) {
-        ecs_add_id(builder->world, entity, EcsUiInteractive);
-        ecs_add_pair(builder->world, entity, EcsUiOnClick, desc.on_click);
-    }
+    EcsUiSetActionPair(
+        builder->world,
+        entity,
+        EcsUiOnClick,
+        desc.on_click);
     return entity;
 }
 

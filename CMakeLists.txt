@@ -69,6 +69,7 @@ endif()
 add_library(ecs_ui STATIC
     src/ecs_ui.c
     src/ecs_ui_gesture.c
+    src/ecs_ui_overlay.c
     src/ecs_ui_projection.c)
 add_library(ecs_ui::ecs_ui ALIAS ecs_ui)
 target_include_directories(ecs_ui

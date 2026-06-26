@@ -1261,16 +1261,10 @@ static bool EcsUiRaylibHitTestDisabled(
     return node != NULL && node->hit_test.mode == ECS_UI_HIT_TEST_NONE;
 }
 
-static bool EcsUiRaylibHitTestCapturesSelf(
+static bool EcsUiRaylibNodeIsPrimaryTarget(
     const EcsUiTreeNodeSnapshot *node)
 {
-    if (node == NULL) {
-        return false;
-    }
-    if (node->hit_test.mode == ECS_UI_HIT_TEST_CAPTURE) {
-        return true;
-    }
-    if (node->hit_test.mode == ECS_UI_HIT_TEST_CHILDREN ||
+    if (node == NULL || node->hit_test.mode == ECS_UI_HIT_TEST_CHILDREN ||
         node->hit_test.mode == ECS_UI_HIT_TEST_NONE) {
         return false;
     }
@@ -1286,12 +1280,25 @@ static bool EcsUiRaylibHitTestCapturesSelf(
     case ECS_UI_NODE_VSTACK:
     case ECS_UI_NODE_HSTACK:
     case ECS_UI_NODE_ZSTACK:
+        return node->on_click != 0;
     case ECS_UI_NODE_TEXT:
     case ECS_UI_NODE_ICON:
     case ECS_UI_NODE_NONE:
     default:
         return false;
     }
+}
+
+static bool EcsUiRaylibHitTestCapturesSelf(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL) {
+        return false;
+    }
+    if (node->hit_test.mode == ECS_UI_HIT_TEST_CAPTURE) {
+        return true;
+    }
+    return EcsUiRaylibNodeIsPrimaryTarget(node);
 }
 
 static bool EcsUiRaylibHitSelf(
@@ -1503,11 +1510,12 @@ static bool EcsUiRaylibHitNode(
     return false;
 }
 
-static void EcsUiRaylibPushPointerEvent(
+static void EcsUiRaylibPushPointerEventWithAction(
     EcsUiEventList *events,
     const EcsUiTreeNodeSnapshot *node,
     EcsUiEventType type,
     Vector2 point,
+    ecs_entity_t action,
     EcsUiPointerButton button)
 {
     if (events == NULL || node == NULL) {
@@ -1517,7 +1525,7 @@ static void EcsUiRaylibPushPointerEvent(
     EcsUiEvent event = {
         .type = type,
         .node = node->entity,
-        .action = node->on_click,
+        .action = action,
         .x = point.x,
         .y = point.y,
         .start_x = point.x,
@@ -1526,6 +1534,21 @@ static void EcsUiRaylibPushPointerEvent(
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", node->id);
     (void)EcsUiEventListPush(events, &event);
+}
+
+static void EcsUiRaylibPushPointerEvent(
+    EcsUiEventList *events,
+    const EcsUiTreeNodeSnapshot *node,
+    EcsUiEventType type,
+    Vector2 point)
+{
+    EcsUiRaylibPushPointerEventWithAction(
+        events,
+        node,
+        type,
+        point,
+        node != NULL ? node->on_click : 0,
+        ECS_UI_POINTER_BUTTON_PRIMARY);
 }
 
 static void EcsUiRaylibStartPointerCapture(
@@ -1759,18 +1782,27 @@ static void EcsUiRaylibCollectPointerEvents(
     }
 
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[hit.index];
-    EcsUiRaylibPushPointerEvent(
-        events,
-        node,
-        ECS_UI_EVENT_HOVERED,
-        point,
-        ECS_UI_POINTER_BUTTON_PRIMARY);
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
-        EcsUiPointerButton button = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) ?
-            ECS_UI_POINTER_BUTTON_SECONDARY :
-            ECS_UI_POINTER_BUTTON_PRIMARY;
-        EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_PRESSED, point, button);
-        EcsUiRaylibStartPointerCapture(node, point, button);
+    if (!EcsUiRaylibNodeIsPrimaryTarget(node)) {
+        return;
+    }
+
+    EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_HOVERED, point);
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        EcsUiRaylibPushPointerEventWithAction(
+            events,
+            node,
+            ECS_UI_EVENT_SECONDARY_PRESSED,
+            point,
+            node->on_click,
+            ECS_UI_POINTER_BUTTON_SECONDARY);
+        EcsUiRaylibStartPointerCapture(node, point, ECS_UI_POINTER_BUTTON_SECONDARY);
+        EcsUiRaylibPushCapturedPointerEvent(
+            events,
+            ECS_UI_EVENT_DRAG_STARTED,
+            point);
+    } else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_PRESSED, point);
+        EcsUiRaylibStartPointerCapture(node, point, ECS_UI_POINTER_BUTTON_PRIMARY);
         EcsUiRaylibPushCapturedPointerEvent(
             events,
             ECS_UI_EVENT_DRAG_STARTED,

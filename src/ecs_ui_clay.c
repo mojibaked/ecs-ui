@@ -2145,11 +2145,12 @@ static bool EcsUiClayCaptureCovered(
         EcsUiClayTargetHasHigherPriority(resolved, captured_target);
 }
 
-static void EcsUiClayPushPointerEvent(
+static void EcsUiClayPushPointerEventWithAction(
     EcsUiEventList *events,
     const EcsUiClayInteractionTarget *target,
     EcsUiEventType type,
     EcsUiClayPointerState pointer,
+    ecs_entity_t action,
     EcsUiPointerButton button)
 {
     if (events == NULL || target == NULL) {
@@ -2160,7 +2161,7 @@ static void EcsUiClayPushPointerEvent(
         .type = type,
         .tree = target->tree,
         .node = target->node,
-        .action = target->action,
+        .action = action,
         .x = pointer.x,
         .y = pointer.y,
         .start_x = pointer.x,
@@ -2169,6 +2170,21 @@ static void EcsUiClayPushPointerEvent(
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", target->node_id);
     (void)EcsUiEventListPush(events, &event);
+}
+
+static void EcsUiClayPushPointerEvent(
+    EcsUiEventList *events,
+    const EcsUiClayInteractionTarget *target,
+    EcsUiEventType type,
+    EcsUiClayPointerState pointer)
+{
+    EcsUiClayPushPointerEventWithAction(
+        events,
+        target,
+        type,
+        pointer,
+        target != NULL ? target->action : 0,
+        ECS_UI_POINTER_BUTTON_PRIMARY);
 }
 
 static void EcsUiClayStartPointerCapture(
@@ -2354,18 +2370,32 @@ void EcsUiClayCollectFrameEvents(
         return;
     }
 
-    EcsUiClayPushPointerEvent(
-        events,
-        resolved,
-        ECS_UI_EVENT_HOVERED,
-        pointer,
-        ECS_UI_POINTER_BUTTON_PRIMARY);
-    if (pointer.pressed || pointer.secondary_pressed) {
-        EcsUiPointerButton button = pointer.secondary_pressed ?
-            ECS_UI_POINTER_BUTTON_SECONDARY :
-            ECS_UI_POINTER_BUTTON_PRIMARY;
-        EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_PRESSED, pointer, button);
-        EcsUiClayStartPointerCapture(frame->state, resolved, pointer, button);
+    EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_HOVERED, pointer);
+    if (pointer.secondary_pressed) {
+        EcsUiClayPushPointerEventWithAction(
+            events,
+            resolved,
+            ECS_UI_EVENT_SECONDARY_PRESSED,
+            pointer,
+            resolved->action,
+            ECS_UI_POINTER_BUTTON_SECONDARY);
+        EcsUiClayStartPointerCapture(
+            frame->state,
+            resolved,
+            pointer,
+            ECS_UI_POINTER_BUTTON_SECONDARY);
+        EcsUiClayPushCapturedPointerEvent(
+            events,
+            &frame->state->capture,
+            ECS_UI_EVENT_DRAG_STARTED,
+            pointer);
+    } else if (pointer.pressed) {
+        EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_PRESSED, pointer);
+        EcsUiClayStartPointerCapture(
+            frame->state,
+            resolved,
+            pointer,
+            ECS_UI_POINTER_BUTTON_PRIMARY);
         EcsUiClayPushCapturedPointerEvent(
             events,
             &frame->state->capture,

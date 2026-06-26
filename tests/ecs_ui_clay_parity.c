@@ -1499,6 +1499,170 @@ static int TestActionStackEmitsPointerEvents(void)
     return result;
 }
 
+static int TestInteractiveStackEmitsSecondaryPress(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    ecs_entity_t action =
+        CreateAction(world, "SecondaryStackAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "SecondaryStackRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "SecondaryTarget",
+            .preferred_width = 120.0f,
+            .preferred_height = 44.0f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    ecs_add_id(world, target, EcsUiInteractive);
+    ecs_add_pair(world, target, EcsUiOnClick, action);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "SecondaryLabel",
+            .text = "row",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "secondary stack builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "secondary stack tree read failed");
+    EcsUiClayLayoutOptions options = LayoutOptions(160.0f, 80.0f);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 4.5,
+            .secondary_down = true,
+            .secondary_pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "secondary stack press should emit hover, secondary press, and drag start");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        target,
+        "SecondaryTarget");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_SECONDARY_PRESSED,
+        target,
+        "SecondaryTarget");
+    result |= Require(
+        events.count > 1u && events.events[1u].action == action,
+        "secondary press should carry click action");
+    result |= Require(
+        events.count > 1u && events.events[1u].button == ECS_UI_POINTER_BUTTON_SECONDARY,
+        "secondary press should report secondary button");
+    result |= RequireEvent(
+        &events,
+        2u,
+        ECS_UI_EVENT_DRAG_STARTED,
+        target,
+        "SecondaryTarget");
+    result |= Require(
+        events.count > 2u && events.events[2u].button == ECS_UI_POINTER_BUTTON_SECONDARY,
+        "secondary drag start should report secondary button");
+    result |= Require(
+        state.capture.active,
+        "secondary press should start pointer capture");
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 4.55,
+            .secondary_released = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        2u,
+        "secondary release should end drag and click captured target");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_CLICKED,
+        target,
+        "SecondaryTarget");
+    result |= Require(
+        events.count > 1u && events.events[1u].button == ECS_UI_POINTER_BUTTON_SECONDARY,
+        "secondary click should report secondary button");
+    result |= Require(
+        !state.capture.active,
+        "secondary release should clear pointer capture");
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 4.6,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "interactive stack primary press should capture");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        target,
+        "SecondaryTarget");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        target,
+        "SecondaryTarget");
+    result |= RequireEvent(
+        &events,
+        2u,
+        ECS_UI_EVENT_DRAG_STARTED,
+        target,
+        "SecondaryTarget");
+    result |= Require(
+        state.capture.active,
+        "interactive stack primary press should start pointer capture");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestPointerCaptureLifecycle(void)
 {
     int result = 0;
@@ -3203,6 +3367,7 @@ int main(void)
     result |= TestRevealOnHoverRowActionsFallThrough();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestActionStackEmitsPointerEvents();
+    result |= TestInteractiveStackEmitsSecondaryPress();
     result |= TestPointerCaptureLifecycle();
     result |= TestOverlappingRetainedTreesRouteTopmost();
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();
