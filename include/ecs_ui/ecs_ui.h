@@ -96,6 +96,11 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_TEXT_PASTE = 23,
 } EcsUiEventType;
 
+typedef enum EcsUiPointerButton {
+    ECS_UI_POINTER_BUTTON_PRIMARY = 0,
+    ECS_UI_POINTER_BUTTON_SECONDARY = 1,
+} EcsUiPointerButton;
+
 typedef enum EcsUiHitTestMode {
     ECS_UI_HIT_TEST_AUTO = 0,
     ECS_UI_HIT_TEST_NONE = 1,
@@ -342,6 +347,7 @@ typedef struct EcsUiEvent {
     float elapsed;
     float velocity_x;
     float velocity_y;
+    EcsUiPointerButton button;
     uint32_t codepoint;
     char text[ECS_UI_TEXT_MAX];
 } EcsUiEvent;

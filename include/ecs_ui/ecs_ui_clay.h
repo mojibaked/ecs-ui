@@ -25,6 +25,9 @@ typedef struct EcsUiClayPointerState {
     bool down;
     bool pressed;
     bool released;
+    bool secondary_down;
+    bool secondary_pressed;
+    bool secondary_released;
 } EcsUiClayPointerState;
 
 typedef struct EcsUiClayInteractionTarget {
@@ -53,6 +56,7 @@ typedef struct EcsUiClayPointerCapture {
     float start_x;
     float start_y;
     double start_time;
+    EcsUiPointerButton button;
 } EcsUiClayPointerCapture;
 
 typedef struct EcsUiClayInteractionState {

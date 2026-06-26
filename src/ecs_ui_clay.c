@@ -2149,7 +2149,8 @@ static void EcsUiClayPushPointerEvent(
     EcsUiEventList *events,
     const EcsUiClayInteractionTarget *target,
     EcsUiEventType type,
-    EcsUiClayPointerState pointer)
+    EcsUiClayPointerState pointer,
+    EcsUiPointerButton button)
 {
     if (events == NULL || target == NULL) {
         return;
@@ -2164,6 +2165,7 @@ static void EcsUiClayPushPointerEvent(
         .y = pointer.y,
         .start_x = pointer.x,
         .start_y = pointer.y,
+        .button = button,
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", target->node_id);
     (void)EcsUiEventListPush(events, &event);
@@ -2172,7 +2174,8 @@ static void EcsUiClayPushPointerEvent(
 static void EcsUiClayStartPointerCapture(
     EcsUiClayInteractionState *state,
     const EcsUiClayInteractionTarget *target,
-    EcsUiClayPointerState pointer)
+    EcsUiClayPointerState pointer,
+    EcsUiPointerButton button)
 {
     if (state == NULL || target == NULL) {
         return;
@@ -2186,6 +2189,7 @@ static void EcsUiClayStartPointerCapture(
         .start_x = pointer.x,
         .start_y = pointer.y,
         .start_time = pointer.time,
+        .button = button,
     };
     (void)snprintf(
         state->capture.node_id,
@@ -2222,9 +2226,28 @@ static void EcsUiClayPushCapturedPointerEvent(
         .elapsed = elapsed,
         .velocity_x = delta_x / elapsed,
         .velocity_y = delta_y / elapsed,
+        .button = capture->button,
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", capture->node_id);
     (void)EcsUiEventListPush(events, &event);
+}
+
+static bool EcsUiClayPointerDownForButton(
+    EcsUiClayPointerState pointer,
+    EcsUiPointerButton button)
+{
+    return button == ECS_UI_POINTER_BUTTON_SECONDARY ?
+        pointer.secondary_down :
+        pointer.down;
+}
+
+static bool EcsUiClayPointerReleasedForButton(
+    EcsUiClayPointerState pointer,
+    EcsUiPointerButton button)
+{
+    return button == ECS_UI_POINTER_BUTTON_SECONDARY ?
+        pointer.secondary_released :
+        pointer.released;
 }
 
 static void EcsUiClayMarkPointerInsideTargets(
@@ -2296,14 +2319,14 @@ void EcsUiClayCollectFrameEvents(
             return;
         }
 
-        if (pointer.down) {
+        if (EcsUiClayPointerDownForButton(pointer, capture->button)) {
             EcsUiClayPushCapturedPointerEvent(
                 events,
                 capture,
                 ECS_UI_EVENT_DRAGGED,
                 pointer);
         }
-        if (pointer.released) {
+        if (EcsUiClayPointerReleasedForButton(pointer, capture->button)) {
             const bool did_drag =
                 EcsUiClayDistanceSquared(
                     pointer,
@@ -2331,10 +2354,18 @@ void EcsUiClayCollectFrameEvents(
         return;
     }
 
-    EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_HOVERED, pointer);
-    if (pointer.pressed) {
-        EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_PRESSED, pointer);
-        EcsUiClayStartPointerCapture(frame->state, resolved, pointer);
+    EcsUiClayPushPointerEvent(
+        events,
+        resolved,
+        ECS_UI_EVENT_HOVERED,
+        pointer,
+        ECS_UI_POINTER_BUTTON_PRIMARY);
+    if (pointer.pressed || pointer.secondary_pressed) {
+        EcsUiPointerButton button = pointer.secondary_pressed ?
+            ECS_UI_POINTER_BUTTON_SECONDARY :
+            ECS_UI_POINTER_BUTTON_PRIMARY;
+        EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_PRESSED, pointer, button);
+        EcsUiClayStartPointerCapture(frame->state, resolved, pointer, button);
         EcsUiClayPushCapturedPointerEvent(
             events,
             &frame->state->capture,
