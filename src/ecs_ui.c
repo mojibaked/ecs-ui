@@ -17,6 +17,7 @@ ECS_COMPONENT_DECLARE(EcsUiCustom);
 ECS_COMPONENT_DECLARE(EcsUiVisual);
 ECS_COMPONENT_DECLARE(EcsUiPlacement);
 ECS_COMPONENT_DECLARE(EcsUiHitTest);
+ECS_COMPONENT_DECLARE(EcsUiScrollView);
 ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
 ECS_TAG_DECLARE(EcsUiRoot);
@@ -105,6 +106,7 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     ecs_remove(world, entity, EcsUiTextStyle);
     ecs_remove(world, entity, EcsUiTextLayout);
     ecs_remove(world, entity, EcsUiPlacement);
+    ecs_remove(world, entity, EcsUiScrollView);
     ecs_remove(world, entity, EcsUiButton);
     ecs_remove(world, entity, EcsUiPressable);
     ecs_remove(world, entity, EcsUiText);
@@ -284,6 +286,13 @@ static ecs_entity_t EcsUiBeginStack(
     return entity;
 }
 
+static uint32_t EcsUiScrollAxesOrDefault(
+    uint32_t axes,
+    uint32_t default_axes)
+{
+    return axes != ECS_UI_SCROLL_AXIS_NONE ? axes : default_axes;
+}
+
 void EcsUiImport(ecs_world_t *world)
 {
     if (world == NULL) {
@@ -304,6 +313,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiVisual);
     ECS_COMPONENT_DEFINE(world, EcsUiPlacement);
     ECS_COMPONENT_DEFINE(world, EcsUiHitTest);
+    ECS_COMPONENT_DEFINE(world, EcsUiScrollView);
     ECS_COMPONENT_DEFINE(world, EcsUiTextFieldView);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
@@ -752,6 +762,50 @@ ecs_entity_t EcsUiBeginZStack(EcsUiBuilder *builder, EcsUiStackDesc desc)
         ECS_UI_AXIS_DEPTH);
 }
 
+ecs_entity_t EcsUiBeginVScrollView(
+    EcsUiBuilder *builder,
+    EcsUiScrollViewDesc desc)
+{
+    ecs_entity_t entity = EcsUiBeginStack(
+        builder,
+        desc.stack,
+        ECS_UI_NODE_VSTACK,
+        ECS_UI_AXIS_VERTICAL);
+    if (entity == 0) {
+        return 0;
+    }
+
+    EcsUiScrollView scroll_view = {
+        .axes = EcsUiScrollAxesOrDefault(
+            desc.axes,
+            ECS_UI_SCROLL_AXIS_Y),
+    };
+    ecs_set_ptr(builder->world, entity, EcsUiScrollView, &scroll_view);
+    return entity;
+}
+
+ecs_entity_t EcsUiBeginHScrollView(
+    EcsUiBuilder *builder,
+    EcsUiScrollViewDesc desc)
+{
+    ecs_entity_t entity = EcsUiBeginStack(
+        builder,
+        desc.stack,
+        ECS_UI_NODE_HSTACK,
+        ECS_UI_AXIS_HORIZONTAL);
+    if (entity == 0) {
+        return 0;
+    }
+
+    EcsUiScrollView scroll_view = {
+        .axes = EcsUiScrollAxesOrDefault(
+            desc.axes,
+            ECS_UI_SCROLL_AXIS_X),
+    };
+    ecs_set_ptr(builder->world, entity, EcsUiScrollView, &scroll_view);
+    return entity;
+}
+
 ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
 {
     ecs_entity_t entity =
@@ -819,6 +873,32 @@ void EcsUiEnd(EcsUiBuilder *builder)
     }
     builder->depth -= 1u;
     builder->parent_stack[builder->depth] = 0;
+}
+
+bool EcsUiSetScrollView(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    EcsUiScrollView scroll_view)
+{
+    if (world == NULL || entity == 0) {
+        return false;
+    }
+    if (scroll_view.axes == ECS_UI_SCROLL_AXIS_NONE) {
+        return EcsUiClearScrollView(world, entity);
+    }
+
+    ecs_set_ptr(world, entity, EcsUiScrollView, &scroll_view);
+    return true;
+}
+
+bool EcsUiClearScrollView(ecs_world_t *world, ecs_entity_t entity)
+{
+    if (world == NULL || entity == 0) {
+        return false;
+    }
+
+    ecs_remove(world, entity, EcsUiScrollView);
+    return true;
 }
 
 ecs_entity_t EcsUiAddText(EcsUiBuilder *builder, EcsUiTextDesc desc)
@@ -985,6 +1065,13 @@ static uint32_t EcsUiReadNode(
     const EcsUiHitTest *hit_test = ecs_get(world, entity, EcsUiHitTest);
     if (hit_test != NULL) {
         snapshot->hit_test = *hit_test;
+    }
+
+    const EcsUiScrollView *scroll_view =
+        ecs_get(world, entity, EcsUiScrollView);
+    if (scroll_view != NULL) {
+        snapshot->scroll_view = *scroll_view;
+        snapshot->has_scroll_view = true;
     }
 
     const EcsUiTextFieldView *text_field_view =

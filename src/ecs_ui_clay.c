@@ -517,6 +517,40 @@ static Clay_ElementDeclaration EcsUiClayContainerDeclaration(
     };
 }
 
+static bool EcsUiClayScrollsHorizontal(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL && node->has_scroll_view &&
+        (node->scroll_view.axes & ECS_UI_SCROLL_AXIS_X) != 0u;
+}
+
+static bool EcsUiClayScrollsVertical(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL && node->has_scroll_view &&
+        (node->scroll_view.axes & ECS_UI_SCROLL_AXIS_Y) != 0u;
+}
+
+static Clay_ElementDeclaration EcsUiClayScrollContainerDeclaration(
+    Clay_LayoutConfig layout,
+    const EcsUiTreeNodeSnapshot *node,
+    Clay_Color fallback_background,
+    float fallback_radius,
+    float opacity,
+    Clay_Vector2 child_offset)
+{
+    Clay_ElementDeclaration declaration = EcsUiClayContainerDeclaration(
+        layout,
+        node,
+        fallback_background,
+        fallback_radius,
+        opacity);
+    declaration.clip = (Clay_ClipElementConfig){
+        .horizontal = EcsUiClayScrollsHorizontal(node),
+        .vertical = EcsUiClayScrollsVertical(node),
+        .childOffset = child_offset,
+    };
+    return declaration;
+}
+
 static Clay_Color EcsUiClayPressableColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
@@ -1411,25 +1445,49 @@ static void EcsUiClayEmitStack(
         tree,
         index,
         Clay_GetElementId(EcsUiClayString(clay_id)));
-    CLAY(
-        CLAY_SID(EcsUiClayString(clay_id)),
-        EcsUiClayContainerDeclaration(
-            layout,
-            node,
-            background,
-            radius,
-            opacity)) {
-        EcsUiClayEmitChildren(
-            tree,
-            theme,
-            index,
-            inverse_text,
-            text_style,
-            has_text_style,
-            text_disabled,
-            opacity,
-            frame);
-        EcsUiClayEmitBevel(node, opacity);
+    if (node->has_scroll_view) {
+        CLAY(
+            CLAY_SID(EcsUiClayString(clay_id)),
+            EcsUiClayScrollContainerDeclaration(
+                layout,
+                node,
+                background,
+                radius,
+                opacity,
+                Clay_GetScrollOffset())) {
+            EcsUiClayEmitChildren(
+                tree,
+                theme,
+                index,
+                inverse_text,
+                text_style,
+                has_text_style,
+                text_disabled,
+                opacity,
+                frame);
+            EcsUiClayEmitBevel(node, opacity);
+        }
+    } else {
+        CLAY(
+            CLAY_SID(EcsUiClayString(clay_id)),
+            EcsUiClayContainerDeclaration(
+                layout,
+                node,
+                background,
+                radius,
+                opacity)) {
+            EcsUiClayEmitChildren(
+                tree,
+                theme,
+                index,
+                inverse_text,
+                text_style,
+                has_text_style,
+                text_disabled,
+                opacity,
+                frame);
+            EcsUiClayEmitBevel(node, opacity);
+        }
     }
 }
 

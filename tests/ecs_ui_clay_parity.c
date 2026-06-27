@@ -758,6 +758,93 @@ static int TestDuplicateAuthoredIdsDoNotCollide(void)
     return result;
 }
 
+static int TestScrollViewEmitsScissorCommands(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scroll view world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "ScrollClipRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "ScrollClip",
+                .preferred_width = 120.0f,
+                .preferred_height = 40.0f,
+            },
+        });
+    for (int i = 0; i < 4; i += 1) {
+        char id[ECS_UI_ID_MAX];
+        char text[ECS_UI_TEXT_MAX];
+        (void)snprintf(id, sizeof(id), "ScrollText%d", i);
+        (void)snprintf(text, sizeof(text), "row %d", i);
+        EcsUiAddText(
+            &builder,
+            (EcsUiTextDesc){
+                .id = id,
+                .text = text,
+                .role = ECS_UI_TEXT_BODY,
+            });
+    }
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "scroll clip builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "scroll clip tree read failed");
+    const EcsUiTreeNodeSnapshot *scroll = FindTreeNode(&tree, "ScrollClip");
+    result |= Require(
+        scroll != NULL &&
+            scroll->has_scroll_view &&
+            scroll->scroll_view.axes == ECS_UI_SCROLL_AXIS_Y,
+        "scroll clip snapshot mismatch");
+
+    ResetClayErrors();
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    uint32_t scissor_start_count = 0u;
+    uint32_t scissor_end_count = 0u;
+    bool found_vertical_scissor = false;
+    for (int32_t i = 0; i < commands.length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(&commands, i);
+        if (command == NULL) {
+            continue;
+        }
+        if (command->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START) {
+            scissor_start_count += 1u;
+            if (command->renderData.clip.vertical &&
+                !command->renderData.clip.horizontal) {
+                found_vertical_scissor = true;
+            }
+        } else if (command->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_END) {
+            scissor_end_count += 1u;
+        }
+    }
+
+    result |= Require(
+        found_vertical_scissor,
+        "scroll view should emit vertical scissor start");
+    result |= Require(
+        scissor_start_count == scissor_end_count &&
+            scissor_start_count > 0u,
+        "scroll view scissor commands should be balanced");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestTextStyleInheritanceEmitsClayForegroundColor(void)
 {
     int result = 0;
@@ -3491,6 +3578,7 @@ int main(void)
     }
 
     result |= TestDuplicateAuthoredIdsDoNotCollide();
+    result |= TestScrollViewEmitsScissorCommands();
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();
     result |= TestIconEmitsCustomCommand();
     result |= TestVisualOpacitySkipsHitTesting();

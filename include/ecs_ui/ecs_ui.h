@@ -109,6 +109,14 @@ typedef enum EcsUiHitTestMode {
     ECS_UI_HIT_TEST_CAPTURE = 3,
 } EcsUiHitTestMode;
 
+typedef enum EcsUiScrollAxisFlags {
+    ECS_UI_SCROLL_AXIS_NONE = 0u,
+    ECS_UI_SCROLL_AXIS_X = 1u << 0u,
+    ECS_UI_SCROLL_AXIS_Y = 1u << 1u,
+    ECS_UI_SCROLL_AXIS_BOTH =
+        ECS_UI_SCROLL_AXIS_X | ECS_UI_SCROLL_AXIS_Y,
+} EcsUiScrollAxisFlags;
+
 typedef struct EcsUiNodeId {
     char value[ECS_UI_ID_MAX];
 } EcsUiNodeId;
@@ -225,6 +233,10 @@ typedef struct EcsUiHitTest {
     EcsUiHitTestMode mode;
 } EcsUiHitTest;
 
+typedef struct EcsUiScrollView {
+    uint32_t axes;
+} EcsUiScrollView;
+
 typedef struct EcsUiTextFieldView {
     ecs_entity_t value_node;
     uint32_t cursor;
@@ -248,6 +260,11 @@ typedef struct EcsUiStackDesc {
     ecs_entity_t style_token;
     const EcsUiBoxStyle *style;
 } EcsUiStackDesc;
+
+typedef struct EcsUiScrollViewDesc {
+    EcsUiStackDesc stack;
+    uint32_t axes;
+} EcsUiScrollViewDesc;
 
 typedef struct EcsUiButtonDesc {
     const char *id;
@@ -316,11 +333,13 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiVisual visual;
     EcsUiPlacement placement;
     EcsUiHitTest hit_test;
+    EcsUiScrollView scroll_view;
     EcsUiTextFieldView text_field_view;
     bool has_box_style;
     bool has_text_style;
     bool has_text_layout;
     bool has_placement;
+    bool has_scroll_view;
     bool has_text_field_view;
     bool hovered;
     bool hover_within;
@@ -373,6 +392,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiCustom);
 extern ECS_COMPONENT_DECLARE(EcsUiVisual);
 extern ECS_COMPONENT_DECLARE(EcsUiPlacement);
 extern ECS_COMPONENT_DECLARE(EcsUiHitTest);
+extern ECS_COMPONENT_DECLARE(EcsUiScrollView);
 extern ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
 extern ECS_TAG_DECLARE(EcsUiRoot);
@@ -428,11 +448,23 @@ bool EcsUiBuilderOk(const EcsUiBuilder *builder);
 ecs_entity_t EcsUiBeginVStack(EcsUiBuilder *builder, EcsUiStackDesc desc);
 ecs_entity_t EcsUiBeginHStack(EcsUiBuilder *builder, EcsUiStackDesc desc);
 ecs_entity_t EcsUiBeginZStack(EcsUiBuilder *builder, EcsUiStackDesc desc);
+ecs_entity_t EcsUiBeginVScrollView(
+    EcsUiBuilder *builder,
+    EcsUiScrollViewDesc desc);
+ecs_entity_t EcsUiBeginHScrollView(
+    EcsUiBuilder *builder,
+    EcsUiScrollViewDesc desc);
 ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc);
 ecs_entity_t EcsUiBeginPressable(
     EcsUiBuilder *builder,
     EcsUiPressableDesc desc);
 void EcsUiEnd(EcsUiBuilder *builder);
+
+bool EcsUiSetScrollView(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    EcsUiScrollView scroll_view);
+bool EcsUiClearScrollView(ecs_world_t *world, ecs_entity_t entity);
 
 ecs_entity_t EcsUiAddText(EcsUiBuilder *builder, EcsUiTextDesc desc);
 ecs_entity_t EcsUiAddIcon(EcsUiBuilder *builder, EcsUiIconDesc desc);
@@ -472,6 +504,16 @@ bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);
         EcsUiBeginZStack((builder), (EcsUiStackDesc)__VA_ARGS__), \
         EcsUiEnd((builder)))
 
+#define EcsUiVScrollView(builder, ...) \
+    EcsUiScope( \
+        EcsUiBeginVScrollView((builder), (EcsUiScrollViewDesc)__VA_ARGS__), \
+        EcsUiEnd((builder)))
+
+#define EcsUiHScrollView(builder, ...) \
+    EcsUiScope( \
+        EcsUiBeginHScrollView((builder), (EcsUiScrollViewDesc)__VA_ARGS__), \
+        EcsUiEnd((builder)))
+
 #define EcsUiButtonScope(builder, ...) \
     EcsUiScope( \
         EcsUiBeginButton((builder), (EcsUiButtonDesc)__VA_ARGS__), \
@@ -495,6 +537,8 @@ bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);
 #define VStack EcsUiVStack
 #define HStack EcsUiHStack
 #define ZStack EcsUiZStack
+#define VScrollView EcsUiVScrollView
+#define HScrollView EcsUiHScrollView
 #define Button EcsUiButtonScope
 #define Pressable EcsUiPressableScope
 #define Text EcsUiTextNode

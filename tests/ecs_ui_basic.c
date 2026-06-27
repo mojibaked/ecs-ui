@@ -878,6 +878,133 @@ static int TestPlacementAndTextLayoutSnapshot(void)
     return result;
 }
 
+static int TestScrollViewSnapshot(void)
+{
+    int result = 0;
+    ecs_world_t *world = ecs_init();
+    if (world == NULL) {
+        return Require(false, "failed to create scroll view world");
+    }
+    EcsUiImport(world);
+
+    ecs_entity_t root = EcsUiRootEntity(world, "ScrollRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t vertical = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "VerticalScroll",
+                .width_sizing = ECS_UI_SIZE_GROW,
+                .height_sizing = ECS_UI_SIZE_GROW,
+            },
+        });
+    EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "VerticalItem",
+            .text = "item",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t horizontal = EcsUiBeginHScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "HorizontalScroll",
+                .width_sizing = ECS_UI_SIZE_GROW,
+                .height_sizing = ECS_UI_SIZE_FIT,
+            },
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+
+    result |= Require(EcsUiBuilderOk(&builder), "scroll builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "scroll tree read failed");
+
+    uint32_t vertical_index = ECS_UI_TREE_INVALID_INDEX;
+    uint32_t horizontal_index = ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (strcmp(tree.nodes[i].id, "VerticalScroll") == 0) {
+            vertical_index = i;
+        } else if (strcmp(tree.nodes[i].id, "HorizontalScroll") == 0) {
+            horizontal_index = i;
+        }
+    }
+
+    result |= Require(
+        vertical != 0 && vertical_index != ECS_UI_TREE_INVALID_INDEX,
+        "vertical scroll view missing");
+    result |= Require(
+        horizontal != 0 && horizontal_index != ECS_UI_TREE_INVALID_INDEX,
+        "horizontal scroll view missing");
+    if (vertical_index != ECS_UI_TREE_INVALID_INDEX) {
+        const EcsUiTreeNodeSnapshot *node = &tree.nodes[vertical_index];
+        result |= Require(
+            node->kind == ECS_UI_NODE_VSTACK &&
+                node->stack.axis == ECS_UI_AXIS_VERTICAL &&
+                node->has_scroll_view &&
+                node->scroll_view.axes == ECS_UI_SCROLL_AXIS_Y,
+            "vertical scroll snapshot mismatch");
+    }
+    if (horizontal_index != ECS_UI_TREE_INVALID_INDEX) {
+        const EcsUiTreeNodeSnapshot *node = &tree.nodes[horizontal_index];
+        result |= Require(
+            node->kind == ECS_UI_NODE_HSTACK &&
+                node->stack.axis == ECS_UI_AXIS_HORIZONTAL &&
+                node->has_scroll_view &&
+                node->scroll_view.axes == ECS_UI_SCROLL_AXIS_X,
+            "horizontal scroll snapshot mismatch");
+    }
+
+    result |= Require(
+        EcsUiSetScrollView(
+            world,
+            vertical,
+            (EcsUiScrollView){.axes = ECS_UI_SCROLL_AXIS_BOTH}),
+        "scroll setter failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "scroll tree reread failed");
+    vertical_index = ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (strcmp(tree.nodes[i].id, "VerticalScroll") == 0) {
+            vertical_index = i;
+            break;
+        }
+    }
+    result |= Require(
+        vertical_index != ECS_UI_TREE_INVALID_INDEX &&
+            tree.nodes[vertical_index].has_scroll_view &&
+            tree.nodes[vertical_index].scroll_view.axes ==
+                ECS_UI_SCROLL_AXIS_BOTH,
+        "scroll setter snapshot mismatch");
+
+    result |= Require(
+        EcsUiClearScrollView(world, vertical),
+        "scroll clear failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "scroll tree clear reread failed");
+    vertical_index = ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (strcmp(tree.nodes[i].id, "VerticalScroll") == 0) {
+            vertical_index = i;
+            break;
+        }
+    }
+    result |= Require(
+        vertical_index != ECS_UI_TREE_INVALID_INDEX &&
+            !tree.nodes[vertical_index].has_scroll_view,
+        "scroll clear snapshot mismatch");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestGestureArenaPanImmediateAndCancel(void)
 {
     int result = 0;
@@ -1188,6 +1315,7 @@ int main(void)
     result |= TestThemeDefaultHierarchy();
     result |= TestHoverRevealState(world);
     result |= TestPlacementAndTextLayoutSnapshot();
+    result |= TestScrollViewSnapshot();
     result |= TestGestureArenaPanThreshold();
     result |= TestGestureArenaPanImmediateAndCancel();
     result |= TestGestureArenaPressCapture();
@@ -1266,6 +1394,9 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiHitTest) != 0,
         "EcsUiHitTest should be registered");
+    result |= Require(
+        ecs_id(EcsUiScrollView) != 0,
+        "EcsUiScrollView should be registered");
     result |= Require(
         ecs_has_id(world, EcsUiProjectionRoot, EcsExclusive),
         "EcsUiProjectionRoot should be exclusive");
