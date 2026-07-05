@@ -1601,6 +1601,103 @@ static int TestBuilderSkipsIdenticalWrites(void)
     return result;
 }
 
+static int TestThemeSkipsIdenticalWrites(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create theme write world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t style_token = ecs_entity(world, {.name = "ThemeWriteToken"});
+    ecs_entity_t theme = EcsUiThemeEntity(world, "ThemeWriteTheme");
+    const EcsUiBoxStyle box_style = {
+        .background = {10u, 20u, 30u, 255u},
+        .hover_background = {11u, 21u, 31u, 255u},
+        .disabled_background = {12u, 22u, 32u, 255u},
+        .highlight_background = {13u, 23u, 33u, 255u},
+        .radius = 0.25f,
+        .padding = 8.0f,
+        .border_color = {14u, 24u, 34u, 255u},
+        .border_width = 1.0f,
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = {15u, 25u, 35u, 255u},
+        .bevel_dark = {16u, 26u, 36u, 255u},
+    };
+    const EcsUiTextStyle text_style = {
+        .color = {50u, 60u, 70u, 255u},
+        .muted_color = {51u, 61u, 71u, 255u},
+        .disabled_color = {52u, 62u, 72u, 255u},
+        .body_size = 13.0f,
+        .title_size = 16.0f,
+        .label_size = 12.0f,
+        .button_size = 13.0f,
+        .caption_size = 10.0f,
+    };
+
+    result |= Require(theme != 0, "theme write theme should exist");
+    result |= Require(
+        EcsUiThemeSetBoxStyle(world, theme, style_token, box_style),
+        "theme write box set failed");
+    result |= Require(
+        EcsUiThemeSetTextStyle(world, theme, style_token, text_style),
+        "theme write text set failed");
+    result |= Require(
+        EcsUiSetActiveTheme(world, theme),
+        "theme write active theme failed");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "theme write initial apply failed");
+
+    uint32_t on_set_count = 0u;
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiBoxStyle), &on_set_count),
+        "theme box observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiTextStyle), &on_set_count),
+        "theme text observer failed");
+
+    result |= Require(
+        EcsUiThemeSetBoxStyle(world, theme, style_token, box_style),
+        "theme write identical box set failed");
+    result |= Require(
+        EcsUiThemeSetTextStyle(world, theme, style_token, text_style),
+        "theme write identical text set failed");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "theme write identical apply failed");
+    result |= Require(
+        on_set_count == 0u,
+        "identical theme declarations should not write");
+
+    const EcsUiBoxStyle changed_box_style = {
+        .background = {90u, 20u, 30u, 255u},
+        .hover_background = {11u, 21u, 31u, 255u},
+        .disabled_background = {12u, 22u, 32u, 255u},
+        .highlight_background = {13u, 23u, 33u, 255u},
+        .radius = 0.25f,
+        .padding = 8.0f,
+        .border_color = {14u, 24u, 34u, 255u},
+        .border_width = 1.0f,
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = {15u, 25u, 35u, 255u},
+        .bevel_dark = {16u, 26u, 36u, 255u},
+    };
+    result |= Require(
+        EcsUiThemeSetBoxStyle(world, theme, style_token, changed_box_style),
+        "theme write changed box set failed");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "theme write changed apply failed");
+    result |= Require(
+        on_set_count == 2u,
+        "changed theme style should write source and applied token once");
+
+    ecs_fini(world);
+    return result;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -1629,6 +1726,7 @@ int main(void)
     result |= TestBuilderRejectsDuplicateKey();
     result |= TestBuilderRejectsDeferredWorld();
     result |= TestBuilderSkipsIdenticalWrites();
+    result |= TestThemeSkipsIdenticalWrites();
     result |= TestOverlayState();
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),

@@ -1081,8 +1081,12 @@ bool EcsUiThemeSetBoxStyle(
         }
         ecs_add_pair(world, source, EcsUiThemeStyle, style_token);
     }
-    ecs_set_ptr(world, source, EcsUiBoxStyle, &style);
-    return true;
+    return EcsUiSetIdIfChanged(
+        world,
+        source,
+        ecs_id(EcsUiBoxStyle),
+        sizeof(style),
+        &style);
 }
 
 bool EcsUiThemeSetTextStyle(
@@ -1105,8 +1109,12 @@ bool EcsUiThemeSetTextStyle(
         }
         ecs_add_pair(world, source, EcsUiThemeStyle, style_token);
     }
-    ecs_set_ptr(world, source, EcsUiTextStyle, &style);
-    return true;
+    return EcsUiSetIdIfChanged(
+        world,
+        source,
+        ecs_id(EcsUiTextStyle),
+        sizeof(style),
+        &style);
 }
 
 bool EcsUiThemeApply(ecs_world_t *world)
@@ -1132,15 +1140,30 @@ bool EcsUiThemeApply(ecs_world_t *world)
                 const EcsUiTextStyle *text_style =
                     ecs_get(world, source, EcsUiTextStyle);
                 if (style_token != 0 && text_style != NULL) {
-                    ecs_set_ptr(world, style_token, EcsUiTextStyle, text_style);
+                    (void)EcsUiSetIdIfChanged(
+                        world,
+                        style_token,
+                        ecs_id(EcsUiTextStyle),
+                        sizeof(*text_style),
+                        text_style);
                 }
                 continue;
             }
-            ecs_set_ptr(world, style_token, EcsUiBoxStyle, box_style);
+            (void)EcsUiSetIdIfChanged(
+                world,
+                style_token,
+                ecs_id(EcsUiBoxStyle),
+                sizeof(*box_style),
+                box_style);
             const EcsUiTextStyle *text_style =
                 ecs_get(world, source, EcsUiTextStyle);
             if (text_style != NULL) {
-                ecs_set_ptr(world, style_token, EcsUiTextStyle, text_style);
+                (void)EcsUiSetIdIfChanged(
+                    world,
+                    style_token,
+                    ecs_id(EcsUiTextStyle),
+                    sizeof(*text_style),
+                    text_style);
             }
         }
     }
