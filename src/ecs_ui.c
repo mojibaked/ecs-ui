@@ -10,6 +10,7 @@ ECS_COMPONENT_DECLARE(EcsUiAutoOrdinal);
 ECS_COMPONENT_DECLARE(EcsUiDeclaration);
 ECS_COMPONENT_DECLARE(EcsUiBuilderRootState);
 ECS_COMPONENT_DECLARE(EcsUiActionPayload);
+ECS_COMPONENT_DECLARE(EcsUiScale);
 ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
@@ -49,6 +50,11 @@ static void EcsUiCopyString(char *out, size_t out_size, const char *value)
         out[i] = source[i];
     }
     out[i] = '\0';
+}
+
+static float EcsUiNormalizeScale(float scale)
+{
+    return scale > 0.0f ? scale : 1.0f;
 }
 
 static bool EcsUiSetIdIfChanged(
@@ -762,6 +768,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiDeclaration);
     ECS_COMPONENT_DEFINE(world, EcsUiBuilderRootState);
     ECS_COMPONENT_DEFINE(world, EcsUiActionPayload);
+    ECS_COMPONENT_DEFINE(world, EcsUiScale);
     ECS_COMPONENT_DEFINE(world, EcsUiNode);
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
     ECS_COMPONENT_DEFINE(world, EcsUiBoxStyle);
@@ -1188,9 +1195,38 @@ ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id)
     if (!ecs_has_id(world, root, EcsOrderedChildren)) {
         ecs_add_id(world, root, EcsOrderedChildren);
     }
+    if (!ecs_has(world, root, EcsUiScale)) {
+        (void)EcsUiSetScale(world, root, 1.0f);
+    }
     (void)EcsUiSetNodeKind(world, root, ECS_UI_NODE_ROOT);
     EcsUiSetNodeId(world, root, name);
     return root;
+}
+
+bool EcsUiSetScale(ecs_world_t *world, ecs_entity_t root, float scale)
+{
+    if (world == NULL || root == 0) {
+        return false;
+    }
+
+    EcsUiScale value = {
+        .value = EcsUiNormalizeScale(scale),
+    };
+    return EcsUiSetIdIfChanged(
+        world,
+        root,
+        ecs_id(EcsUiScale),
+        sizeof(value),
+        &value);
+}
+
+float EcsUiGetScale(const ecs_world_t *world, ecs_entity_t root)
+{
+    if (world == NULL || root == 0) {
+        return 1.0f;
+    }
+    const EcsUiScale *scale = ecs_get(world, root, EcsUiScale);
+    return EcsUiNormalizeScale(scale != NULL ? scale->value : 1.0f);
 }
 
 static uint32_t EcsUiBuilderChildrenForParent(
@@ -1910,6 +1946,7 @@ bool EcsUiReadTree(
 
     memset(out, 0, sizeof(*out));
     out->root = root;
+    out->scale = EcsUiGetScale(world, root);
     return EcsUiReadNode(
         world,
         root,

@@ -141,6 +141,10 @@ typedef struct EcsUiActionPayload {
     uint64_t value;
 } EcsUiActionPayload;
 
+typedef struct EcsUiScale {
+    float value;
+} EcsUiScale;
+
 typedef struct EcsUiNode {
     EcsUiNodeKind kind;
 } EcsUiNode;
@@ -197,6 +201,11 @@ typedef struct EcsUiTextStyle {
     EcsUiColor color;
     EcsUiColor muted_color;
     EcsUiColor disabled_color;
+    float body_size;
+    float title_size;
+    float label_size;
+    float button_size;
+    float caption_size;
 } EcsUiTextStyle;
 
 typedef struct EcsUiTextLayout {
@@ -429,6 +438,7 @@ typedef struct EcsUiTreeNodeSnapshot {
 
 typedef struct EcsUiTreeSnapshot {
     ecs_entity_t root;
+    float scale;
     uint32_t count;
     bool truncated;
     EcsUiTreeNodeSnapshot nodes[ECS_UI_TREE_NODE_MAX];
@@ -467,6 +477,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiAutoOrdinal);
 extern ECS_COMPONENT_DECLARE(EcsUiDeclaration);
 extern ECS_COMPONENT_DECLARE(EcsUiBuilderRootState);
 extern ECS_COMPONENT_DECLARE(EcsUiActionPayload);
+extern ECS_COMPONENT_DECLARE(EcsUiScale);
 extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
@@ -528,6 +539,8 @@ bool EcsUiThemeSetTextStyle(
 bool EcsUiThemeApply(ecs_world_t *world);
 
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id);
+bool EcsUiSetScale(ecs_world_t *world, ecs_entity_t root, float scale);
+float EcsUiGetScale(const ecs_world_t *world, ecs_entity_t root);
 
 EcsUiBuilder EcsUiBuilderBegin(ecs_world_t *world, ecs_entity_t root);
 void EcsUiBuilderEnd(EcsUiBuilder *builder);

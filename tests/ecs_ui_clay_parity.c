@@ -679,6 +679,168 @@ static int RequireEvent(
     return 0;
 }
 
+static int TestRootScaleAffectsClayLayoutOnly(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scale world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "ScaleRoot");
+    ecs_entity_t style = EcsUiStyleToken(world, "ScaleTextStyle");
+    ecs_set(
+        world,
+        style,
+        EcsUiTextStyle,
+        {
+            .body_size = 11.0f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ScaleStack",
+            .gap = 4.0f,
+            .padding = 5.0f,
+            .style_token = style,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ScaleSurface",
+            .kind = "scale.surface",
+            .preferred_width = 40.0f,
+            .preferred_height = 20.0f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "ScaleText",
+            .text = "Scale",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "scale builder failed");
+
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "scale 1 tree read failed");
+    result |= RequireNear(tree.scale, 1.0f, 0.001f, "default scale mismatch");
+    const EcsUiTreeNodeSnapshot *stack = FindTreeNode(&tree, "ScaleStack");
+    const EcsUiTreeNodeSnapshot *surface = FindTreeNode(&tree, "ScaleSurface");
+    result |= Require(
+        stack != NULL && surface != NULL,
+        "scale snapshot nodes missing");
+    if (stack != NULL && surface != NULL) {
+        result |= RequireNear(
+            stack->stack.padding,
+            5.0f,
+            0.001f,
+            "logical padding should remain unscaled");
+        result |= RequireNear(
+            surface->custom.preferred_width,
+            40.0f,
+            0.001f,
+            "logical custom width should remain unscaled");
+    }
+
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+    Clay_RenderCommand *surface_command =
+        FindCustomCommand(&commands, "ScaleSurface");
+    Clay_RenderCommand *text_command = FindTextCommand(&commands, "Scale");
+    result |= Require(surface_command != NULL, "scale 1 custom command missing");
+    result |= Require(text_command != NULL, "scale 1 text command missing");
+    if (surface_command != NULL) {
+        result |= RequireNear(
+            surface_command->boundingBox.x,
+            5.0f,
+            0.001f,
+            "scale 1 custom x mismatch");
+        result |= RequireNear(
+            surface_command->boundingBox.width,
+            40.0f,
+            0.001f,
+            "scale 1 custom width mismatch");
+        result |= RequireNear(
+            surface_command->boundingBox.height,
+            20.0f,
+            0.001f,
+            "scale 1 custom height mismatch");
+    }
+    if (text_command != NULL) {
+        result |= Require(
+            text_command->renderData.text.fontSize == 11u,
+            "scale 1 text font size should use style data");
+    }
+
+    result |= Require(EcsUiSetScale(world, root, 2.0f), "set scale failed");
+    tree = (EcsUiTreeSnapshot){0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "scale 2 tree read failed");
+    result |= RequireNear(tree.scale, 2.0f, 0.001f, "scale 2 snapshot mismatch");
+    stack = FindTreeNode(&tree, "ScaleStack");
+    surface = FindTreeNode(&tree, "ScaleSurface");
+    if (stack != NULL && surface != NULL) {
+        result |= RequireNear(
+            stack->stack.padding,
+            5.0f,
+            0.001f,
+            "scale 2 logical padding should remain unscaled");
+        result |= RequireNear(
+            surface->custom.preferred_width,
+            40.0f,
+            0.001f,
+            "scale 2 logical custom width should remain unscaled");
+    }
+
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
+    commands = Clay_EndLayout();
+    surface_command = FindCustomCommand(&commands, "ScaleSurface");
+    text_command = FindTextCommand(&commands, "Scale");
+    result |= Require(surface_command != NULL, "scale 2 custom command missing");
+    result |= Require(text_command != NULL, "scale 2 text command missing");
+    if (surface_command != NULL) {
+        result |= RequireNear(
+            surface_command->boundingBox.x,
+            10.0f,
+            0.001f,
+            "scale 2 custom x mismatch");
+        result |= RequireNear(
+            surface_command->boundingBox.width,
+            80.0f,
+            0.001f,
+            "scale 2 custom width mismatch");
+        result |= RequireNear(
+            surface_command->boundingBox.height,
+            40.0f,
+            0.001f,
+            "scale 2 custom height mismatch");
+    }
+    if (text_command != NULL) {
+        result |= Require(
+            text_command->renderData.text.fontSize == 22u,
+            "scale 2 text font size should be scaled");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestDuplicateAuthoredIdsDoNotCollide(void)
 {
     int result = 0;
@@ -3666,6 +3828,7 @@ int main(void)
         return result;
     }
 
+    result |= TestRootScaleAffectsClayLayoutOnly();
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestScrollViewEmitsScissorCommands();
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();

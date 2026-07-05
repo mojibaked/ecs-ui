@@ -1660,6 +1660,9 @@ int main(void)
         ecs_id(EcsUiTextStyle) != 0,
         "EcsUiTextStyle should be registered");
     result |= Require(
+        ecs_id(EcsUiScale) != 0,
+        "EcsUiScale should be registered");
+    result |= Require(
         ecs_id(EcsUiTextLayout) != 0,
         "EcsUiTextLayout should be registered");
     result |= Require(
