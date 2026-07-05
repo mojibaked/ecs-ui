@@ -358,6 +358,25 @@ typedef struct EcsUiBuilderDeclaredChild {
  * resolved layout, hover, and text editing are not touched by declaration.
  * Kind-specific declaration components are cleared only when a retained node's
  * declared kind changes.
+ *
+ * Child identity and reconciliation:
+ * - A nonzero desc key is identity under the current parent. Re-declaring the
+ *   same key reuses the retained child regardless of declaration index.
+ * - Duplicate nonzero keys under one parent in one builder pass fail the
+ *   builder. Reusing a key with a different declared kind replaces the
+ *   declaration-owned kind components for that node.
+ * - Unkeyed id-less children receive synthetic per-parent ordinal identity for
+ *   the pass so repeated unkeyed children are retained instead of leaked.
+ * - `EcsUiBuilderEnd` prunes only below parents declared in the current pass.
+ *   Parents not declared by the pass keep their existing children; this lets
+ *   one-shot trees and externally managed projection subtrees coexist.
+ * - Declaration order is authoritative for declared parents and is enforced on
+ *   retained child order.
+ *
+ * Builder reconciliation mutates hierarchy immediately, including prune and
+ * child-order operations. `EcsUiBuilderBegin` therefore requires a
+ * non-deferred world; begin returns a failed builder when `ecs_is_deferred`
+ * is true.
  */
 typedef struct EcsUiBuilder {
     ecs_world_t *world;
