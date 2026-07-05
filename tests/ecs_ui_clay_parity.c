@@ -1586,6 +1586,95 @@ static int TestActionStackEmitsPointerEvents(void)
     return result;
 }
 
+static int TestActionPayloadFlowsToPointerEvents(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create world");
+    }
+
+    const uint64_t payload = 0xC0FFEEu;
+    ecs_entity_t action = CreateAction(world, "PayloadAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "PayloadRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PayloadTarget",
+            .on_click = action,
+            .payload = payload,
+            .preferred_height = 44.0f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PayloadLabel",
+            .text = "payload",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "payload builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "payload tree read failed");
+    const EcsUiTreeNodeSnapshot *target_node =
+        FindTreeNode(&tree, "PayloadTarget");
+    result |= Require(
+        target_node != NULL && target_node->payload == payload,
+        "payload should be copied to tree snapshot");
+
+    EcsUiClayLayoutOptions options = LayoutOptions(160.0f, 80.0f);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 6.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "payload press should emit hover, pressed, and drag started");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        target,
+        "PayloadTarget");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        target,
+        "PayloadTarget");
+    result |= RequireEvent(
+        &events,
+        2u,
+        ECS_UI_EVENT_DRAG_STARTED,
+        target,
+        "PayloadTarget");
+    result |= Require(
+        events.events[0u].payload == payload &&
+            events.events[1u].payload == payload &&
+            events.events[2u].payload == payload,
+        "payload should be copied to pointer events");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestInteractiveStackEmitsSecondaryPress(void)
 {
     int result = 0;
@@ -3585,6 +3674,7 @@ int main(void)
     result |= TestRevealOnHoverRowActionsFallThrough();
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestActionStackEmitsPointerEvents();
+    result |= TestActionPayloadFlowsToPointerEvents();
     result |= TestInteractiveStackEmitsSecondaryPress();
     result |= TestPointerCaptureLifecycle();
     result |= TestPointerCaptureMissingTargetFallsThrough();

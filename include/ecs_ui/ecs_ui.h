@@ -121,6 +121,26 @@ typedef struct EcsUiNodeId {
     char value[ECS_UI_ID_MAX];
 } EcsUiNodeId;
 
+typedef struct EcsUiKey {
+    uint64_t value;
+} EcsUiKey;
+
+typedef struct EcsUiAutoOrdinal {
+    uint32_t value;
+} EcsUiAutoOrdinal;
+
+typedef struct EcsUiDeclaration {
+    uint64_t generation;
+} EcsUiDeclaration;
+
+typedef struct EcsUiBuilderRootState {
+    uint64_t next_generation;
+} EcsUiBuilderRootState;
+
+typedef struct EcsUiActionPayload {
+    uint64_t value;
+} EcsUiActionPayload;
+
 typedef struct EcsUiNode {
     EcsUiNodeKind kind;
 } EcsUiNode;
@@ -249,6 +269,7 @@ typedef struct EcsUiTextFieldView {
 
 typedef struct EcsUiStackDesc {
     const char *id;
+    uint64_t key;
     float gap;
     float padding;
     float preferred_width;
@@ -268,15 +289,19 @@ typedef struct EcsUiScrollViewDesc {
 
 typedef struct EcsUiButtonDesc {
     const char *id;
+    uint64_t key;
     EcsUiButtonVariant variant;
     ecs_entity_t on_click;
+    uint64_t payload;
     bool disabled;
     ecs_entity_t style_token;
 } EcsUiButtonDesc;
 
 typedef struct EcsUiPressableDesc {
     const char *id;
+    uint64_t key;
     ecs_entity_t on_click;
+    uint64_t payload;
     bool disabled;
     ecs_entity_t style_token;
     float preferred_height;
@@ -284,29 +309,66 @@ typedef struct EcsUiPressableDesc {
 
 typedef struct EcsUiTextDesc {
     const char *id;
+    uint64_t key;
     const char *text;
     EcsUiTextRole role;
 } EcsUiTextDesc;
 
 typedef struct EcsUiIconDesc {
     const char *id;
+    uint64_t key;
     const char *name;
 } EcsUiIconDesc;
 
 typedef struct EcsUiCustomDesc {
     const char *id;
+    uint64_t key;
     const char *kind;
     float preferred_width;
     float preferred_height;
     ecs_entity_t on_click;
+    uint64_t payload;
     EcsUiSizing width_sizing;
     EcsUiSizing height_sizing;
 } EcsUiCustomDesc;
 
+typedef struct EcsUiBuilderParentFrame {
+    ecs_entity_t parent;
+    uint32_t next_auto_ordinal;
+} EcsUiBuilderParentFrame;
+
+typedef struct EcsUiBuilderDeclaredChild {
+    ecs_entity_t parent;
+    ecs_entity_t child;
+    uint64_t key;
+    uint32_t auto_ordinal;
+} EcsUiBuilderDeclaredChild;
+
+/*
+ * Builder ownership contract:
+ *
+ * Declaration-owned components are authored only by EcsUiBuilder and are
+ * written only when the declared value changes: EcsUiNodeId, EcsUiKey,
+ * EcsUiAutoOrdinal, EcsUiDeclaration, EcsUiNode, EcsUiStack, EcsUiBoxStyle,
+ * EcsUiButton, EcsUiPressable, EcsUiText, EcsUiIcon, EcsUiCustom,
+ * EcsUiScrollView, EcsUiActionPayload, EcsUiOnClick, EcsUiUsesStyle and
+ * EcsUiRevealedByHover.
+ *
+ * UI-local components that model runtime behavior, focus, gestures, animation,
+ * resolved layout, hover, and text editing are not touched by declaration.
+ * Kind-specific declaration components are cleared only when a retained node's
+ * declared kind changes.
+ */
 typedef struct EcsUiBuilder {
     ecs_world_t *world;
     ecs_entity_t root;
     ecs_entity_t parent_stack[ECS_UI_BUILDER_STACK_MAX];
+    EcsUiBuilderParentFrame parent_frames[ECS_UI_BUILDER_STACK_MAX];
+    ecs_entity_t declared_parents[ECS_UI_TREE_NODE_MAX];
+    EcsUiBuilderDeclaredChild declared_children[ECS_UI_TREE_NODE_MAX];
+    uint64_t generation;
+    uint32_t declared_parent_count;
+    uint32_t declared_child_count;
     uint32_t depth;
     bool failed;
 } EcsUiBuilder;
@@ -315,6 +377,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     ecs_entity_t entity;
     ecs_entity_t parent;
     ecs_entity_t on_click;
+    uint64_t payload;
     char id[ECS_UI_ID_MAX];
     EcsUiNodeKind kind;
     uint32_t depth;
@@ -357,6 +420,7 @@ typedef struct EcsUiEvent {
     ecs_entity_t tree;
     ecs_entity_t node;
     ecs_entity_t action;
+    uint64_t payload;
     char node_id[ECS_UI_ID_MAX];
     float x;
     float y;
@@ -379,6 +443,11 @@ typedef struct EcsUiEventList {
 } EcsUiEventList;
 
 extern ECS_COMPONENT_DECLARE(EcsUiNodeId);
+extern ECS_COMPONENT_DECLARE(EcsUiKey);
+extern ECS_COMPONENT_DECLARE(EcsUiAutoOrdinal);
+extern ECS_COMPONENT_DECLARE(EcsUiDeclaration);
+extern ECS_COMPONENT_DECLARE(EcsUiBuilderRootState);
+extern ECS_COMPONENT_DECLARE(EcsUiActionPayload);
 extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiBoxStyle);

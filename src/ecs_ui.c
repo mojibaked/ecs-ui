@@ -1,9 +1,15 @@
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui_projection_internal.h"
 
 #include <stdio.h>
 #include <string.h>
 
 ECS_COMPONENT_DECLARE(EcsUiNodeId);
+ECS_COMPONENT_DECLARE(EcsUiKey);
+ECS_COMPONENT_DECLARE(EcsUiAutoOrdinal);
+ECS_COMPONENT_DECLARE(EcsUiDeclaration);
+ECS_COMPONENT_DECLARE(EcsUiBuilderRootState);
+ECS_COMPONENT_DECLARE(EcsUiActionPayload);
 ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
@@ -45,11 +51,68 @@ static void EcsUiCopyString(char *out, size_t out_size, const char *value)
     out[i] = '\0';
 }
 
+static bool EcsUiSetIdIfChanged(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_id_t id,
+    size_t size,
+    const void *value)
+{
+    if (world == NULL || entity == 0 || id == 0 || size == 0u ||
+        value == NULL) {
+        return false;
+    }
+
+    const void *existing = ecs_get_id(world, entity, id);
+    if (existing != NULL && memcmp(existing, value, size) == 0) {
+        return true;
+    }
+
+    ecs_set_id(world, entity, id, size, value);
+    return true;
+}
+
+static bool EcsUiRemoveIdIfPresent(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_id_t id)
+{
+    if (world == NULL || entity == 0 || id == 0) {
+        return false;
+    }
+    if (!ecs_has_id(world, entity, id)) {
+        return true;
+    }
+    ecs_remove_id(world, entity, id);
+    return true;
+}
+
+static bool EcsUiRemovePairTargetIfPresent(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t relation)
+{
+    if (world == NULL || entity == 0 || relation == 0) {
+        return false;
+    }
+    ecs_entity_t target = ecs_get_target(world, entity, relation, 0);
+    if (target == 0) {
+        return true;
+    }
+    ecs_remove_pair(world, entity, relation, target);
+    return true;
+}
+
 static void EcsUiSetNodeId(ecs_world_t *world, ecs_entity_t entity, const char *id)
 {
     EcsUiNodeId node_id = {0};
     EcsUiCopyString(node_id.value, sizeof(node_id.value), id);
-    ecs_set_ptr(world, entity, EcsUiNodeId, &node_id);
+    (void)EcsUiSetIdIfChanged(
+        world,
+        entity,
+        ecs_id(EcsUiNodeId),
+        sizeof(node_id),
+        &node_id);
 }
 
 static ecs_entity_t EcsUiCurrentParent(EcsUiBuilder *builder)
@@ -101,28 +164,47 @@ static void EcsUiSetVisualOpacity(
 
 static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 {
-    ecs_remove(world, entity, EcsUiStack);
-    ecs_remove(world, entity, EcsUiBoxStyle);
-    ecs_remove(world, entity, EcsUiTextStyle);
-    ecs_remove(world, entity, EcsUiTextLayout);
-    ecs_remove(world, entity, EcsUiPlacement);
-    ecs_remove(world, entity, EcsUiScrollView);
-    ecs_remove(world, entity, EcsUiButton);
-    ecs_remove(world, entity, EcsUiPressable);
-    ecs_remove(world, entity, EcsUiText);
-    ecs_remove(world, entity, EcsUiIcon);
-    ecs_remove(world, entity, EcsUiCustom);
-    ecs_remove(world, entity, EcsUiTextFieldView);
-    ecs_remove_id(world, entity, EcsUiInteractive);
-    ecs_remove_pair(world, entity, EcsUiOnClick, EcsWildcard);
-    ecs_remove_pair(world, entity, EcsUiUsesStyle, EcsWildcard);
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiStack));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiBoxStyle));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiScrollView));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiButton));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiPressable));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiText));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiIcon));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiCustom));
+    (void)EcsUiRemoveIdIfPresent(world, entity, EcsUiInteractive);
+    (void)EcsUiRemovePairTargetIfPresent(world, entity, EcsUiOnClick);
+    (void)EcsUiRemovePairTargetIfPresent(world, entity, EcsUiUsesStyle);
+    (void)EcsUiRemoveIdIfPresent(
+        world,
+        entity,
+        ecs_id(EcsUiActionPayload));
     if (EcsUiRevealedByHover != 0) {
         const bool had_reveal =
             ecs_get_target(world, entity, EcsUiRevealedByHover, 0) != 0;
-        ecs_remove_pair(world, entity, EcsUiRevealedByHover, EcsWildcard);
+        (void)EcsUiRemovePairTargetIfPresent(
+            world,
+            entity,
+            EcsUiRevealedByHover);
         if (had_reveal) {
             EcsUiSetVisualOpacity(world, entity, 1.0f);
         }
+    }
+}
+
+static void EcsUiClearDeclarationTransientComponents(
+    ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    if (world == NULL || entity == 0 || EcsUiRevealedByHover == 0) {
+        return;
+    }
+
+    const bool had_reveal =
+        ecs_get_target(world, entity, EcsUiRevealedByHover, 0) != 0;
+    (void)EcsUiRemovePairTargetIfPresent(world, entity, EcsUiRevealedByHover);
+    if (had_reveal) {
+        EcsUiSetVisualOpacity(world, entity, 1.0f);
     }
 }
 
@@ -181,9 +263,284 @@ static ecs_entity_t EcsUiFindThemeStyleSource(
     return 0;
 }
 
+static bool EcsUiNodeKindCanHaveChildren(EcsUiNodeKind kind)
+{
+    return kind == ECS_UI_NODE_ROOT ||
+        kind == ECS_UI_NODE_VSTACK ||
+        kind == ECS_UI_NODE_HSTACK ||
+        kind == ECS_UI_NODE_ZSTACK ||
+        kind == ECS_UI_NODE_BUTTON ||
+        kind == ECS_UI_NODE_PRESSABLE;
+}
+
+static EcsUiBuilderParentFrame *EcsUiCurrentParentFrame(
+    EcsUiBuilder *builder)
+{
+    if (builder == NULL || builder->depth == 0u) {
+        return NULL;
+    }
+    return &builder->parent_frames[builder->depth - 1u];
+}
+
+static bool EcsUiBuilderParentDeclared(
+    const EcsUiBuilder *builder,
+    ecs_entity_t parent)
+{
+    if (builder == NULL || parent == 0) {
+        return false;
+    }
+    for (uint32_t i = 0u; i < builder->declared_parent_count; i += 1u) {
+        if (builder->declared_parents[i] == parent) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool EcsUiBuilderMarkParent(
+    EcsUiBuilder *builder,
+    ecs_entity_t parent)
+{
+    if (builder == NULL || parent == 0) {
+        return false;
+    }
+    if (EcsUiBuilderParentDeclared(builder, parent)) {
+        return true;
+    }
+    if (builder->declared_parent_count >= ECS_UI_TREE_NODE_MAX) {
+        builder->failed = true;
+        return false;
+    }
+    builder->declared_parents[builder->declared_parent_count] = parent;
+    builder->declared_parent_count += 1u;
+    return true;
+}
+
+static bool EcsUiBuilderKeyDeclared(
+    const EcsUiBuilder *builder,
+    ecs_entity_t parent,
+    uint64_t key)
+{
+    if (builder == NULL || parent == 0 || key == 0u) {
+        return false;
+    }
+    for (uint32_t i = 0u; i < builder->declared_child_count; i += 1u) {
+        const EcsUiBuilderDeclaredChild *child =
+            &builder->declared_children[i];
+        if (child->parent == parent && child->key == key) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool EcsUiBuilderMarkChild(
+    EcsUiBuilder *builder,
+    ecs_entity_t parent,
+    ecs_entity_t child,
+    uint64_t key,
+    uint32_t auto_ordinal)
+{
+    if (builder == NULL || parent == 0 || child == 0) {
+        return false;
+    }
+    if (key != 0u && EcsUiBuilderKeyDeclared(builder, parent, key)) {
+        builder->failed = true;
+        return false;
+    }
+    for (uint32_t i = 0u; i < builder->declared_child_count; i += 1u) {
+        const EcsUiBuilderDeclaredChild *declared =
+            &builder->declared_children[i];
+        if (declared->parent == parent && declared->child == child) {
+            builder->failed = true;
+            return false;
+        }
+    }
+    if (builder->declared_child_count >= ECS_UI_TREE_NODE_MAX) {
+        builder->failed = true;
+        return false;
+    }
+    builder->declared_children[builder->declared_child_count] =
+        (EcsUiBuilderDeclaredChild){
+            .parent = parent,
+            .child = child,
+            .key = key,
+            .auto_ordinal = auto_ordinal,
+        };
+    builder->declared_child_count += 1u;
+    return true;
+}
+
+static ecs_entity_t EcsUiFindKeyedChild(
+    const ecs_world_t *world,
+    ecs_entity_t parent,
+    uint64_t key)
+{
+    if (world == NULL || parent == 0 || key == 0u) {
+        return 0;
+    }
+
+    ecs_iter_t it = ecs_children(world, parent);
+    while (ecs_children_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            const EcsUiKey *stored = ecs_get(world, it.entities[i], EcsUiKey);
+            if (stored != NULL && stored->value == key) {
+                return it.entities[i];
+            }
+        }
+    }
+    return 0;
+}
+
+static ecs_entity_t EcsUiFindAutoOrdinalChild(
+    const ecs_world_t *world,
+    ecs_entity_t parent,
+    uint32_t ordinal)
+{
+    if (world == NULL || parent == 0 || ordinal == 0u) {
+        return 0;
+    }
+
+    ecs_iter_t it = ecs_children(world, parent);
+    while (ecs_children_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            const EcsUiAutoOrdinal *stored =
+                ecs_get(world, it.entities[i], EcsUiAutoOrdinal);
+            if (stored != NULL && stored->value == ordinal) {
+                return it.entities[i];
+            }
+        }
+    }
+    return 0;
+}
+
+static void EcsUiDeleteChildren(ecs_world_t *world, ecs_entity_t parent)
+{
+    if (world == NULL || parent == 0) {
+        return;
+    }
+
+    ecs_entity_t children[ECS_UI_TREE_NODE_MAX] = {0};
+    uint32_t count = 0u;
+    ecs_iter_t it = ecs_children(world, parent);
+    while (ecs_children_next(&it)) {
+        for (int32_t i = 0; i < it.count &&
+                count < (uint32_t)ECS_UI_TREE_NODE_MAX; i += 1) {
+            children[count] = it.entities[i];
+            count += 1u;
+        }
+    }
+
+    for (uint32_t i = 0u; i < count; i += 1u) {
+        ecs_delete(world, children[i]);
+    }
+}
+
+static bool EcsUiSetChildParent(
+    ecs_world_t *world,
+    ecs_entity_t child,
+    ecs_entity_t parent)
+{
+    if (world == NULL || child == 0 || parent == 0) {
+        return false;
+    }
+    if (ecs_get_parent(world, child) == parent) {
+        return true;
+    }
+    ecs_add_pair(world, child, EcsChildOf, parent);
+    return true;
+}
+
+static bool EcsUiSetDeclarationIdentity(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    uint64_t key,
+    uint32_t auto_ordinal)
+{
+    if (world == NULL || entity == 0) {
+        return false;
+    }
+
+    if (key != 0u) {
+        EcsUiKey stored = {.value = key};
+        (void)EcsUiSetIdIfChanged(
+            world,
+            entity,
+            ecs_id(EcsUiKey),
+            sizeof(stored),
+            &stored);
+        (void)EcsUiRemoveIdIfPresent(
+            world,
+            entity,
+            ecs_id(EcsUiAutoOrdinal));
+        return true;
+    }
+
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiKey));
+    if (auto_ordinal != 0u) {
+        EcsUiAutoOrdinal stored = {.value = auto_ordinal};
+        (void)EcsUiSetIdIfChanged(
+            world,
+            entity,
+            ecs_id(EcsUiAutoOrdinal),
+            sizeof(stored),
+            &stored);
+    } else {
+        (void)EcsUiRemoveIdIfPresent(
+            world,
+            entity,
+            ecs_id(EcsUiAutoOrdinal));
+    }
+    return true;
+}
+
+static bool EcsUiStampDeclaration(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    uint64_t generation)
+{
+    EcsUiDeclaration declaration = {.generation = generation};
+    return EcsUiSetIdIfChanged(
+        world,
+        entity,
+        ecs_id(EcsUiDeclaration),
+        sizeof(declaration),
+        &declaration);
+}
+
+static bool EcsUiSetNodeKind(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    EcsUiNodeKind kind)
+{
+    if (world == NULL || entity == 0) {
+        return false;
+    }
+
+    const EcsUiNode *existing = ecs_get(world, entity, EcsUiNode);
+    const bool kind_changed = existing == NULL || existing->kind != kind;
+    if (kind_changed) {
+        EcsUiClearKindComponents(world, entity);
+        if (!EcsUiNodeKindCanHaveChildren(kind)) {
+            EcsUiDeleteChildren(world, entity);
+            (void)EcsUiRemoveIdIfPresent(world, entity, EcsOrderedChildren);
+        }
+    }
+
+    EcsUiNode node = {.kind = kind};
+    (void)EcsUiSetIdIfChanged(
+        world,
+        entity,
+        ecs_id(EcsUiNode),
+        sizeof(node),
+        &node);
+    return true;
+}
+
 static ecs_entity_t EcsUiCreateNode(
     EcsUiBuilder *builder,
     const char *id,
+    uint64_t key,
     EcsUiNodeKind kind,
     bool can_have_children)
 {
@@ -199,14 +556,31 @@ static ecs_entity_t EcsUiCreateNode(
 
     ecs_world_t *world = builder->world;
     ecs_entity_t entity = 0;
-    if (id != NULL && id[0] != '\0') {
+    uint32_t auto_ordinal = 0u;
+    if (key != 0u) {
+        entity = EcsUiFindKeyedChild(world, parent, key);
+        if (entity == 0) {
+            entity = ecs_new_w_pair(world, EcsChildOf, parent);
+        }
+    } else if (id != NULL && id[0] != '\0') {
         entity = ecs_entity(world, {
             .parent = parent,
             .name = id,
             .sep = "",
         });
     } else {
-        entity = ecs_new_w_pair(world, EcsChildOf, parent);
+        EcsUiBuilderParentFrame *parent_frame =
+            EcsUiCurrentParentFrame(builder);
+        if (parent_frame == NULL) {
+            builder->failed = true;
+            return 0;
+        }
+        auto_ordinal = parent_frame->next_auto_ordinal;
+        parent_frame->next_auto_ordinal += 1u;
+        entity = EcsUiFindAutoOrdinalChild(world, parent, auto_ordinal);
+        if (entity == 0) {
+            entity = ecs_new_w_pair(world, EcsChildOf, parent);
+        }
     }
 
     if (entity == 0) {
@@ -214,13 +588,21 @@ static ecs_entity_t EcsUiCreateNode(
         return 0;
     }
 
-    ecs_add_pair(world, entity, EcsChildOf, parent);
+    if (!EcsUiBuilderMarkChild(builder, parent, entity, key, auto_ordinal)) {
+        return 0;
+    }
+    (void)EcsUiSetChildParent(world, entity, parent);
+    (void)EcsUiSetDeclarationIdentity(world, entity, key, auto_ordinal);
+    (void)EcsUiStampDeclaration(world, entity, builder->generation);
     EcsUiSetNodeId(world, entity, id);
-    ecs_set(world, entity, EcsUiNode, {.kind = kind});
-    EcsUiClearKindComponents(world, entity);
+    (void)EcsUiSetNodeKind(world, entity, kind);
+    EcsUiClearDeclarationTransientComponents(world, entity);
 
     if (can_have_children) {
-        ecs_add_id(world, entity, EcsOrderedChildren);
+        if (!ecs_has_id(world, entity, EcsOrderedChildren)) {
+            ecs_add_id(world, entity, EcsOrderedChildren);
+        }
+        (void)EcsUiBuilderMarkParent(builder, entity);
     }
 
     return entity;
@@ -230,13 +612,38 @@ static void EcsUiSetActionPair(
     ecs_world_t *world,
     ecs_entity_t entity,
     ecs_entity_t relation,
-    ecs_entity_t action)
+    ecs_entity_t action,
+    uint64_t payload,
+    bool always_interactive)
 {
-    if (world == NULL || entity == 0 || relation == 0 || action == 0) {
+    if (world == NULL || entity == 0 || relation == 0) {
         return;
     }
-    ecs_add_id(world, entity, EcsUiInteractive);
-    ecs_add_pair(world, entity, relation, action);
+    if (always_interactive || action != 0) {
+        if (!ecs_has_id(world, entity, EcsUiInteractive)) {
+            ecs_add_id(world, entity, EcsUiInteractive);
+        }
+    } else {
+        (void)EcsUiRemoveIdIfPresent(world, entity, EcsUiInteractive);
+    }
+
+    ecs_entity_t existing = ecs_get_target(world, entity, relation, 0);
+    if (existing != action) {
+        if (existing != 0) {
+            ecs_remove_pair(world, entity, relation, existing);
+        }
+        if (action != 0) {
+            ecs_add_pair(world, entity, relation, action);
+        }
+    }
+
+    EcsUiActionPayload stored = {.value = payload};
+    (void)EcsUiSetIdIfChanged(
+        world,
+        entity,
+        ecs_id(EcsUiActionPayload),
+        sizeof(stored),
+        &stored);
 }
 
 static void EcsUiPushParent(EcsUiBuilder *builder, ecs_entity_t entity)
@@ -249,16 +656,43 @@ static void EcsUiPushParent(EcsUiBuilder *builder, ecs_entity_t entity)
         return;
     }
     builder->parent_stack[builder->depth] = entity;
+    builder->parent_frames[builder->depth] = (EcsUiBuilderParentFrame){
+        .parent = entity,
+        .next_auto_ordinal = 1u,
+    };
     builder->depth += 1u;
+}
+
+static bool EcsUiSetStyleTokenForNode(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t style_token)
+{
+    if (world == NULL || entity == 0 || EcsUiUsesStyle == 0) {
+        return false;
+    }
+
+    ecs_entity_t existing = ecs_get_target(world, entity, EcsUiUsesStyle, 0);
+    if (existing == style_token) {
+        return true;
+    }
+    if (existing != 0) {
+        ecs_remove_pair(world, entity, EcsUiUsesStyle, existing);
+    }
+    if (style_token != 0) {
+        ecs_add_pair(world, entity, EcsUiUsesStyle, style_token);
+    }
+    return true;
 }
 
 static ecs_entity_t EcsUiBeginStack(
     EcsUiBuilder *builder,
     EcsUiStackDesc desc,
     EcsUiNodeKind kind,
-    EcsUiAxis axis)
+    EcsUiAxis axis,
+    bool clear_scroll_view)
 {
-    ecs_entity_t entity = EcsUiCreateNode(builder, desc.id, kind, true);
+    ecs_entity_t entity = EcsUiCreateNode(builder, desc.id, desc.key, kind, true);
     if (entity == 0) {
         return 0;
     }
@@ -274,13 +708,36 @@ static ecs_entity_t EcsUiBeginStack(
         .width_sizing = desc.width_sizing,
         .height_sizing = desc.height_sizing,
     };
-    ecs_set_ptr(builder->world, entity, EcsUiStack, &stack);
-    if (desc.style_token != 0 &&
-        !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiStack),
+        sizeof(stack),
+        &stack);
+    if (clear_scroll_view) {
+        (void)EcsUiRemoveIdIfPresent(
+            builder->world,
+            entity,
+            ecs_id(EcsUiScrollView));
+    }
+    if (!EcsUiSetStyleTokenForNode(
+            builder->world,
+            entity,
+            desc.style_token)) {
         builder->failed = true;
     }
     if (desc.style != NULL) {
-        ecs_set_ptr(builder->world, entity, EcsUiBoxStyle, desc.style);
+        (void)EcsUiSetIdIfChanged(
+            builder->world,
+            entity,
+            ecs_id(EcsUiBoxStyle),
+            sizeof(*desc.style),
+            desc.style);
+    } else {
+        (void)EcsUiRemoveIdIfPresent(
+            builder->world,
+            entity,
+            ecs_id(EcsUiBoxStyle));
     }
     EcsUiPushParent(builder, entity);
     return entity;
@@ -300,6 +757,11 @@ void EcsUiImport(ecs_world_t *world)
     }
 
     ECS_COMPONENT_DEFINE(world, EcsUiNodeId);
+    ECS_COMPONENT_DEFINE(world, EcsUiKey);
+    ECS_COMPONENT_DEFINE(world, EcsUiAutoOrdinal);
+    ECS_COMPONENT_DEFINE(world, EcsUiDeclaration);
+    ECS_COMPONENT_DEFINE(world, EcsUiBuilderRootState);
+    ECS_COMPONENT_DEFINE(world, EcsUiActionPayload);
     ECS_COMPONENT_DEFINE(world, EcsUiNode);
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
     ECS_COMPONENT_DEFINE(world, EcsUiBoxStyle);
@@ -388,13 +850,10 @@ bool EcsUiSetStyleToken(
     ecs_entity_t entity,
     ecs_entity_t style_token)
 {
-    if (world == NULL || entity == 0 || style_token == 0 ||
-        EcsUiUsesStyle == 0) {
+    if (world == NULL || entity == 0 || style_token == 0) {
         return false;
     }
-
-    ecs_add_pair(world, entity, EcsUiUsesStyle, style_token);
-    return true;
+    return EcsUiSetStyleTokenForNode(world, entity, style_token);
 }
 
 static void EcsUiSetVisualOpacity(
@@ -681,6 +1140,33 @@ bool EcsUiThemeApply(ecs_world_t *world)
     return true;
 }
 
+static uint64_t EcsUiNextBuilderGeneration(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    if (world == NULL || root == 0) {
+        return 0u;
+    }
+
+    EcsUiBuilderRootState state = {0};
+    const EcsUiBuilderRootState *existing =
+        ecs_get(world, root, EcsUiBuilderRootState);
+    if (existing != NULL) {
+        state = *existing;
+    }
+    state.next_generation += 1u;
+    if (state.next_generation == 0u) {
+        state.next_generation = 1u;
+    }
+    (void)EcsUiSetIdIfChanged(
+        world,
+        root,
+        ecs_id(EcsUiBuilderRootState),
+        sizeof(state),
+        &state);
+    return state.next_generation;
+}
+
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id)
 {
     if (world == NULL) {
@@ -696,11 +1182,227 @@ ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id)
         return 0;
     }
 
-    ecs_add_id(world, root, EcsUiRoot);
-    ecs_add_id(world, root, EcsOrderedChildren);
-    ecs_set(world, root, EcsUiNode, {.kind = ECS_UI_NODE_ROOT});
+    if (!ecs_has_id(world, root, EcsUiRoot)) {
+        ecs_add_id(world, root, EcsUiRoot);
+    }
+    if (!ecs_has_id(world, root, EcsOrderedChildren)) {
+        ecs_add_id(world, root, EcsOrderedChildren);
+    }
+    (void)EcsUiSetNodeKind(world, root, ECS_UI_NODE_ROOT);
     EcsUiSetNodeId(world, root, name);
     return root;
+}
+
+static uint32_t EcsUiBuilderChildrenForParent(
+    const EcsUiBuilder *builder,
+    ecs_entity_t parent,
+    ecs_entity_t *out,
+    uint32_t out_count)
+{
+    if (builder == NULL || parent == 0 || out == NULL || out_count == 0u) {
+        return 0u;
+    }
+
+    uint32_t count = 0u;
+    for (uint32_t i = 0u; i < builder->declared_child_count; i += 1u) {
+        const EcsUiBuilderDeclaredChild *declared =
+            &builder->declared_children[i];
+        if (declared->parent != parent) {
+            continue;
+        }
+        if (count >= out_count) {
+            return count;
+        }
+        out[count] = declared->child;
+        count += 1u;
+    }
+    return count;
+}
+
+static bool EcsUiBuilderChildDeclaredForParent(
+    const EcsUiBuilder *builder,
+    ecs_entity_t parent,
+    ecs_entity_t child)
+{
+    if (builder == NULL || parent == 0 || child == 0) {
+        return false;
+    }
+
+    for (uint32_t i = 0u; i < builder->declared_child_count; i += 1u) {
+        const EcsUiBuilderDeclaredChild *declared =
+            &builder->declared_children[i];
+        if (declared->parent == parent && declared->child == child) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool EcsUiBuilderPreservesExistingChildren(
+    const EcsUiBuilder *builder,
+    ecs_entity_t parent)
+{
+    return builder != NULL &&
+        builder->world != NULL &&
+        parent != 0 &&
+        EcsUiProjectionPreserveChildren != 0 &&
+        ecs_has_id(builder->world, parent, EcsUiProjectionPreserveChildren);
+}
+
+static bool EcsUiBuilderPruneParent(
+    EcsUiBuilder *builder,
+    ecs_entity_t parent)
+{
+    if (builder == NULL || builder->world == NULL || parent == 0) {
+        return false;
+    }
+    if (EcsUiBuilderPreservesExistingChildren(builder, parent)) {
+        return true;
+    }
+
+    ecs_entity_t stale[ECS_UI_TREE_NODE_MAX] = {0};
+    uint32_t stale_count = 0u;
+    ecs_iter_t it = ecs_children(builder->world, parent);
+    while (ecs_children_next(&it)) {
+        for (int32_t i = 0; i < it.count; i += 1) {
+            ecs_entity_t child = it.entities[i];
+            if (EcsUiBuilderChildDeclaredForParent(builder, parent, child)) {
+                continue;
+            }
+            const EcsUiDeclaration *declaration =
+                ecs_get(builder->world, child, EcsUiDeclaration);
+            if (declaration == NULL ||
+                declaration->generation == builder->generation) {
+                continue;
+            }
+            if (stale_count >= (uint32_t)ECS_UI_TREE_NODE_MAX) {
+                builder->failed = true;
+                return false;
+            }
+            stale[stale_count] = child;
+            stale_count += 1u;
+        }
+    }
+
+    for (uint32_t i = 0u; i < stale_count; i += 1u) {
+        ecs_delete(builder->world, stale[i]);
+    }
+    return true;
+}
+
+static bool EcsUiBuilderEnforceParentOrder(
+    EcsUiBuilder *builder,
+    ecs_entity_t parent)
+{
+    if (builder == NULL || builder->world == NULL || parent == 0) {
+        return false;
+    }
+    if (EcsUiBuilderPreservesExistingChildren(builder, parent)) {
+        return true;
+    }
+    if (!ecs_has_id(builder->world, parent, EcsOrderedChildren)) {
+        builder->failed = true;
+        return false;
+    }
+
+    ecs_entity_t declared[ECS_UI_TREE_NODE_MAX] = {0};
+    const uint32_t declared_count = EcsUiBuilderChildrenForParent(
+        builder,
+        parent,
+        declared,
+        (uint32_t)ECS_UI_TREE_NODE_MAX);
+    ecs_entities_t current = ecs_get_ordered_children(builder->world, parent);
+
+    uint32_t first_declared = (uint32_t)current.count;
+    uint32_t unmanaged_count = 0u;
+    ecs_entity_t unmanaged[ECS_UI_TREE_NODE_MAX] = {0};
+    for (int32_t i = 0; i < current.count; i += 1) {
+        const ecs_entity_t child = current.ids[i];
+        if (EcsUiBuilderChildDeclaredForParent(builder, parent, child)) {
+            if (first_declared == (uint32_t)current.count) {
+                first_declared = (uint32_t)i;
+            }
+            continue;
+        }
+        if (unmanaged_count >= (uint32_t)ECS_UI_TREE_NODE_MAX) {
+            builder->failed = true;
+            return false;
+        }
+        unmanaged[unmanaged_count] = child;
+        unmanaged_count += 1u;
+    }
+
+    if (unmanaged_count + declared_count > (uint32_t)ECS_UI_TREE_NODE_MAX) {
+        builder->failed = true;
+        return false;
+    }
+
+    for (uint32_t i = 0u; i < declared_count; i += 1u) {
+        if (ecs_get_parent(builder->world, declared[i]) != parent) {
+            builder->failed = true;
+            return false;
+        }
+    }
+
+    const uint32_t insert_at =
+        first_declared <= unmanaged_count ? first_declared : unmanaged_count;
+    ecs_entity_t ordered[ECS_UI_TREE_NODE_MAX] = {0};
+    uint32_t ordered_count = 0u;
+    for (uint32_t i = 0u; i < insert_at; i += 1u) {
+        ordered[ordered_count] = unmanaged[i];
+        ordered_count += 1u;
+    }
+    for (uint32_t i = 0u; i < declared_count; i += 1u) {
+        ordered[ordered_count] = declared[i];
+        ordered_count += 1u;
+    }
+    for (uint32_t i = insert_at; i < unmanaged_count; i += 1u) {
+        ordered[ordered_count] = unmanaged[i];
+        ordered_count += 1u;
+    }
+
+    if (current.count != (int32_t)ordered_count) {
+        builder->failed = true;
+        return false;
+    }
+    bool differs = false;
+    for (uint32_t i = 0u; i < ordered_count; i += 1u) {
+        if (current.ids[i] != ordered[i]) {
+            differs = true;
+            break;
+        }
+    }
+    if (!differs) {
+        return true;
+    }
+
+    ecs_set_child_order(
+        builder->world,
+        parent,
+        ordered_count > 0u ? ordered : NULL,
+        (int32_t)ordered_count);
+    return true;
+}
+
+static bool EcsUiBuilderReconcile(EcsUiBuilder *builder)
+{
+    if (builder == NULL || builder->world == NULL || builder->failed) {
+        return false;
+    }
+
+    for (uint32_t i = 0u; i < builder->declared_parent_count; i += 1u) {
+        if (!EcsUiBuilderPruneParent(builder, builder->declared_parents[i])) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0u; i < builder->declared_parent_count; i += 1u) {
+        if (!EcsUiBuilderEnforceParentOrder(
+                builder,
+                builder->declared_parents[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 EcsUiBuilder EcsUiBuilderBegin(ecs_world_t *world, ecs_entity_t root)
@@ -708,13 +1410,22 @@ EcsUiBuilder EcsUiBuilderBegin(ecs_world_t *world, ecs_entity_t root)
     EcsUiBuilder builder = {0};
     builder.world = world;
     builder.root = root;
-    if (world == NULL || root == 0) {
+    if (world == NULL || root == 0 || ecs_is_deferred(world)) {
         builder.failed = true;
         return builder;
     }
 
-    ecs_add_id(world, root, EcsOrderedChildren);
+    if (!ecs_has_id(world, root, EcsOrderedChildren)) {
+        ecs_add_id(world, root, EcsOrderedChildren);
+    }
+    builder.generation = EcsUiNextBuilderGeneration(world, root);
+    (void)EcsUiStampDeclaration(world, root, builder.generation);
+    (void)EcsUiBuilderMarkParent(&builder, root);
     builder.parent_stack[0] = root;
+    builder.parent_frames[0] = (EcsUiBuilderParentFrame){
+        .parent = root,
+        .next_auto_ordinal = 1u,
+    };
     builder.depth = 1u;
     return builder;
 }
@@ -726,6 +1437,9 @@ void EcsUiBuilderEnd(EcsUiBuilder *builder)
     }
     if (builder->depth != 1u) {
         builder->failed = true;
+    }
+    if (!builder->failed) {
+        (void)EcsUiBuilderReconcile(builder);
     }
     builder->depth = 0u;
 }
@@ -741,7 +1455,8 @@ ecs_entity_t EcsUiBeginVStack(EcsUiBuilder *builder, EcsUiStackDesc desc)
         builder,
         desc,
         ECS_UI_NODE_VSTACK,
-        ECS_UI_AXIS_VERTICAL);
+        ECS_UI_AXIS_VERTICAL,
+        true);
 }
 
 ecs_entity_t EcsUiBeginHStack(EcsUiBuilder *builder, EcsUiStackDesc desc)
@@ -750,7 +1465,8 @@ ecs_entity_t EcsUiBeginHStack(EcsUiBuilder *builder, EcsUiStackDesc desc)
         builder,
         desc,
         ECS_UI_NODE_HSTACK,
-        ECS_UI_AXIS_HORIZONTAL);
+        ECS_UI_AXIS_HORIZONTAL,
+        true);
 }
 
 ecs_entity_t EcsUiBeginZStack(EcsUiBuilder *builder, EcsUiStackDesc desc)
@@ -759,7 +1475,8 @@ ecs_entity_t EcsUiBeginZStack(EcsUiBuilder *builder, EcsUiStackDesc desc)
         builder,
         desc,
         ECS_UI_NODE_ZSTACK,
-        ECS_UI_AXIS_DEPTH);
+        ECS_UI_AXIS_DEPTH,
+        true);
 }
 
 ecs_entity_t EcsUiBeginVScrollView(
@@ -770,7 +1487,8 @@ ecs_entity_t EcsUiBeginVScrollView(
         builder,
         desc.stack,
         ECS_UI_NODE_VSTACK,
-        ECS_UI_AXIS_VERTICAL);
+        ECS_UI_AXIS_VERTICAL,
+        false);
     if (entity == 0) {
         return 0;
     }
@@ -780,7 +1498,12 @@ ecs_entity_t EcsUiBeginVScrollView(
             desc.axes,
             ECS_UI_SCROLL_AXIS_Y),
     };
-    ecs_set_ptr(builder->world, entity, EcsUiScrollView, &scroll_view);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiScrollView),
+        sizeof(scroll_view),
+        &scroll_view);
     return entity;
 }
 
@@ -792,7 +1515,8 @@ ecs_entity_t EcsUiBeginHScrollView(
         builder,
         desc.stack,
         ECS_UI_NODE_HSTACK,
-        ECS_UI_AXIS_HORIZONTAL);
+        ECS_UI_AXIS_HORIZONTAL,
+        false);
     if (entity == 0) {
         return 0;
     }
@@ -802,14 +1526,24 @@ ecs_entity_t EcsUiBeginHScrollView(
             desc.axes,
             ECS_UI_SCROLL_AXIS_X),
     };
-    ecs_set_ptr(builder->world, entity, EcsUiScrollView, &scroll_view);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiScrollView),
+        sizeof(scroll_view),
+        &scroll_view);
     return entity;
 }
 
 ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
 {
     ecs_entity_t entity =
-        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_BUTTON, true);
+        EcsUiCreateNode(
+            builder,
+            desc.id,
+            desc.key,
+            ECS_UI_NODE_BUTTON,
+            true);
     if (entity == 0) {
         return 0;
     }
@@ -818,15 +1552,23 @@ ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
         .variant = desc.variant,
         .disabled = desc.disabled,
     };
-    ecs_set_ptr(builder->world, entity, EcsUiButton, &button);
-    ecs_add_id(builder->world, entity, EcsUiInteractive);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiButton),
+        sizeof(button),
+        &button);
     EcsUiSetActionPair(
         builder->world,
         entity,
         EcsUiOnClick,
-        desc.on_click);
-    if (desc.style_token != 0 &&
-        !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
+        desc.on_click,
+        desc.payload,
+        true);
+    if (!EcsUiSetStyleTokenForNode(
+            builder->world,
+            entity,
+            desc.style_token)) {
         builder->failed = true;
     }
     EcsUiPushParent(builder, entity);
@@ -838,7 +1580,12 @@ ecs_entity_t EcsUiBeginPressable(
     EcsUiPressableDesc desc)
 {
     ecs_entity_t entity =
-        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_PRESSABLE, true);
+        EcsUiCreateNode(
+            builder,
+            desc.id,
+            desc.key,
+            ECS_UI_NODE_PRESSABLE,
+            true);
     if (entity == 0) {
         return 0;
     }
@@ -847,15 +1594,23 @@ ecs_entity_t EcsUiBeginPressable(
         .preferred_height = desc.preferred_height,
         .disabled = desc.disabled,
     };
-    ecs_set_ptr(builder->world, entity, EcsUiPressable, &pressable);
-    ecs_add_id(builder->world, entity, EcsUiInteractive);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiPressable),
+        sizeof(pressable),
+        &pressable);
     EcsUiSetActionPair(
         builder->world,
         entity,
         EcsUiOnClick,
-        desc.on_click);
-    if (desc.style_token != 0 &&
-        !EcsUiSetStyleToken(builder->world, entity, desc.style_token)) {
+        desc.on_click,
+        desc.payload,
+        true);
+    if (!EcsUiSetStyleTokenForNode(
+            builder->world,
+            entity,
+            desc.style_token)) {
         builder->failed = true;
     }
     EcsUiPushParent(builder, entity);
@@ -904,7 +1659,12 @@ bool EcsUiClearScrollView(ecs_world_t *world, ecs_entity_t entity)
 ecs_entity_t EcsUiAddText(EcsUiBuilder *builder, EcsUiTextDesc desc)
 {
     ecs_entity_t entity =
-        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_TEXT, false);
+        EcsUiCreateNode(
+            builder,
+            desc.id,
+            desc.key,
+            ECS_UI_NODE_TEXT,
+            false);
     if (entity == 0) {
         return 0;
     }
@@ -913,28 +1673,48 @@ ecs_entity_t EcsUiAddText(EcsUiBuilder *builder, EcsUiTextDesc desc)
         .role = desc.role,
     };
     EcsUiCopyString(text.text, sizeof(text.text), desc.text);
-    ecs_set_ptr(builder->world, entity, EcsUiText, &text);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiText),
+        sizeof(text),
+        &text);
     return entity;
 }
 
 ecs_entity_t EcsUiAddIcon(EcsUiBuilder *builder, EcsUiIconDesc desc)
 {
     ecs_entity_t entity =
-        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_ICON, false);
+        EcsUiCreateNode(
+            builder,
+            desc.id,
+            desc.key,
+            ECS_UI_NODE_ICON,
+            false);
     if (entity == 0) {
         return 0;
     }
 
     EcsUiIcon icon = {0};
     EcsUiCopyString(icon.name, sizeof(icon.name), desc.name);
-    ecs_set_ptr(builder->world, entity, EcsUiIcon, &icon);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiIcon),
+        sizeof(icon),
+        &icon);
     return entity;
 }
 
 ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
 {
     ecs_entity_t entity =
-        EcsUiCreateNode(builder, desc.id, ECS_UI_NODE_CUSTOM, false);
+        EcsUiCreateNode(
+            builder,
+            desc.id,
+            desc.key,
+            ECS_UI_NODE_CUSTOM,
+            false);
     if (entity == 0) {
         return 0;
     }
@@ -946,12 +1726,19 @@ ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
         .height_sizing = desc.height_sizing,
     };
     EcsUiCopyString(custom.kind, sizeof(custom.kind), desc.kind);
-    ecs_set_ptr(builder->world, entity, EcsUiCustom, &custom);
+    (void)EcsUiSetIdIfChanged(
+        builder->world,
+        entity,
+        ecs_id(EcsUiCustom),
+        sizeof(custom),
+        &custom);
     EcsUiSetActionPair(
         builder->world,
         entity,
         EcsUiOnClick,
-        desc.on_click);
+        desc.on_click,
+        desc.payload,
+        false);
     return entity;
 }
 
@@ -985,6 +1772,9 @@ static uint32_t EcsUiReadNode(
     snapshot->entity = entity;
     snapshot->parent = parent;
     snapshot->on_click = ecs_get_target(world, entity, EcsUiOnClick, 0);
+    const EcsUiActionPayload *payload =
+        ecs_get(world, entity, EcsUiActionPayload);
+    snapshot->payload = payload != NULL ? payload->value : 0u;
     snapshot->kind = node->kind;
     snapshot->depth = depth;
     snapshot->parent_index = parent_index;

@@ -1251,6 +1251,7 @@ static void EcsUiClayRegisterTarget(
         .tree = tree->root,
         .node = node->entity,
         .action = node->on_click,
+        .payload = node->payload,
         .node_index = index,
         .emit_order = frame->target_count,
         .depth = node->depth,
@@ -2220,6 +2221,7 @@ static void EcsUiClayPushPointerEventWithAction(
         .tree = target->tree,
         .node = target->node,
         .action = action,
+        .payload = target->payload,
         .x = pointer.x,
         .y = pointer.y,
         .start_x = pointer.x,
@@ -2260,6 +2262,7 @@ static void EcsUiClayStartPointerCapture(
         .tree = target->tree,
         .node = target->node,
         .action = target->action,
+        .payload = target->payload,
         .start_x = pointer.x,
         .start_y = pointer.y,
         .start_time = pointer.time,
@@ -2291,6 +2294,7 @@ static void EcsUiClayPushCapturedPointerEvent(
         .tree = capture->tree,
         .node = capture->node,
         .action = capture->action,
+        .payload = capture->payload,
         .x = pointer.x,
         .y = pointer.y,
         .start_x = capture->start_x,
@@ -2382,6 +2386,7 @@ void EcsUiClayCollectFrameEvents(
     frame->resolved_tree = resolved != NULL ? resolved->tree : 0;
     frame->resolved_node = resolved != NULL ? resolved->node : 0;
     frame->resolved_action = resolved != NULL ? resolved->action : 0;
+    frame->resolved_payload = resolved != NULL ? resolved->payload : 0u;
     frame->resolved_pressable = resolved != NULL && resolved->pressable;
     if (resolved != NULL) {
         (void)snprintf(
@@ -2399,6 +2404,7 @@ void EcsUiClayCollectFrameEvents(
             frame->capture_missing_target = true;
             frame->capture_missing_node = capture->node;
             frame->capture_missing_action = capture->action;
+            frame->capture_missing_payload = capture->payload;
             (void)snprintf(
                 frame->capture_missing_node_id,
                 sizeof(frame->capture_missing_node_id),
@@ -2433,6 +2439,8 @@ void EcsUiClayCollectFrameEvents(
                     frame->capture_missed_release = true;
                     frame->capture_missed_release_node = capture->node;
                     frame->capture_missed_release_action = capture->action;
+                    frame->capture_missed_release_payload =
+                        capture->payload;
                     (void)snprintf(
                         frame->capture_missed_release_node_id,
                         sizeof(frame->capture_missed_release_node_id),

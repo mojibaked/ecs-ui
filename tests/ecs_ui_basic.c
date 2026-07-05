@@ -1297,6 +1297,310 @@ static int TestGestureArenaPressCancel(void)
     return result;
 }
 
+static ecs_world_t *TestCreateImportedWorld(const char *message)
+{
+    ecs_world_t *world = ecs_init();
+    if (world == NULL) {
+        (void)fprintf(stderr, "%s\n", message);
+        return NULL;
+    }
+    EcsUiImport(world);
+    return world;
+}
+
+static int TestBuilderKeyedRowsReusePruneAndOrder(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create keyed builder world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "KeyedRowsRoot");
+    EcsUiBuilder first = EcsUiBuilderBegin(world, root);
+    ecs_entity_t row_1 = EcsUiBeginHStack(
+        &first,
+        (EcsUiStackDesc){.id = "Row", .key = 101u});
+    EcsUiEnd(&first);
+    ecs_entity_t row_2 = EcsUiBeginHStack(
+        &first,
+        (EcsUiStackDesc){.id = "Row", .key = 202u});
+    EcsUiEnd(&first);
+    ecs_entity_t row_3 = EcsUiBeginHStack(
+        &first,
+        (EcsUiStackDesc){.id = "Row", .key = 303u});
+    EcsUiEnd(&first);
+    EcsUiBuilderEnd(&first);
+    result |= Require(EcsUiBuilderOk(&first), "keyed first pass failed");
+
+    EcsUiBuilder second = EcsUiBuilderBegin(world, root);
+    ecs_entity_t row_3_again = EcsUiBeginHStack(
+        &second,
+        (EcsUiStackDesc){.id = "Row", .key = 303u});
+    EcsUiEnd(&second);
+    ecs_entity_t row_1_again = EcsUiBeginHStack(
+        &second,
+        (EcsUiStackDesc){.id = "Row", .key = 101u});
+    EcsUiEnd(&second);
+    EcsUiBuilderEnd(&second);
+    result |= Require(EcsUiBuilderOk(&second), "keyed second pass failed");
+    result |= Require(row_1_again == row_1, "keyed row 1 should be reused");
+    result |= Require(row_3_again == row_3, "keyed row 3 should be reused");
+    result |= Require(!ecs_is_alive(world, row_2), "missing keyed row should prune");
+
+    ecs_entities_t order = ecs_get_ordered_children(world, root);
+    result |= Require(
+        order.count == 2 &&
+            order.ids[0] == row_3 &&
+            order.ids[1] == row_1,
+        "keyed retained order mismatch");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "keyed tree read failed");
+    result |= Require(
+        tree.count == 3u &&
+            tree.nodes[0u].first_child == 1u &&
+            tree.nodes[1u].entity == row_3 &&
+            tree.nodes[1u].next_sibling == 2u &&
+            tree.nodes[2u].entity == row_1,
+        "keyed tree order mismatch");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestBuilderIdlessChildrenReuseOrdinal(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create idless builder world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "IdlessRowsRoot");
+    EcsUiBuilder first = EcsUiBuilderBegin(world, root);
+    ecs_entity_t label = EcsUiAddText(
+        &first,
+        (EcsUiTextDesc){.text = "same", .role = ECS_UI_TEXT_BODY});
+    EcsUiBuilderEnd(&first);
+    result |= Require(EcsUiBuilderOk(&first), "idless first pass failed");
+
+    EcsUiBuilder second = EcsUiBuilderBegin(world, root);
+    ecs_entity_t label_again = EcsUiAddText(
+        &second,
+        (EcsUiTextDesc){.text = "same", .role = ECS_UI_TEXT_BODY});
+    EcsUiBuilderEnd(&second);
+    result |= Require(EcsUiBuilderOk(&second), "idless second pass failed");
+    result |= Require(label_again == label, "idless child should reuse ordinal");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "idless tree read failed");
+    result |= Require(tree.count == 2u, "idless child should not leak");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestBuilderRejectsDuplicateKey(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create duplicate-key world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "DuplicateKeyRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){.id = "Row", .key = 77u});
+    EcsUiEnd(&builder);
+    ecs_entity_t duplicate = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "Row",
+            .key = 77u,
+            .text = "duplicate",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(duplicate == 0, "duplicate key should not create node");
+    result |= Require(!EcsUiBuilderOk(&builder), "duplicate key should fail builder");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestBuilderRejectsDeferredWorld(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create deferred builder world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "DeferredBuilderRoot");
+    result |= Require(ecs_defer_begin(world), "defer begin failed");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    result |= Require(
+        !EcsUiBuilderOk(&builder),
+        "deferred builder begin should fail");
+    result |= Require(ecs_defer_end(world), "defer end failed");
+
+    ecs_fini(world);
+    return result;
+}
+
+static void TestCountOnSet(ecs_iter_t *it)
+{
+    uint32_t *count = it != NULL ? it->ctx : NULL;
+    if (count != NULL) {
+        *count += (uint32_t)it->count;
+    }
+}
+
+static bool TestObserveOnSet(
+    ecs_world_t *world,
+    ecs_id_t id,
+    uint32_t *count)
+{
+    return ecs_observer(world, {
+        .query = {
+            .terms = {{.id = id}},
+        },
+        .events = {EcsOnSet},
+        .callback = TestCountOnSet,
+        .ctx = count,
+    }) != 0;
+}
+
+static int TestBuilderSkipsIdenticalWrites(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create write avoidance world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t action = ecs_entity(world, {.name = "WriteAvoidAction"});
+    ecs_entity_t root = EcsUiRootEntity(world, "WriteAvoidRoot");
+    EcsUiBuilder first = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &first,
+        (EcsUiStackDesc){
+            .id = "WriteAvoidStack",
+            .gap = 3.0f,
+            .padding = 5.0f,
+        });
+    (void)EcsUiAddText(
+        &first,
+        (EcsUiTextDesc){
+            .id = "WriteAvoidLabel",
+            .text = "stable",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiBeginButton(
+        &first,
+        (EcsUiButtonDesc){
+            .id = "WriteAvoidButton",
+            .variant = ECS_UI_BUTTON_PRIMARY,
+            .on_click = action,
+            .payload = 424242u,
+        });
+    (void)EcsUiAddText(
+        &first,
+        (EcsUiTextDesc){
+            .id = "WriteAvoidButtonLabel",
+            .text = "go",
+            .role = ECS_UI_TEXT_BUTTON,
+        });
+    EcsUiEnd(&first);
+    EcsUiEnd(&first);
+    EcsUiBuilderEnd(&first);
+    result |= Require(EcsUiBuilderOk(&first), "write avoidance first pass failed");
+
+    uint32_t on_set_count = 0u;
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiNodeId), &on_set_count),
+        "node id observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiNode), &on_set_count),
+        "node observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiStack), &on_set_count),
+        "stack observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiText), &on_set_count),
+        "text observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiButton), &on_set_count),
+        "button observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiActionPayload), &on_set_count),
+        "payload observer failed");
+
+    EcsUiBuilder second = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &second,
+        (EcsUiStackDesc){
+            .id = "WriteAvoidStack",
+            .gap = 3.0f,
+            .padding = 5.0f,
+        });
+    (void)EcsUiAddText(
+        &second,
+        (EcsUiTextDesc){
+            .id = "WriteAvoidLabel",
+            .text = "stable",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    ecs_entity_t button = EcsUiBeginButton(
+        &second,
+        (EcsUiButtonDesc){
+            .id = "WriteAvoidButton",
+            .variant = ECS_UI_BUTTON_PRIMARY,
+            .on_click = action,
+            .payload = 424242u,
+        });
+    (void)EcsUiAddText(
+        &second,
+        (EcsUiTextDesc){
+            .id = "WriteAvoidButtonLabel",
+            .text = "go",
+            .role = ECS_UI_TEXT_BUTTON,
+        });
+    EcsUiEnd(&second);
+    EcsUiEnd(&second);
+    EcsUiBuilderEnd(&second);
+    result |= Require(EcsUiBuilderOk(&second), "write avoidance second pass failed");
+    result |= Require(on_set_count == 0u, "identical redeclare should not write");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "write avoidance tree read failed");
+    bool found_payload = false;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (tree.nodes[i].entity == button) {
+            found_payload = tree.nodes[i].payload == 424242u;
+            break;
+        }
+    }
+    result |= Require(found_payload, "button payload should reach snapshot");
+
+    ecs_fini(world);
+    return result;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -1320,6 +1624,11 @@ int main(void)
     result |= TestGestureArenaPanImmediateAndCancel();
     result |= TestGestureArenaPressCapture();
     result |= TestGestureArenaPressCancel();
+    result |= TestBuilderKeyedRowsReusePruneAndOrder();
+    result |= TestBuilderIdlessChildrenReuseOrdinal();
+    result |= TestBuilderRejectsDuplicateKey();
+    result |= TestBuilderRejectsDeferredWorld();
+    result |= TestBuilderSkipsIdenticalWrites();
     result |= TestOverlayState();
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),

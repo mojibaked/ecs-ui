@@ -106,6 +106,7 @@ typedef struct EcsUiRaylibPointerCapture {
     bool active;
     ecs_entity_t node;
     ecs_entity_t action;
+    uint64_t payload;
     char node_id[ECS_UI_ID_MAX];
     Vector2 start;
     double start_time;
@@ -1526,6 +1527,7 @@ static void EcsUiRaylibPushPointerEventWithAction(
         .type = type,
         .node = node->entity,
         .action = action,
+        .payload = node->payload,
         .x = point.x,
         .y = point.y,
         .start_x = point.x,
@@ -1564,6 +1566,7 @@ static void EcsUiRaylibStartPointerCapture(
         .active = true,
         .node = node->entity,
         .action = node->on_click,
+        .payload = node->payload,
         .start = point,
         .start_time = GetTime(),
         .button = button,
@@ -1594,6 +1597,7 @@ static void EcsUiRaylibPushCapturedPointerEvent(
         .type = type,
         .node = capture->node,
         .action = capture->action,
+        .payload = capture->payload,
         .x = point.x,
         .y = point.y,
         .start_x = capture->start.x,

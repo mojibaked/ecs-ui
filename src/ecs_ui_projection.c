@@ -1,5 +1,7 @@
 #include "ecs_ui/ecs_ui_projection.h"
 
+#include "ecs_ui_projection_internal.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -8,12 +10,14 @@ ECS_TAG_DECLARE(EcsUiProjectionRoot);
 ECS_TAG_DECLARE(EcsUiProjectionSource);
 ECS_TAG_DECLARE(EcsUiProjectionSlot);
 ECS_TAG_DECLARE(EcsUiProjectionRootNode);
+ECS_TAG_DECLARE(EcsUiProjectionPreserveChildren);
 
 static bool EcsUiProjectionReady(void)
 {
     return ecs_id(EcsUiProjectionKey) != 0 && EcsUiProjectionRoot != 0 &&
         EcsUiProjectionSource != 0 && EcsUiProjectionSlot != 0 &&
-        EcsUiProjectionRootNode != 0;
+        EcsUiProjectionRootNode != 0 &&
+        EcsUiProjectionPreserveChildren != 0;
 }
 
 void EcsUiProjectionImport(ecs_world_t *world)
@@ -27,6 +31,7 @@ void EcsUiProjectionImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiProjectionSource);
     ECS_TAG_DEFINE(world, EcsUiProjectionSlot);
     ECS_TAG_DEFINE(world, EcsUiProjectionRootNode);
+    ECS_TAG_DEFINE(world, EcsUiProjectionPreserveChildren);
 
     ecs_add_id(world, EcsUiProjectionRoot, EcsExclusive);
     ecs_add_id(world, EcsUiProjectionSource, EcsExclusive);
@@ -454,6 +459,38 @@ static bool EcsUiProjectionDeleteStaleOrderedEntitySources(
     return true;
 }
 
+static bool EcsUiProjectionBeginPreserveChildren(
+    ecs_world_t *world,
+    ecs_entity_t parent,
+    bool *already_present)
+{
+    if (world == NULL || parent == 0 ||
+        EcsUiProjectionPreserveChildren == 0 ||
+        already_present == NULL) {
+        return false;
+    }
+
+    *already_present =
+        ecs_has_id(world, parent, EcsUiProjectionPreserveChildren);
+    if (!*already_present) {
+        ecs_add_id(world, parent, EcsUiProjectionPreserveChildren);
+    }
+    return true;
+}
+
+static void EcsUiProjectionEndPreserveChildren(
+    ecs_world_t *world,
+    ecs_entity_t parent,
+    bool already_present)
+{
+    if (world == NULL || parent == 0 ||
+        EcsUiProjectionPreserveChildren == 0 ||
+        already_present) {
+        return;
+    }
+    ecs_remove_id(world, parent, EcsUiProjectionPreserveChildren);
+}
+
 static ecs_entity_t EcsUiProjectionEnsureOrderedEntitySource(
     ecs_world_t *ui_world,
     EcsUiProjectionOrderedEntityDesc *desc,
@@ -540,7 +577,18 @@ bool EcsUiProjectionSyncCollection(
 
         ecs_entity_t ui_root = EcsUiProjectionGetRoot(world, source);
         if (ui_root == 0 && desc.build_root != NULL) {
+            bool preserve_already_present = false;
+            if (!EcsUiProjectionBeginPreserveChildren(
+                    world,
+                    desc.ui_parent,
+                    &preserve_already_present)) {
+                return false;
+            }
             ui_root = desc.build_root(world, source, item, desc.ctx);
+            EcsUiProjectionEndPreserveChildren(
+                world,
+                desc.ui_parent,
+                preserve_already_present);
             if (ui_root != 0 && EcsUiProjectionGetRoot(world, source) == 0) {
                 (void)EcsUiProjectionLink(world, source, ui_root);
             }
@@ -678,12 +726,23 @@ bool EcsUiProjectionSyncOrderedEntities(
         ecs_entity_t ui_root =
             EcsUiProjectionGetRoot(desc.ui_world, ui_source);
         if (ui_root == 0 && desc.build_root != NULL) {
+            bool preserve_already_present = false;
+            if (!EcsUiProjectionBeginPreserveChildren(
+                    desc.ui_world,
+                    desc.ui_parent,
+                    &preserve_already_present)) {
+                return false;
+            }
             ui_root = desc.build_root(
                 desc.ui_world,
                 ui_source,
                 desc.source_world,
                 item->source,
                 desc.ctx);
+            EcsUiProjectionEndPreserveChildren(
+                desc.ui_world,
+                desc.ui_parent,
+                preserve_already_present);
             if (ui_root != 0 &&
                 EcsUiProjectionGetRoot(desc.ui_world, ui_source) == 0) {
                 (void)EcsUiProjectionLink(desc.ui_world, ui_source, ui_root);

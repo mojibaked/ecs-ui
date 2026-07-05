@@ -36,6 +36,7 @@ typedef struct EcsUiClayInteractionTarget {
     ecs_entity_t tree;
     ecs_entity_t node;
     ecs_entity_t action;
+    uint64_t payload;
     char node_id[ECS_UI_ID_MAX];
     uint32_t node_index;
     uint32_t emit_order;
@@ -52,6 +53,7 @@ typedef struct EcsUiClayPointerCapture {
     ecs_entity_t tree;
     ecs_entity_t node;
     ecs_entity_t action;
+    uint64_t payload;
     char node_id[ECS_UI_ID_MAX];
     float start_x;
     float start_y;
@@ -72,16 +74,19 @@ typedef struct EcsUiClayInteractionFrame {
     ecs_entity_t resolved_tree;
     ecs_entity_t resolved_node;
     ecs_entity_t resolved_action;
+    uint64_t resolved_payload;
     char resolved_node_id[ECS_UI_ID_MAX];
     bool resolved_pressable;
     bool truncated;
     bool capture_missing_target;
     ecs_entity_t capture_missing_node;
     ecs_entity_t capture_missing_action;
+    uint64_t capture_missing_payload;
     char capture_missing_node_id[ECS_UI_ID_MAX];
     bool capture_missed_release;
     ecs_entity_t capture_missed_release_node;
     ecs_entity_t capture_missed_release_action;
+    uint64_t capture_missed_release_payload;
     char capture_missed_release_node_id[ECS_UI_ID_MAX];
 } EcsUiClayInteractionFrame;
 
