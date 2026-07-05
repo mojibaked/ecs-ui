@@ -18,6 +18,8 @@ typedef void (*EcsUiRaylibCustomDrawFn)(
 typedef struct EcsUiRaylibDrawOptions {
     EcsUiRaylibCustomDrawFn custom_draw;
     void *user_data;
+    EcsUiRaylibCustomDrawFn icon_draw;
+    EcsUiRaylibCustomDrawFn nine_slice_draw;
 } EcsUiRaylibDrawOptions;
 
 void EcsUiRaylibDrawTree(

@@ -153,6 +153,10 @@ typedef struct EcsUiStack {
     EcsUiAxis axis;
     float gap;
     float padding;
+    float padding_left;
+    float padding_top;
+    float padding_right;
+    float padding_bottom;
     float preferred_width;
     float preferred_height;
     EcsUiAlign align_x;
@@ -192,10 +196,24 @@ typedef struct EcsUiBoxStyle {
     float padding;
     EcsUiColor border_color;
     float border_width;
+    float border_left_width;
+    float border_top_width;
+    float border_right_width;
+    float border_bottom_width;
     EcsUiBevel bevel;
     EcsUiColor bevel_light;
     EcsUiColor bevel_dark;
 } EcsUiBoxStyle;
+
+typedef struct EcsUiNineSliceStyle {
+    char image[ECS_UI_ID_MAX];
+    uint16_t slice_left;
+    uint16_t slice_top;
+    uint16_t slice_right;
+    uint16_t slice_bottom;
+    float scale;
+    EcsUiColor tint;
+} EcsUiNineSliceStyle;
 
 typedef struct EcsUiTextStyle {
     EcsUiColor color;
@@ -215,6 +233,8 @@ typedef struct EcsUiTextLayout {
 
 typedef struct EcsUiButton {
     EcsUiButtonVariant variant;
+    float preferred_width;
+    float preferred_height;
     bool disabled;
 } EcsUiButton;
 
@@ -281,6 +301,10 @@ typedef struct EcsUiStackDesc {
     uint64_t key;
     float gap;
     float padding;
+    float padding_left;
+    float padding_top;
+    float padding_right;
+    float padding_bottom;
     float preferred_width;
     float preferred_height;
     EcsUiAlign align_x;
@@ -289,6 +313,7 @@ typedef struct EcsUiStackDesc {
     EcsUiSizing height_sizing;
     ecs_entity_t style_token;
     const EcsUiBoxStyle *style;
+    const EcsUiNineSliceStyle *nine_slice_style;
 } EcsUiStackDesc;
 
 typedef struct EcsUiScrollViewDesc {
@@ -304,6 +329,8 @@ typedef struct EcsUiButtonDesc {
     uint64_t payload;
     bool disabled;
     ecs_entity_t style_token;
+    float preferred_width;
+    float preferred_height;
 } EcsUiButtonDesc;
 
 typedef struct EcsUiPressableDesc {
@@ -359,9 +386,9 @@ typedef struct EcsUiBuilderDeclaredChild {
  * Declaration-owned components are authored only by EcsUiBuilder and are
  * written only when the declared value changes: EcsUiNodeId, EcsUiKey,
  * EcsUiAutoOrdinal, EcsUiDeclaration, EcsUiNode, EcsUiStack, EcsUiBoxStyle,
- * EcsUiButton, EcsUiPressable, EcsUiText, EcsUiIcon, EcsUiCustom,
- * EcsUiScrollView, EcsUiActionPayload, EcsUiOnClick, EcsUiUsesStyle and
- * EcsUiRevealedByHover.
+ * EcsUiNineSliceStyle, EcsUiButton, EcsUiPressable, EcsUiText, EcsUiIcon,
+ * EcsUiCustom, EcsUiScrollView, EcsUiActionPayload, EcsUiOnClick,
+ * EcsUiUsesStyle and EcsUiRevealedByHover.
  *
  * UI-local components that model runtime behavior, focus, gestures, animation,
  * resolved layout, hover, and text editing are not touched by declaration.
@@ -414,6 +441,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     uint32_t next_sibling;
     EcsUiStack stack;
     EcsUiBoxStyle box_style;
+    EcsUiNineSliceStyle nine_slice_style;
     EcsUiTextStyle text_style;
     EcsUiTextLayout text_layout;
     EcsUiButton button;
@@ -427,6 +455,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiScrollView scroll_view;
     EcsUiTextFieldView text_field_view;
     bool has_box_style;
+    bool has_nine_slice_style;
     bool has_text_style;
     bool has_text_layout;
     bool has_placement;
@@ -481,6 +510,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiScale);
 extern ECS_COMPONENT_DECLARE(EcsUiNode);
 extern ECS_COMPONENT_DECLARE(EcsUiStack);
 extern ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
+extern ECS_COMPONENT_DECLARE(EcsUiNineSliceStyle);
 extern ECS_COMPONENT_DECLARE(EcsUiTextStyle);
 extern ECS_COMPONENT_DECLARE(EcsUiTextLayout);
 extern ECS_COMPONENT_DECLARE(EcsUiButton);
@@ -536,6 +566,11 @@ bool EcsUiThemeSetTextStyle(
     ecs_entity_t theme,
     ecs_entity_t style_token,
     EcsUiTextStyle style);
+bool EcsUiThemeSetNineSliceStyle(
+    ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token,
+    EcsUiNineSliceStyle style);
 bool EcsUiThemeApply(ecs_world_t *world);
 
 ecs_entity_t EcsUiRootEntity(ecs_world_t *world, const char *id);

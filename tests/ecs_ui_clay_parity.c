@@ -309,10 +309,13 @@ static int RequireOnlyTransparentOrClayRectangleColor(
     return 0;
 }
 
-static int RequireClayBorder(
+static int RequireClayBorderSides(
     Clay_RenderCommandArray *commands,
     EcsUiColor expected_color,
-    uint16_t expected_width,
+    uint16_t expected_left,
+    uint16_t expected_top,
+    uint16_t expected_right,
+    uint16_t expected_bottom,
     const char *message)
 {
     if (commands == NULL) {
@@ -327,16 +330,32 @@ static int RequireClayBorder(
         }
 
         Clay_BorderRenderData *border = &command->renderData.border;
-        if (border->width.left == expected_width &&
-            border->width.right == expected_width &&
-            border->width.top == expected_width &&
-            border->width.bottom == expected_width) {
+        if (border->width.left == expected_left &&
+            border->width.top == expected_top &&
+            border->width.right == expected_right &&
+            border->width.bottom == expected_bottom) {
             return RequireClayColor(border->color, expected_color, message);
         }
     }
 
     (void)fprintf(stderr, "%s: border command not found\n", message);
     return 1;
+}
+
+static int RequireClayBorder(
+    Clay_RenderCommandArray *commands,
+    EcsUiColor expected_color,
+    uint16_t expected_width,
+    const char *message)
+{
+    return RequireClayBorderSides(
+        commands,
+        expected_color,
+        expected_width,
+        expected_width,
+        expected_width,
+        expected_width,
+        message);
 }
 
 static bool ClayColorEquals(Clay_Color actual, EcsUiColor expected)
@@ -610,6 +629,30 @@ static Clay_RenderCommand *FindCustomCommand(
         }
     }
     return NULL;
+}
+
+static int32_t FindCustomCommandIndex(
+    Clay_RenderCommandArray *commands,
+    const char *node_id)
+{
+    if (commands == NULL || node_id == NULL) {
+        return -1;
+    }
+
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        Clay_RenderCommand *command = Clay_RenderCommandArray_Get(commands, i);
+        if (command == NULL ||
+            command->commandType != CLAY_RENDER_COMMAND_TYPE_CUSTOM) {
+            continue;
+        }
+
+        const EcsUiTreeNodeSnapshot *node =
+            command->renderData.custom.customData;
+        if (node != NULL && strcmp(node->id, node_id) == 0) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 static Clay_RenderCommand *FindTextCommand(
@@ -2830,6 +2873,137 @@ static int TestStackDirectStyleEmitsBackgroundAndBorder(void)
     return result;
 }
 
+static int TestNineSliceStyleEmitsCustomBackground(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create nine-slice Clay world");
+    }
+
+    const EcsUiColor background_color = {93u, 17u, 41u, 255u};
+    const EcsUiColor border_color = {31u, 211u, 174u, 255u};
+    const EcsUiColor bevel_light = {250u, 240u, 100u, 255u};
+    const EcsUiColor bevel_dark = {12u, 18u, 30u, 255u};
+    const EcsUiNineSliceStyle nine_slice_style = {
+        .image = "frame.pixel-button",
+        .slice_left = 3u,
+        .slice_top = 3u,
+        .slice_right = 3u,
+        .slice_bottom = 3u,
+        .scale = 2.0f,
+        .tint = {180u, 190u, 200u, 255u},
+    };
+    const EcsUiBoxStyle box_style = {
+        .background = background_color,
+        .border_color = border_color,
+        .border_width = 2.0f,
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = bevel_light,
+        .bevel_dark = bevel_dark,
+    };
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NineSliceClayRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NineSliceFrame",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+            .style = &box_style,
+            .nine_slice_style = &nine_slice_style,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "NineSliceIcon",
+            .name = "slice-b-symbol",
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "nine-slice Clay builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "nine-slice Clay tree read failed");
+    const EcsUiTreeNodeSnapshot *frame_node =
+        FindTreeNode(&tree, "NineSliceFrame");
+    result |= Require(
+        frame_node != NULL && frame_node->has_nine_slice_style,
+        "nine-slice style should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    Clay_RenderCommand *nine_slice_command =
+        FindCustomCommand(&commands, "NineSliceFrame");
+    Clay_RenderCommand *icon_command =
+        FindCustomCommand(&commands, "NineSliceIcon");
+    result |= Require(
+        nine_slice_command != NULL,
+        "nine-slice style should emit a custom Clay command");
+    result |= Require(
+        icon_command != NULL,
+        "nine-slice child icon should emit a custom Clay command");
+    if (nine_slice_command != NULL && frame_node != NULL) {
+        result |= Require(
+            nine_slice_command->renderData.custom.customData == frame_node,
+            "nine-slice custom command should carry the snapshot node");
+        result |= Require(
+            nine_slice_command->zIndex >= options.z_index,
+            "nine-slice custom command should not render below ancestor backgrounds");
+        result |= RequireClayColor(
+            nine_slice_command->renderData.custom.backgroundColor,
+            nine_slice_style.tint,
+            "nine-slice custom command should carry style tint");
+        result |= Require(
+            nine_slice_command->boundingBox.width > 0.0f &&
+                nine_slice_command->boundingBox.height > 0.0f,
+            "nine-slice custom command should have nonzero bounds");
+    }
+    const int32_t nine_slice_command_index =
+        FindCustomCommandIndex(&commands, "NineSliceFrame");
+    const int32_t icon_command_index =
+        FindCustomCommandIndex(&commands, "NineSliceIcon");
+    result |= Require(
+        nine_slice_command_index >= 0 &&
+            icon_command_index >= 0 &&
+            nine_slice_command_index < icon_command_index,
+        "nine-slice background should render before child custom content");
+    result |= RequireOnlyTransparentOrClayRectangleColor(
+        &commands,
+        clay_theme.root_background,
+        "nine-slice should suppress flat box background rectangles");
+    result |= RequireNoClayBorderColor(
+        &commands,
+        border_color,
+        "nine-slice should suppress Clay border command");
+    result |= RequireNoClayBevelEdges(
+        &commands,
+        bevel_light,
+        "nine-slice should suppress light bevel edges");
+    result |= RequireNoClayBevelEdges(
+        &commands,
+        bevel_dark,
+        "nine-slice should suppress dark bevel edges");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "nine-slice Clay layout should not emit errors");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestBoxStyleBorderEmitsBorderCommand(void)
 {
     int result = 0;
@@ -2844,6 +3018,12 @@ static int TestBoxStyleBorderEmitsBorderCommand(void)
         .b = 90u,
         .a = 255u,
     };
+    const EcsUiColor side_border_color = {
+        .r = 67u,
+        .g = 145u,
+        .b = 232u,
+        .a = 255u,
+    };
     const float border_width = 3.0f;
     ecs_entity_t root = EcsUiRootEntity(world, "BorderRoot");
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
@@ -2855,6 +3035,14 @@ static int TestBoxStyleBorderEmitsBorderCommand(void)
             .preferred_height = 48.0f,
         });
     EcsUiEnd(&builder);
+    ecs_entity_t side_stack = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "BorderSideTarget",
+            .preferred_width = 96.0f,
+            .preferred_height = 48.0f,
+        });
+    EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
     result |= Require(EcsUiBuilderOk(&builder), "border builder failed");
 
@@ -2862,11 +3050,17 @@ static int TestBoxStyleBorderEmitsBorderCommand(void)
         .border_color = border_color,
         .border_width = border_width,
     });
+    ecs_set(world, side_stack, EcsUiBoxStyle, {
+        .border_color = side_border_color,
+        .border_bottom_width = 2.0f,
+    });
 
     EcsUiTreeSnapshot tree = {0};
     result |= Require(
         EcsUiReadTree(world, root, &tree),
         "border tree read failed");
+    const EcsUiTreeNodeSnapshot *side_node =
+        FindTreeNode(&tree, "BorderSideTarget");
     result |= Require(
         tree.count >= 2u &&
             tree.nodes[1u].has_box_style &&
@@ -2880,10 +3074,23 @@ static int TestBoxStyleBorderEmitsBorderCommand(void)
         border_width,
         0.0001f,
         "border width should be snapshotted");
+    result |= Require(
+        side_node != NULL &&
+            side_node->has_box_style &&
+            side_node->box_style.border_color.r == side_border_color.r &&
+            side_node->box_style.border_color.g == side_border_color.g &&
+            side_node->box_style.border_color.b == side_border_color.b &&
+            side_node->box_style.border_color.a == side_border_color.a,
+        "side-specific border color should be snapshotted");
+    result |= RequireNear(
+        side_node != NULL ? side_node->box_style.border_bottom_width : 0.0f,
+        2.0f,
+        0.0001f,
+        "side-specific border width should be snapshotted");
 
     ResetClayErrors();
     EcsUiTheme clay_theme = EcsUiThemeDefault();
-    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 80.0f);
+    EcsUiClayLayoutOptions options = LayoutOptions(128.0f, 120.0f);
     Clay_SetLayoutDimensions((Clay_Dimensions){
         .width = options.bounds.width,
         .height = options.bounds.height,
@@ -2897,9 +3104,107 @@ static int TestBoxStyleBorderEmitsBorderCommand(void)
         border_color,
         3u,
         "box style border should emit uniform Clay border command");
+    result |= RequireClayBorderSides(
+        &commands,
+        side_border_color,
+        0u,
+        0u,
+        0u,
+        2u,
+        "box style should emit side-specific Clay border command");
     result |= Require(
         g_clay_errors.count == 0u,
         "border layout should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestStackSidePaddingAffectsClayLayout(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create stack side padding world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "SidePaddingRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "SidePaddingRow",
+            .padding_left = 4.0f,
+            .padding_top = 2.0f,
+            .padding_right = 5.0f,
+            .padding_bottom = 3.0f,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "SidePaddingChild",
+            .kind = "sample",
+            .preferred_width = 10.0f,
+            .preferred_height = 10.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "stack side padding builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "stack side padding tree read failed");
+    const EcsUiTreeNodeSnapshot *row =
+        FindTreeNode(&tree, "SidePaddingRow");
+    result |= Require(
+        row != NULL &&
+            row->stack.padding == 0.0f &&
+            row->stack.padding_left == 4.0f &&
+            row->stack.padding_top == 2.0f &&
+            row->stack.padding_right == 5.0f &&
+            row->stack.padding_bottom == 3.0f,
+        "stack side padding should be snapshotted");
+
+    ResetClayErrors();
+    EcsUiTheme clay_theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = LayoutOptions(64.0f, 32.0f);
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.width,
+        .height = options.bounds.height,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &clay_theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+
+    Clay_RenderCommand *child_command =
+        FindCustomCommand(&commands, "SidePaddingChild");
+    result |= Require(
+        child_command != NULL,
+        "stack side padding custom child command missing");
+    if (child_command != NULL) {
+        result |= RequireNear(
+            child_command->boundingBox.x,
+            4.0f,
+            0.001f,
+            "stack side padding should offset child x");
+        result |= RequireNear(
+            child_command->boundingBox.y,
+            2.0f,
+            0.001f,
+            "stack side padding should offset child y");
+        result |= RequireNear(
+            child_command->boundingBox.height,
+            10.0f,
+            0.001f,
+            "stack side padding should preserve child height");
+    }
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "stack side padding layout should not emit Clay errors");
 
     ecs_fini(world);
     return result;
@@ -3850,7 +4155,9 @@ int main(void)
     result |= TestPlainStacksEmitNoDefaultBackground();
     result |= TestStackStyleTokenEmitsBackgroundColor();
     result |= TestStackDirectStyleEmitsBackgroundAndBorder();
+    result |= TestNineSliceStyleEmitsCustomBackground();
     result |= TestBoxStyleBorderEmitsBorderCommand();
+    result |= TestStackSidePaddingAffectsClayLayout();
     result |= TestRaisedBevelEmitsLightTopLeftDarkBottomRightEdges();
     result |= TestSunkenBevelEmitsDarkTopLeftLightBottomRightEdges();
     result |= TestNoBevelEmitsNoBevelEdges();

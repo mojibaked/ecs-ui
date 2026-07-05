@@ -1698,6 +1698,149 @@ static int TestThemeSkipsIdenticalWrites(void)
     return result;
 }
 
+static int TestNineSliceStyleResolvesThroughThemeAndBuilder(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create nine-slice style world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t style_token =
+        EcsUiStyleToken(world, "NineSliceThemeToken");
+    ecs_entity_t theme = EcsUiThemeEntity(world, "NineSliceTheme");
+    const EcsUiNineSliceStyle themed_style = {
+        .image = "panel.window",
+        .slice_left = 3u,
+        .slice_top = 4u,
+        .slice_right = 5u,
+        .slice_bottom = 6u,
+        .scale = 2.0f,
+        .tint = {200u, 210u, 220u, 255u},
+    };
+    result |= Require(
+        EcsUiThemeSetNineSliceStyle(world, theme, style_token, themed_style),
+        "theme nine-slice set failed");
+    result |= Require(
+        EcsUiSetActiveTheme(world, theme),
+        "theme nine-slice active theme failed");
+    result |= Require(
+        EcsUiThemeApply(world),
+        "theme nine-slice apply failed");
+
+    const EcsUiNineSliceStyle *applied =
+        ecs_get(world, style_token, EcsUiNineSliceStyle);
+    result |= Require(applied != NULL, "theme nine-slice should apply to token");
+    if (applied != NULL) {
+        result |= Require(
+            strcmp(applied->image, themed_style.image) == 0 &&
+                applied->slice_left == themed_style.slice_left &&
+                applied->slice_top == themed_style.slice_top &&
+                applied->slice_right == themed_style.slice_right &&
+                applied->slice_bottom == themed_style.slice_bottom &&
+                applied->scale == themed_style.scale &&
+                applied->tint.a == themed_style.tint.a,
+            "theme nine-slice token value mismatch");
+    }
+
+    const EcsUiNineSliceStyle direct_style = {
+        .image = "panel.direct",
+        .slice_left = 2u,
+        .slice_top = 2u,
+        .slice_right = 2u,
+        .slice_bottom = 2u,
+        .scale = 1.0f,
+        .tint = {255u, 255u, 255u, 255u},
+    };
+    ecs_entity_t root = EcsUiRootEntity(world, "NineSliceStyleRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ThemedFrame",
+            .style_token = style_token,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DirectFrame",
+            .nine_slice_style = &direct_style,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "nine-slice builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "nine-slice tree read failed");
+    result |= RequireNode(&tree, 1u, "ThemedFrame", ECS_UI_NODE_VSTACK);
+    result |= RequireNode(&tree, 2u, "DirectFrame", ECS_UI_NODE_HSTACK);
+    if (tree.count > 2u) {
+        const EcsUiTreeNodeSnapshot *themed = &tree.nodes[1];
+        const EcsUiTreeNodeSnapshot *direct = &tree.nodes[2];
+        result |= Require(
+            themed->has_nine_slice_style &&
+                strcmp(themed->nine_slice_style.image, "panel.window") == 0 &&
+                themed->nine_slice_style.scale == 2.0f,
+            "theme nine-slice should resolve into snapshots");
+        result |= Require(
+            direct->has_nine_slice_style &&
+                strcmp(direct->nine_slice_style.image, "panel.direct") == 0 &&
+                direct->nine_slice_style.slice_left == 2u,
+            "direct nine-slice should resolve into snapshots");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestButtonPreferredSizeSnapshot(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create button size world");
+    if (world == NULL) {
+        return 1;
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "ButtonSizeRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = "SizedButton",
+            .preferred_width = 32.0f,
+            .preferred_height = 40.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "button size builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "button size tree read failed");
+    result |= RequireNode(&tree, 1u, "SizedButton", ECS_UI_NODE_BUTTON);
+    if (tree.count > 1u) {
+        result |= RequireNear(
+            tree.nodes[1u].button.preferred_width,
+            32.0f,
+            0.0001f,
+            "button preferred width should be snapshotted");
+        result |= RequireNear(
+            tree.nodes[1u].button.preferred_height,
+            40.0f,
+            0.0001f,
+            "button preferred height should be snapshotted");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
 int main(void)
 {
     ecs_world_t *world = ecs_init();
@@ -1727,6 +1870,8 @@ int main(void)
     result |= TestBuilderRejectsDeferredWorld();
     result |= TestBuilderSkipsIdenticalWrites();
     result |= TestThemeSkipsIdenticalWrites();
+    result |= TestNineSliceStyleResolvesThroughThemeAndBuilder();
+    result |= TestButtonPreferredSizeSnapshot();
     result |= TestOverlayState();
     result |= Require(
         ecs_has_id(world, EcsUiOnClick, EcsExclusive),
@@ -1754,6 +1899,9 @@ int main(void)
     result |= Require(
         ecs_id(EcsUiBoxStyle) != 0,
         "EcsUiBoxStyle should be registered");
+    result |= Require(
+        ecs_id(EcsUiNineSliceStyle) != 0,
+        "EcsUiNineSliceStyle should be registered");
     result |= Require(
         ecs_id(EcsUiTextStyle) != 0,
         "EcsUiTextStyle should be registered");

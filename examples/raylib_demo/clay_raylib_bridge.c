@@ -222,6 +222,17 @@ void EcsUiClayRaylibRenderEx(
             Clay_CustomRenderData *custom = &command->renderData.custom;
             const EcsUiTreeNodeSnapshot *node = custom->customData;
             const float opacity = custom->backgroundColor.a / 255.0f;
+            if (node != NULL && node->kind != ECS_UI_NODE_CUSTOM &&
+                node->has_nine_slice_style) {
+                if (options != NULL && options->nine_slice_draw != NULL) {
+                    options->nine_slice_draw(
+                        node,
+                        bounds,
+                        opacity,
+                        options->user_data);
+                }
+                break;
+            }
             if (node != NULL && node->kind == ECS_UI_NODE_ICON) {
                 if (options != NULL && options->icon_draw != NULL) {
                     options->icon_draw(

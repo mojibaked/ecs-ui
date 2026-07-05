@@ -9,6 +9,7 @@
 typedef struct EcsUiClayRaylibRenderOptions {
     EcsUiRaylibCustomDrawFn custom_draw;
     EcsUiRaylibCustomDrawFn icon_draw;
+    EcsUiRaylibCustomDrawFn nine_slice_draw;
     void *user_data;
 } EcsUiClayRaylibRenderOptions;
 

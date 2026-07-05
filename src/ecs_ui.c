@@ -14,6 +14,7 @@ ECS_COMPONENT_DECLARE(EcsUiScale);
 ECS_COMPONENT_DECLARE(EcsUiNode);
 ECS_COMPONENT_DECLARE(EcsUiStack);
 ECS_COMPONENT_DECLARE(EcsUiBoxStyle);
+ECS_COMPONENT_DECLARE(EcsUiNineSliceStyle);
 ECS_COMPONENT_DECLARE(EcsUiTextStyle);
 ECS_COMPONENT_DECLARE(EcsUiTextLayout);
 ECS_COMPONENT_DECLARE(EcsUiButton);
@@ -163,6 +164,23 @@ static const EcsUiTextStyle *EcsUiResolveTextStyle(
         NULL;
 }
 
+static const EcsUiNineSliceStyle *EcsUiResolveNineSliceStyle(
+    const ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    const EcsUiNineSliceStyle *nine_slice_style =
+        entity != 0 ? ecs_get(world, entity, EcsUiNineSliceStyle) : NULL;
+    if (nine_slice_style != NULL) {
+        return nine_slice_style;
+    }
+
+    ecs_entity_t style_token =
+        entity != 0 ? ecs_get_target(world, entity, EcsUiUsesStyle, 0) : 0;
+    return style_token != 0 ?
+        ecs_get(world, style_token, EcsUiNineSliceStyle) :
+        NULL;
+}
+
 static void EcsUiSetVisualOpacity(
     ecs_world_t *world,
     ecs_entity_t entity,
@@ -172,6 +190,7 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
 {
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiStack));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiBoxStyle));
+    (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiNineSliceStyle));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiScrollView));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiButton));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiPressable));
@@ -707,6 +726,10 @@ static ecs_entity_t EcsUiBeginStack(
         .axis = axis,
         .gap = desc.gap,
         .padding = desc.padding,
+        .padding_left = desc.padding_left,
+        .padding_top = desc.padding_top,
+        .padding_right = desc.padding_right,
+        .padding_bottom = desc.padding_bottom,
         .preferred_width = desc.preferred_width,
         .preferred_height = desc.preferred_height,
         .align_x = desc.align_x,
@@ -745,6 +768,19 @@ static ecs_entity_t EcsUiBeginStack(
             entity,
             ecs_id(EcsUiBoxStyle));
     }
+    if (desc.nine_slice_style != NULL) {
+        (void)EcsUiSetIdIfChanged(
+            builder->world,
+            entity,
+            ecs_id(EcsUiNineSliceStyle),
+            sizeof(*desc.nine_slice_style),
+            desc.nine_slice_style);
+    } else {
+        (void)EcsUiRemoveIdIfPresent(
+            builder->world,
+            entity,
+            ecs_id(EcsUiNineSliceStyle));
+    }
     EcsUiPushParent(builder, entity);
     return entity;
 }
@@ -772,6 +808,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiNode);
     ECS_COMPONENT_DEFINE(world, EcsUiStack);
     ECS_COMPONENT_DEFINE(world, EcsUiBoxStyle);
+    ECS_COMPONENT_DEFINE(world, EcsUiNineSliceStyle);
     ECS_COMPONENT_DEFINE(world, EcsUiTextStyle);
     ECS_COMPONENT_DEFINE(world, EcsUiTextLayout);
     ECS_COMPONENT_DEFINE(world, EcsUiButton);
@@ -1117,6 +1154,34 @@ bool EcsUiThemeSetTextStyle(
         &style);
 }
 
+bool EcsUiThemeSetNineSliceStyle(
+    ecs_world_t *world,
+    ecs_entity_t theme,
+    ecs_entity_t style_token,
+    EcsUiNineSliceStyle style)
+{
+    if (world == NULL || theme == 0 || style_token == 0 ||
+        !EcsUiThemeReady() || !ecs_has_id(world, theme, EcsUiThemeTag)) {
+        return false;
+    }
+
+    ecs_entity_t source =
+        EcsUiFindThemeStyleSource(world, theme, style_token);
+    if (source == 0) {
+        source = ecs_new_w_pair(world, EcsChildOf, theme);
+        if (source == 0) {
+            return false;
+        }
+        ecs_add_pair(world, source, EcsUiThemeStyle, style_token);
+    }
+    return EcsUiSetIdIfChanged(
+        world,
+        source,
+        ecs_id(EcsUiNineSliceStyle),
+        sizeof(style),
+        &style);
+}
+
 bool EcsUiThemeApply(ecs_world_t *world)
 {
     if (world == NULL || !EcsUiThemeReady()) {
@@ -1134,27 +1199,21 @@ bool EcsUiThemeApply(ecs_world_t *world)
             ecs_entity_t source = it.entities[i];
             ecs_entity_t style_token =
                 ecs_get_target(world, source, EcsUiThemeStyle, 0);
-            const EcsUiBoxStyle *box_style =
-                ecs_get(world, source, EcsUiBoxStyle);
-            if (style_token == 0 || box_style == NULL) {
-                const EcsUiTextStyle *text_style =
-                    ecs_get(world, source, EcsUiTextStyle);
-                if (style_token != 0 && text_style != NULL) {
-                    (void)EcsUiSetIdIfChanged(
-                        world,
-                        style_token,
-                        ecs_id(EcsUiTextStyle),
-                        sizeof(*text_style),
-                        text_style);
-                }
+            if (style_token == 0) {
                 continue;
             }
-            (void)EcsUiSetIdIfChanged(
-                world,
-                style_token,
-                ecs_id(EcsUiBoxStyle),
-                sizeof(*box_style),
-                box_style);
+
+            const EcsUiBoxStyle *box_style =
+                ecs_get(world, source, EcsUiBoxStyle);
+            if (box_style != NULL) {
+                (void)EcsUiSetIdIfChanged(
+                    world,
+                    style_token,
+                    ecs_id(EcsUiBoxStyle),
+                    sizeof(*box_style),
+                    box_style);
+            }
+
             const EcsUiTextStyle *text_style =
                 ecs_get(world, source, EcsUiTextStyle);
             if (text_style != NULL) {
@@ -1164,6 +1223,17 @@ bool EcsUiThemeApply(ecs_world_t *world)
                     ecs_id(EcsUiTextStyle),
                     sizeof(*text_style),
                     text_style);
+            }
+
+            const EcsUiNineSliceStyle *nine_slice_style =
+                ecs_get(world, source, EcsUiNineSliceStyle);
+            if (nine_slice_style != NULL) {
+                (void)EcsUiSetIdIfChanged(
+                    world,
+                    style_token,
+                    ecs_id(EcsUiNineSliceStyle),
+                    sizeof(*nine_slice_style),
+                    nine_slice_style);
             }
         }
     }
@@ -1609,6 +1679,8 @@ ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
 
     EcsUiButton button = {
         .variant = desc.variant,
+        .preferred_width = desc.preferred_width,
+        .preferred_height = desc.preferred_height,
         .disabled = desc.disabled,
     };
     (void)EcsUiSetIdIfChanged(
@@ -1859,6 +1931,13 @@ static uint32_t EcsUiReadNode(
     if (box_style != NULL) {
         snapshot->box_style = *box_style;
         snapshot->has_box_style = true;
+    }
+
+    const EcsUiNineSliceStyle *nine_slice_style =
+        EcsUiResolveNineSliceStyle(world, entity);
+    if (nine_slice_style != NULL && nine_slice_style->image[0] != '\0') {
+        snapshot->nine_slice_style = *nine_slice_style;
+        snapshot->has_nine_slice_style = true;
     }
 
     const EcsUiTextStyle *text_style = EcsUiResolveTextStyle(world, entity);
