@@ -163,11 +163,21 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
         endif()
     endif()
 
+    find_package(Threads REQUIRED)
     add_library(ecs_ui_raylib STATIC
-        src/ecs_ui_raylib.c)
+        src/ecs_ui_raylib.c
+        src/ecs_ui_raylib_runner.c)
     add_library(ecs_ui::raylib ALIAS ecs_ui_raylib)
     target_link_libraries(ecs_ui_raylib
-        PUBLIC ecs_ui ${ECS_UI_RAYLIB_TARGET})
+        PUBLIC ecs_ui ${ECS_UI_RAYLIB_TARGET}
+        PRIVATE Threads::Threads)
+    if(TARGET glfw)
+        # The bounded park shim wakes raylib's glfwWaitEvents path by posting an
+        # empty GLFW event from its watcher thread when vendored GLFW is exposed.
+        target_link_libraries(ecs_ui_raylib PRIVATE glfw)
+        target_compile_definitions(ecs_ui_raylib
+            PRIVATE ECS_UI_RAYLIB_HAS_GLFW_POST=1)
+    endif()
     ecs_ui_enable_warnings(ecs_ui_raylib)
 
     if(ECS_UI_BUILD_RAYLIB_DEMO)
@@ -245,6 +255,17 @@ if(ECS_UI_BUILD_TESTS)
             Threads::Threads)
     ecs_ui_enable_warnings(ecs_ui_wake_registry)
     add_test(NAME ecs_ui_wake_registry COMMAND ecs_ui_wake_registry)
+
+    if(TARGET ecs_ui_raylib)
+        add_executable(ecs_ui_raylib_runner
+            tests/ecs_ui_raylib_runner.c)
+        target_link_libraries(ecs_ui_raylib_runner
+            PRIVATE
+                ecs_ui_raylib
+                Threads::Threads)
+        ecs_ui_enable_warnings(ecs_ui_raylib_runner)
+        add_test(NAME ecs_ui_raylib_runner COMMAND ecs_ui_raylib_runner)
+    endif()
 
     if(TARGET ecs_ui_clay)
         add_executable(ecs_ui_clay_parity

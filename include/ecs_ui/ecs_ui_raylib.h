@@ -4,6 +4,7 @@
 #include <raylib.h>
 
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_runner.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,6 +37,85 @@ typedef struct EcsUiRaylibDrawOptions {
     EcsUiRaylibCustomDrawFn nine_slice_draw;
 } EcsUiRaylibDrawOptions;
 
+typedef enum EcsUiRaylibWakeReasonKind {
+    ECS_UI_RAYLIB_WAKE_NONE = 0,
+    ECS_UI_RAYLIB_WAKE_HOT = 1,
+    ECS_UI_RAYLIB_WAKE_FD = 2,
+    ECS_UI_RAYLIB_WAKE_POST = 3,
+    ECS_UI_RAYLIB_WAKE_DEADLINE = 4,
+    ECS_UI_RAYLIB_WAKE_CAPABILITY_DISABLED = 5,
+    ECS_UI_RAYLIB_WAKE_ERROR = 6,
+} EcsUiRaylibWakeReasonKind;
+
+typedef struct EcsUiRaylibWakeReason {
+    EcsUiRaylibWakeReasonKind kind;
+    EcsUiWakeHandle handle;
+    int fd;
+    uint32_t fd_interests;
+    char label[ECS_UI_ID_MAX];
+} EcsUiRaylibWakeReason;
+
+typedef struct EcsUiRaylibParkerCapabilities {
+    bool post_empty_event_available;
+    bool post_wake_enabled;
+    bool fd_wake_enabled;
+    bool deadline_wake_enabled;
+    bool capability_disabled;
+} EcsUiRaylibParkerCapabilities;
+
+typedef void (*EcsUiRaylibPostEmptyEventFn)(void *ctx);
+
+typedef struct EcsUiRaylibParkerDesc {
+    EcsUiRaylibPostEmptyEventFn post_empty_event;
+    void *post_empty_event_ctx;
+} EcsUiRaylibParkerDesc;
+
+typedef struct EcsUiRaylibParker EcsUiRaylibParker;
+
+typedef bool (*EcsUiRaylibStepHook)(void *ctx);
+typedef bool (*EcsUiRaylibStepTickHook)(double dt, void *ctx);
+
+typedef struct EcsUiRaylibStepHooks {
+    EcsUiRaylibStepHook pre_input_pump;
+    EcsUiRaylibStepHook input_pump;
+    EcsUiRaylibStepTickHook tick;
+    EcsUiRaylibStepHook render;
+    EcsUiRaylibStepHook post_blit_screenshot;
+    EcsUiRaylibStepHook after_present_cleanup;
+    void *ctx;
+} EcsUiRaylibStepHooks;
+
+typedef struct EcsUiRaylibStepDesc {
+    EcsUiWakeRegistry *wake_registry;
+    EcsUiRaylibParker *parker;
+    uint64_t now_ns;
+    double dt;
+    bool should_render;
+    EcsUiRaylibStepHooks hooks;
+} EcsUiRaylibStepDesc;
+
+typedef struct EcsUiRaylibStepCounters {
+    uint64_t steps;
+    uint64_t rendered;
+    uint64_t skipped_render;
+    uint64_t park_armed;
+    uint64_t continued;
+    uint64_t immediate;
+    uint64_t capability_disabled;
+} EcsUiRaylibStepCounters;
+
+typedef struct EcsUiRaylibStepState {
+    EcsUiRaylibStepCounters counters;
+} EcsUiRaylibStepState;
+
+typedef struct EcsUiRaylibStepResult {
+    EcsUiRaylibStepCounters counters;
+    EcsUiRaylibWakeReason wake_reason;
+    bool rendered;
+    bool park_armed;
+    bool immediate_next_step;
+} EcsUiRaylibStepResult;
+
 /* `bounds` is the physical pixel root box for this render bridge. */
 void EcsUiRaylibDrawTree(
     const EcsUiTreeSnapshot *tree,
@@ -56,6 +136,43 @@ void EcsUiRaylibCollectEvents(
     const EcsUiTreeSnapshot *tree,
     Rectangle bounds,
     EcsUiEventList *events);
+
+/*
+ * Bounded wake shim for raylib's EnableEventWaiting/glfwWaitEvents path.
+ * The loop thread builds an EcsUiWakeWaitSpec and arms the parker before the
+ * raylib frame reaches its blocking wait. A watcher thread waits on the spec's
+ * POSIX fds, a control pipe used by EcsUiRaylibParkerPost, and the nearest
+ * deadline, then calls the configured post-empty-event callback. The default
+ * creator wires that callback to glfwPostEmptyEvent when the raylib build
+ * exposes GLFW; otherwise capability flags report fd/deadline wake as disabled.
+ */
+EcsUiRaylibParker *EcsUiRaylibParkerCreate(
+    const EcsUiRaylibParkerDesc *desc);
+EcsUiRaylibParker *EcsUiRaylibParkerCreateDefault(void);
+void EcsUiRaylibParkerDestroy(EcsUiRaylibParker *parker);
+EcsUiRaylibParkerCapabilities EcsUiRaylibParkerGetCapabilities(
+    const EcsUiRaylibParker *parker);
+bool EcsUiRaylibParkerArm(
+    EcsUiRaylibParker *parker,
+    const EcsUiWakeWaitSpec *spec);
+bool EcsUiRaylibParkerPost(
+    EcsUiRaylibParker *parker,
+    const char *label);
+uint64_t EcsUiRaylibParkerWakeSequence(const EcsUiRaylibParker *parker);
+bool EcsUiRaylibParkerWaitForWake(
+    EcsUiRaylibParker *parker,
+    uint64_t after_sequence,
+    uint64_t timeout_ns,
+    EcsUiRaylibWakeReason *out);
+bool EcsUiRaylibParkerLastWake(
+    const EcsUiRaylibParker *parker,
+    EcsUiRaylibWakeReason *out);
+
+void EcsUiRaylibStepStateInit(EcsUiRaylibStepState *state);
+bool EcsUiRaylibStep(
+    EcsUiRaylibStepState *state,
+    const EcsUiRaylibStepDesc *desc,
+    EcsUiRaylibStepResult *out);
 
 /*
  * Override the font used for all UI text. Pass a caller-owned font (e.g. a TTF
