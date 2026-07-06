@@ -2,6 +2,7 @@
 #define ECS_UI_ECS_UI_ANIMATION_H
 
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_runner.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,6 +25,12 @@ extern ECS_TAG_DECLARE(EcsUiAnimationComplete);
 
 void EcsUiAnimationImport(ecs_world_t *world);
 
+bool EcsUiAnimationHasActive(ecs_world_t *world);
+bool EcsUiAnimationArmNextFrameDeadline(
+    ecs_world_t *world,
+    EcsUiWakeRegistry *registry,
+    EcsUiWakeHandle handle,
+    uint64_t next_frame_deadline_ns);
 float EcsUiAnimationClamp01(float value);
 float EcsUiAnimationValue(
     const ecs_world_t *world,

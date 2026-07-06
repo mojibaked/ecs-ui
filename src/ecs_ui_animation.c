@@ -27,6 +27,35 @@ static bool EcsUiAnimationReady(void)
         EcsUiAnimationComplete != 0;
 }
 
+bool EcsUiAnimationHasActive(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiAnimationReady()) {
+        return false;
+    }
+
+    ecs_iter_t it = ecs_each(world, EcsUiLinear1f);
+    const bool active = ecs_each_next(&it);
+    if (active) {
+        ecs_iter_fini(&it);
+    }
+    return active;
+}
+
+bool EcsUiAnimationArmNextFrameDeadline(
+    ecs_world_t *world,
+    EcsUiWakeRegistry *registry,
+    EcsUiWakeHandle handle,
+    uint64_t next_frame_deadline_ns)
+{
+    if (registry == NULL || !EcsUiWakeHandleIsValid(handle)) {
+        return false;
+    }
+    if (EcsUiAnimationHasActive(world)) {
+        return EcsUiWakeArmDeadline(registry, handle, next_frame_deadline_ns);
+    }
+    return EcsUiWakeDisarmDeadline(registry, handle);
+}
+
 float EcsUiAnimationValue(
     const ecs_world_t *world,
     ecs_entity_t entity,

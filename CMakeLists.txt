@@ -70,7 +70,8 @@ add_library(ecs_ui STATIC
     src/ecs_ui.c
     src/ecs_ui_gesture.c
     src/ecs_ui_overlay.c
-    src/ecs_ui_projection.c)
+    src/ecs_ui_projection.c
+    src/ecs_ui_runner.c)
 add_library(ecs_ui::ecs_ui ALIAS ecs_ui)
 target_include_directories(ecs_ui
     PUBLIC
@@ -222,6 +223,7 @@ endif()
 
 if(ECS_UI_BUILD_TESTS)
     enable_testing()
+    find_package(Threads REQUIRED)
 
     add_executable(ecs_ui_basic
         tests/ecs_ui_basic.c)
@@ -233,6 +235,16 @@ if(ECS_UI_BUILD_TESTS)
             ecs_ui_text_input)
     ecs_ui_enable_warnings(ecs_ui_basic)
     add_test(NAME ecs_ui_basic COMMAND ecs_ui_basic)
+
+    add_executable(ecs_ui_wake_registry
+        tests/ecs_ui_wake_registry.c)
+    target_link_libraries(ecs_ui_wake_registry
+        PRIVATE
+            ecs_ui
+            ecs_ui_animation
+            Threads::Threads)
+    ecs_ui_enable_warnings(ecs_ui_wake_registry)
+    add_test(NAME ecs_ui_wake_registry COMMAND ecs_ui_wake_registry)
 
     if(TARGET ecs_ui_clay)
         add_executable(ecs_ui_clay_parity
