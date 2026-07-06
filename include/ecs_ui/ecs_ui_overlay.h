@@ -21,6 +21,7 @@ typedef enum EcsUiOverlayKind {
     ECS_UI_OVERLAY_KIND_MODAL = 3,
 } EcsUiOverlayKind;
 
+/* Overlay rectangles are logical, window-origin units. */
 typedef struct EcsUiOverlayRect {
     float x;
     float y;
@@ -28,6 +29,7 @@ typedef struct EcsUiOverlayRect {
     float height;
 } EcsUiOverlayRect;
 
+/* Overlay pointer input is logical, window-origin. */
 typedef struct EcsUiOverlayInput {
     float x;
     float y;

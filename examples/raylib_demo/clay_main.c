@@ -307,8 +307,20 @@ int main(void)
         theme = DemoClayTheme(ui_world);
         Clay_RenderCommandArray render_commands =
             DemoClayEmitRenderCommands(&tree, &theme, &layout_options, NULL);
+        const float render_scale = tree.scale > 0.0f ? tree.scale : 1.0f;
         EcsUiClayRaylibRenderOptions render_options = {
             .custom_draw = DemoTerminalDrawCustom,
+            .physical_root_bounds = {
+                .x = layout_options.bounds.x,
+                .y = layout_options.bounds.y,
+                .width = layout_options.bounds.width,
+                .height = layout_options.bounds.height,
+            },
+            .logical_origin = {
+                .x = layout_options.bounds.x / render_scale,
+                .y = layout_options.bounds.y / render_scale,
+            },
+            .scale = render_scale,
             .user_data = ui_world,
         };
 

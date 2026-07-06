@@ -19,7 +19,7 @@ ecs_entity_t DemoTerminalBuildPreview(
     EcsUiBuilder *builder);
 void DemoTerminalDrawCustom(
     const EcsUiTreeNodeSnapshot *node,
-    Rectangle bounds,
+    const EcsUiRaylibRenderContext *context,
     float opacity,
     void *user_data);
 

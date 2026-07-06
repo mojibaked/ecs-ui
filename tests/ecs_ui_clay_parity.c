@@ -884,6 +884,161 @@ static int TestRootScaleAffectsClayLayoutOnly(void)
     return result;
 }
 
+static int TestScaledPointerEventsAreLogical(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scaled pointer world");
+    }
+
+    ecs_entity_t action = CreateAction(world, "ScaledPointerAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "ScaledPointerRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ScaledPointerTarget",
+            .kind = "target",
+            .preferred_width = 100.0f,
+            .preferred_height = 40.0f,
+            .on_click = action,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "scaled pointer builder failed");
+    result |= Require(
+        EcsUiSetScale(world, root, 2.0f),
+        "scaled pointer set scale failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "scaled pointer tree read failed");
+
+    EcsUiClayLayoutOptions options = {
+        .bounds = {20.0f, 30.0f, 240.0f, 120.0f},
+    };
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 60.0f,
+            .y = 70.0f,
+            .time = 1.0,
+            .down = true,
+            .pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        3u,
+        "scaled press should emit hover, pressed, and drag started");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_PRESSED,
+        target,
+        "ScaledPointerTarget");
+    if (events.count > 1u) {
+        result |= RequireNear(
+            events.events[1u].x,
+            30.0f,
+            0.001f,
+            "scaled pressed x should be logical");
+        result |= RequireNear(
+            events.events[1u].y,
+            35.0f,
+            0.001f,
+            "scaled pressed y should be logical");
+        result |= RequireNear(
+            events.events[1u].start_x,
+            30.0f,
+            0.001f,
+            "scaled pressed start_x should be logical");
+        result |= RequireNear(
+            events.events[1u].start_y,
+            35.0f,
+            0.001f,
+            "scaled pressed start_y should be logical");
+    }
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 86.0f,
+            .y = 102.0f,
+            .time = 1.25,
+            .down = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "scaled held pointer should emit dragged");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_DRAGGED,
+        target,
+        "ScaledPointerTarget");
+    if (events.count > 0u) {
+        result |= RequireNear(
+            events.events[0u].x,
+            43.0f,
+            0.001f,
+            "scaled dragged x should be logical");
+        result |= RequireNear(
+            events.events[0u].y,
+            51.0f,
+            0.001f,
+            "scaled dragged y should be logical");
+        result |= RequireNear(
+            events.events[0u].start_x,
+            30.0f,
+            0.001f,
+            "scaled dragged start_x should be logical");
+        result |= RequireNear(
+            events.events[0u].start_y,
+            35.0f,
+            0.001f,
+            "scaled dragged start_y should be logical");
+        result |= RequireNear(
+            events.events[0u].delta_x,
+            13.0f,
+            0.001f,
+            "scaled dragged delta_x should be logical");
+        result |= RequireNear(
+            events.events[0u].delta_y,
+            16.0f,
+            0.001f,
+            "scaled dragged delta_y should be logical");
+        result |= RequireNear(
+            events.events[0u].velocity_x,
+            52.0f,
+            0.01f,
+            "scaled dragged velocity_x should be logical");
+        result |= RequireNear(
+            events.events[0u].velocity_y,
+            64.0f,
+            0.01f,
+            "scaled dragged velocity_y should be logical");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestDuplicateAuthoredIdsDoNotCollide(void)
 {
     int result = 0;
@@ -4134,6 +4289,7 @@ int main(void)
     }
 
     result |= TestRootScaleAffectsClayLayoutOnly();
+    result |= TestScaledPointerEventsAreLogical();
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestScrollViewEmitsScissorCommands();
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();

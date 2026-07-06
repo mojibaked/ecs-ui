@@ -82,6 +82,12 @@ static float EcsUiClayScale(void)
     return g_ecs_ui_clay_scale > 0.0f ? g_ecs_ui_clay_scale : 1.0f;
 }
 
+static float EcsUiClayLogicalPointerValue(float physical, float scale)
+{
+    const float normalized_scale = scale > 0.0f ? scale : 1.0f;
+    return physical / normalized_scale;
+}
+
 static float EcsUiClayScaled(float value)
 {
     return value * EcsUiClayScale();
@@ -1435,6 +1441,7 @@ static void EcsUiClayRegisterTarget(
         .node_index = index,
         .emit_order = frame->target_count,
         .depth = node->depth,
+        .scale = EcsUiClayScale(),
         .area = area,
         .pressable = pressable,
         .blocking = blocking,
@@ -2423,10 +2430,10 @@ static void EcsUiClayPushPointerEventWithAction(
         .node = target->node,
         .action = action,
         .payload = target->payload,
-        .x = pointer.x,
-        .y = pointer.y,
-        .start_x = pointer.x,
-        .start_y = pointer.y,
+        .x = EcsUiClayLogicalPointerValue(pointer.x, target->scale),
+        .y = EcsUiClayLogicalPointerValue(pointer.y, target->scale),
+        .start_x = EcsUiClayLogicalPointerValue(pointer.x, target->scale),
+        .start_y = EcsUiClayLogicalPointerValue(pointer.y, target->scale),
         .button = button,
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", target->node_id);
@@ -2464,8 +2471,11 @@ static void EcsUiClayStartPointerCapture(
         .node = target->node,
         .action = target->action,
         .payload = target->payload,
-        .start_x = pointer.x,
-        .start_y = pointer.y,
+        .scale = target->scale,
+        .start_x = EcsUiClayLogicalPointerValue(pointer.x, target->scale),
+        .start_y = EcsUiClayLogicalPointerValue(pointer.y, target->scale),
+        .physical_start_x = pointer.x,
+        .physical_start_y = pointer.y,
         .start_time = pointer.time,
         .button = button,
     };
@@ -2488,16 +2498,18 @@ static void EcsUiClayPushCapturedPointerEvent(
 
     float elapsed = (float)(pointer.time - capture->start_time);
     elapsed = EcsUiClayMaxFloat(elapsed, 0.001f);
-    const float delta_x = pointer.x - capture->start_x;
-    const float delta_y = pointer.y - capture->start_y;
+    const float x = EcsUiClayLogicalPointerValue(pointer.x, capture->scale);
+    const float y = EcsUiClayLogicalPointerValue(pointer.y, capture->scale);
+    const float delta_x = x - capture->start_x;
+    const float delta_y = y - capture->start_y;
     EcsUiEvent event = {
         .type = type,
         .tree = capture->tree,
         .node = capture->node,
         .action = capture->action,
         .payload = capture->payload,
-        .x = pointer.x,
-        .y = pointer.y,
+        .x = x,
+        .y = y,
         .start_x = capture->start_x,
         .start_y = capture->start_y,
         .delta_x = delta_x,
@@ -2651,8 +2663,8 @@ void EcsUiClayCollectFrameEvents(
                 const bool did_drag =
                     EcsUiClayDistanceSquared(
                         pointer,
-                        capture->start_x,
-                        capture->start_y) > 36.0f;
+                        capture->physical_start_x,
+                        capture->physical_start_y) > 36.0f;
                 const bool click_eligible = captured_target->inside;
                 EcsUiClayPushCapturedPointerEvent(
                     events,

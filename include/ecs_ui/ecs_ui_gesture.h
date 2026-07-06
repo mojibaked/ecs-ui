@@ -28,6 +28,7 @@ typedef enum EcsUiGestureKind {
     ECS_UI_GESTURE_KIND_PRESS = 2,
 } EcsUiGestureKind;
 
+/* Public gesture coordinates are logical, window-origin units. */
 typedef struct EcsUiPointerSample {
     float x;
     float y;
@@ -45,6 +46,7 @@ typedef struct EcsUiPanRecognizerDesc {
     float threshold;
 } EcsUiPanRecognizerDesc;
 
+/* Press recognizer bounds are logical, window-origin units. */
 typedef struct EcsUiPressRecognizerDesc {
     ecs_entity_t target;
     bool enabled;
@@ -72,6 +74,7 @@ typedef struct EcsUiGestureArena {
     double last_time;
 } EcsUiGestureArena;
 
+/* Gesture event coordinates, deltas, and velocities use logical units. */
 typedef struct EcsUiGestureEvent {
     EcsUiGestureEventType type;
     ecs_entity_t target;

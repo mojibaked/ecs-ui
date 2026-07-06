@@ -141,6 +141,15 @@ typedef struct EcsUiActionPayload {
     uint64_t value;
 } EcsUiActionPayload;
 
+/*
+ * Coordinate contract:
+ *
+ * Public ecs-ui data is authored and snapshotted in logical units. This covers
+ * placement offsets/sizes, preferred sizes, padding/gaps, visual offsets, text
+ * sizes, and EcsUiEvent pointer coordinates. Event coordinates are
+ * window-origin logical units. Render bridges are the boundary that convert
+ * logical values to physical pixels using the root EcsUiScale.
+ */
 typedef struct EcsUiScale {
     float value;
 } EcsUiScale;
@@ -149,6 +158,7 @@ typedef struct EcsUiNode {
     EcsUiNodeKind kind;
 } EcsUiNode;
 
+/* Stack layout values are logical units. */
 typedef struct EcsUiStack {
     EcsUiAxis axis;
     float gap;
@@ -187,6 +197,7 @@ typedef struct EcsUiTheme {
     float radius;
 } EcsUiTheme;
 
+/* Radius, padding, and border widths are logical units. */
 typedef struct EcsUiBoxStyle {
     EcsUiColor background;
     EcsUiColor hover_background;
@@ -219,6 +230,7 @@ typedef struct EcsUiTextStyle {
     EcsUiColor color;
     EcsUiColor muted_color;
     EcsUiColor disabled_color;
+    /* Font sizes are logical units and are scaled only by render bridges. */
     float body_size;
     float title_size;
     float label_size;
@@ -231,6 +243,7 @@ typedef struct EcsUiTextLayout {
     EcsUiAlign align_y;
 } EcsUiTextLayout;
 
+/* Preferred button size values are logical units. */
 typedef struct EcsUiButton {
     EcsUiButtonVariant variant;
     float preferred_width;
@@ -238,6 +251,7 @@ typedef struct EcsUiButton {
     bool disabled;
 } EcsUiButton;
 
+/* Preferred pressable height is a logical unit. */
 typedef struct EcsUiPressable {
     float preferred_height;
     bool disabled;
@@ -252,6 +266,7 @@ typedef struct EcsUiIcon {
     char name[ECS_UI_ID_MAX];
 } EcsUiIcon;
 
+/* Preferred custom size values are logical units. */
 typedef struct EcsUiCustom {
     char kind[ECS_UI_ID_MAX];
     float preferred_width;
@@ -260,6 +275,7 @@ typedef struct EcsUiCustom {
     EcsUiSizing height_sizing;
 } EcsUiCustom;
 
+/* Visual offsets are logical units; opacity/highlight are unit intervals. */
 typedef struct EcsUiVisual {
     float opacity;
     float offset_x;
@@ -267,6 +283,7 @@ typedef struct EcsUiVisual {
     float highlight;
 } EcsUiVisual;
 
+/* Placement offsets and sizes are logical, relative to the parent layout box. */
 typedef struct EcsUiPlacement {
     EcsUiAlign parent_x;
     EcsUiAlign parent_y;
@@ -296,6 +313,7 @@ typedef struct EcsUiTextFieldView {
     bool disabled;
 } EcsUiTextFieldView;
 
+/* Stack descriptor layout values are logical units. */
 typedef struct EcsUiStackDesc {
     const char *id;
     uint64_t key;
@@ -321,6 +339,7 @@ typedef struct EcsUiScrollViewDesc {
     uint32_t axes;
 } EcsUiScrollViewDesc;
 
+/* Button descriptor preferred size values are logical units. */
 typedef struct EcsUiButtonDesc {
     const char *id;
     uint64_t key;
@@ -333,6 +352,7 @@ typedef struct EcsUiButtonDesc {
     float preferred_height;
 } EcsUiButtonDesc;
 
+/* Pressable descriptor preferred height is a logical unit. */
 typedef struct EcsUiPressableDesc {
     const char *id;
     uint64_t key;
@@ -356,6 +376,7 @@ typedef struct EcsUiIconDesc {
     const char *name;
 } EcsUiIconDesc;
 
+/* Custom descriptor preferred size values are logical units. */
 typedef struct EcsUiCustomDesc {
     const char *id;
     uint64_t key;
@@ -428,6 +449,7 @@ typedef struct EcsUiBuilder {
     bool failed;
 } EcsUiBuilder;
 
+/* Snapshot values are logical copies of public ECS UI state. */
 typedef struct EcsUiTreeNodeSnapshot {
     ecs_entity_t entity;
     ecs_entity_t parent;
@@ -465,6 +487,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     bool hover_within;
 } EcsUiTreeNodeSnapshot;
 
+/* `scale` is the root logical-to-physical factor used by render bridges. */
 typedef struct EcsUiTreeSnapshot {
     ecs_entity_t root;
     float scale;
@@ -473,6 +496,7 @@ typedef struct EcsUiTreeSnapshot {
     EcsUiTreeNodeSnapshot nodes[ECS_UI_TREE_NODE_MAX];
 } EcsUiTreeSnapshot;
 
+/* Pointer coordinates are window-origin logical units after bridge conversion. */
 typedef struct EcsUiEvent {
     EcsUiEventType type;
     ecs_entity_t tree;

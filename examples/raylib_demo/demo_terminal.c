@@ -105,13 +105,14 @@ ecs_entity_t DemoTerminalBuildPreview(
 
 void DemoTerminalDrawCustom(
     const EcsUiTreeNodeSnapshot *node,
-    Rectangle bounds,
+    const EcsUiRaylibRenderContext *context,
     float opacity,
     void *user_data)
 {
-    if (node == NULL) {
+    if (node == NULL || context == NULL) {
         return;
     }
+    const Rectangle bounds = context->physical_bounds;
 
     /*
      * One callback handles multiple custom kinds. The drag handle is an

@@ -57,6 +57,28 @@ static Rectangle EcsUiClayRaylibRect(Clay_BoundingBox bounds)
     };
 }
 
+static EcsUiRaylibRenderContext EcsUiClayRaylibRenderContext(
+    Rectangle bounds,
+    const EcsUiClayRaylibRenderOptions *options)
+{
+    const float scale =
+        options != NULL && options->scale > 0.0f ? options->scale : 1.0f;
+    const Rectangle root_bounds =
+        options != NULL ? options->physical_root_bounds : (Rectangle){0};
+    const Vector2 logical_origin = options != NULL ?
+        options->logical_origin :
+        (Vector2){
+            .x = root_bounds.x / scale,
+            .y = root_bounds.y / scale,
+        };
+    return (EcsUiRaylibRenderContext){
+        .physical_bounds = bounds,
+        .physical_root_bounds = root_bounds,
+        .logical_origin = logical_origin,
+        .scale = scale,
+    };
+}
+
 Clay_Dimensions EcsUiClayRaylibMeasureText(
     Clay_StringSlice text,
     Clay_TextElementConfig *config,
@@ -225,9 +247,11 @@ void EcsUiClayRaylibRenderEx(
             if (node != NULL && node->kind != ECS_UI_NODE_CUSTOM &&
                 node->has_nine_slice_style) {
                 if (options != NULL && options->nine_slice_draw != NULL) {
+                    const EcsUiRaylibRenderContext context =
+                        EcsUiClayRaylibRenderContext(bounds, options);
                     options->nine_slice_draw(
                         node,
-                        bounds,
+                        &context,
                         opacity,
                         options->user_data);
                 }
@@ -235,24 +259,30 @@ void EcsUiClayRaylibRenderEx(
             }
             if (node != NULL && node->kind == ECS_UI_NODE_ICON) {
                 if (options != NULL && options->icon_draw != NULL) {
+                    const EcsUiRaylibRenderContext context =
+                        EcsUiClayRaylibRenderContext(bounds, options);
                     options->icon_draw(
                         node,
-                        bounds,
+                        &context,
                         opacity,
                         options->user_data);
                 } else if (options != NULL && options->custom_draw != NULL) {
+                    const EcsUiRaylibRenderContext context =
+                        EcsUiClayRaylibRenderContext(bounds, options);
                     options->custom_draw(
                         node,
-                        bounds,
+                        &context,
                         opacity,
                         options->user_data);
                 }
                 break;
             }
             if (options != NULL && options->custom_draw != NULL) {
+                const EcsUiRaylibRenderContext context =
+                    EcsUiClayRaylibRenderContext(bounds, options);
                 options->custom_draw(
                     node,
-                    bounds,
+                    &context,
                     opacity,
                     options->user_data);
             } else {

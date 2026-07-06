@@ -39,6 +39,37 @@ static float EcsUiRaylibClampPositive(float value)
     return value > 0.0f ? value : 0.0f;
 }
 
+static float EcsUiRaylibScaleForTree(const EcsUiTreeSnapshot *tree)
+{
+    return tree != NULL && tree->scale > 0.0f ? tree->scale : 1.0f;
+}
+
+static Vector2 EcsUiRaylibLogicalPoint(Vector2 physical, float scale)
+{
+    const float normalized_scale = scale > 0.0f ? scale : 1.0f;
+    return (Vector2){
+        .x = physical.x / normalized_scale,
+        .y = physical.y / normalized_scale,
+    };
+}
+
+static EcsUiRaylibRenderContext EcsUiRaylibMakeRenderContext(
+    const EcsUiTreeSnapshot *tree,
+    Rectangle physical_root_bounds,
+    Rectangle physical_bounds)
+{
+    const float scale = EcsUiRaylibScaleForTree(tree);
+    return (EcsUiRaylibRenderContext){
+        .physical_bounds = physical_bounds,
+        .physical_root_bounds = physical_root_bounds,
+        .logical_origin = {
+            .x = physical_root_bounds.x / scale,
+            .y = physical_root_bounds.y / scale,
+        },
+        .scale = scale,
+    };
+}
+
 static float EcsUiRaylibClamp01(float value)
 {
     if (value < 0.0f) {
@@ -155,6 +186,8 @@ typedef struct EcsUiRaylibPointerCapture {
     uint64_t payload;
     char node_id[ECS_UI_ID_MAX];
     Vector2 start;
+    Vector2 logical_start;
+    float scale;
     double start_time;
     EcsUiPointerButton button;
 } EcsUiRaylibPointerCapture;
@@ -442,6 +475,8 @@ static bool EcsUiRaylibHasNineSlice(const EcsUiTreeNodeSnapshot *node)
 }
 
 static void EcsUiRaylibDrawNineSliceBackground(
+    const EcsUiTreeSnapshot *tree,
+    Rectangle physical_root_bounds,
     Rectangle bounds,
     const EcsUiTreeNodeSnapshot *node,
     float opacity,
@@ -451,7 +486,9 @@ static void EcsUiRaylibDrawNineSliceBackground(
         options->nine_slice_draw == NULL) {
         return;
     }
-    options->nine_slice_draw(node, bounds, opacity, options->user_data);
+    const EcsUiRaylibRenderContext context =
+        EcsUiRaylibMakeRenderContext(tree, physical_root_bounds, bounds);
+    options->nine_slice_draw(node, &context, opacity, options->user_data);
 }
 
 static bool EcsUiRaylibHasBevel(const EcsUiTreeNodeSnapshot *node)
@@ -996,6 +1033,7 @@ static void EcsUiRaylibDrawNode(
     const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1008,6 +1046,7 @@ static void EcsUiRaylibDrawChildrenVertical(
     const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1037,6 +1076,7 @@ static void EcsUiRaylibDrawChildrenVertical(
             theme,
             options,
             child,
+            root_bounds,
             child_bounds,
             inverse_text,
             text_style,
@@ -1053,6 +1093,7 @@ static void EcsUiRaylibDrawChildrenHorizontal(
     const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1102,6 +1143,7 @@ static void EcsUiRaylibDrawChildrenHorizontal(
             theme,
             options,
             child,
+            root_bounds,
             child_bounds,
             inverse_text,
             text_style,
@@ -1118,6 +1160,7 @@ static void EcsUiRaylibDrawNode(
     const EcsUiTheme *theme,
     const EcsUiRaylibDrawOptions *options,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     bool inverse_text,
     EcsUiTextStyle text_style,
@@ -1144,6 +1187,8 @@ static void EcsUiRaylibDrawNode(
     case ECS_UI_NODE_ROOT:
         if (EcsUiRaylibHasNineSlice(node)) {
             EcsUiRaylibDrawNineSliceBackground(
+                tree,
+                root_bounds,
                 node_bounds,
                 node,
                 node_opacity,
@@ -1160,6 +1205,7 @@ static void EcsUiRaylibDrawNode(
             theme,
             options,
             index,
+            root_bounds,
             EcsUiRaylibInsetStack(node_bounds, node),
             inverse_text,
             node_text_style,
@@ -1170,6 +1216,8 @@ static void EcsUiRaylibDrawNode(
         break;
     case ECS_UI_NODE_VSTACK:
         EcsUiRaylibDrawNineSliceBackground(
+            tree,
+            root_bounds,
             node_bounds,
             node,
             node_opacity,
@@ -1180,6 +1228,7 @@ static void EcsUiRaylibDrawNode(
             theme,
             options,
             index,
+            root_bounds,
             EcsUiRaylibInsetStack(node_bounds, node),
             inverse_text,
             node_text_style,
@@ -1190,6 +1239,8 @@ static void EcsUiRaylibDrawNode(
         break;
     case ECS_UI_NODE_HSTACK:
         EcsUiRaylibDrawNineSliceBackground(
+            tree,
+            root_bounds,
             node_bounds,
             node,
             node_opacity,
@@ -1200,6 +1251,7 @@ static void EcsUiRaylibDrawNode(
             theme,
             options,
             index,
+            root_bounds,
             EcsUiRaylibInsetStack(node_bounds, node),
             inverse_text,
             node_text_style,
@@ -1210,6 +1262,8 @@ static void EcsUiRaylibDrawNode(
         break;
     case ECS_UI_NODE_ZSTACK: {
         EcsUiRaylibDrawNineSliceBackground(
+            tree,
+            root_bounds,
             node_bounds,
             node,
             node_opacity,
@@ -1225,6 +1279,7 @@ static void EcsUiRaylibDrawNode(
                 theme,
                 options,
                 child,
+                root_bounds,
                 child_bounds,
                 inverse_text,
                 node_text_style,
@@ -1250,6 +1305,8 @@ static void EcsUiRaylibDrawNode(
             EcsUiRaylibClamp01(node->visual.highlight) * 0.42f);
         if (EcsUiRaylibHasNineSlice(node)) {
             EcsUiRaylibDrawNineSliceBackground(
+                tree,
+                root_bounds,
                 node_bounds,
                 node,
                 node_opacity,
@@ -1267,6 +1324,7 @@ static void EcsUiRaylibDrawNode(
             theme,
             options,
             index,
+            root_bounds,
             inner,
             node->button.variant == ECS_UI_BUTTON_PRIMARY,
             node_text_style,
@@ -1283,6 +1341,8 @@ static void EcsUiRaylibDrawNode(
         Color fill = EcsUiRaylibPressableColor(theme, node, hovered);
         if (EcsUiRaylibHasNineSlice(node)) {
             EcsUiRaylibDrawNineSliceBackground(
+                tree,
+                root_bounds,
                 node_bounds,
                 node,
                 node_opacity,
@@ -1313,6 +1373,7 @@ static void EcsUiRaylibDrawNode(
                 theme,
                 options,
                 index,
+                root_bounds,
                 inner,
                 false,
                 node_text_style,
@@ -1343,9 +1404,11 @@ static void EcsUiRaylibDrawNode(
         break;
     case ECS_UI_NODE_ICON:
         if (options != NULL && options->icon_draw != NULL) {
+            const EcsUiRaylibRenderContext context =
+                EcsUiRaylibMakeRenderContext(tree, root_bounds, node_bounds);
             options->icon_draw(
                 node,
-                node_bounds,
+                &context,
                 node_opacity,
                 options->user_data);
         } else {
@@ -1367,14 +1430,18 @@ static void EcsUiRaylibDrawNode(
         break;
     case ECS_UI_NODE_CUSTOM:
         EcsUiRaylibDrawNineSliceBackground(
+            tree,
+            root_bounds,
             node_bounds,
             node,
             node_opacity,
             options);
         if (options != NULL && options->custom_draw != NULL) {
+            const EcsUiRaylibRenderContext context =
+                EcsUiRaylibMakeRenderContext(tree, root_bounds, node_bounds);
             options->custom_draw(
                 node,
-                node_bounds,
+                &context,
                 node_opacity,
                 options->user_data);
         } else if (!EcsUiRaylibHasNineSlice(node)) {
@@ -1696,6 +1763,7 @@ static void EcsUiRaylibPushPointerEventWithAction(
     const EcsUiTreeNodeSnapshot *node,
     EcsUiEventType type,
     Vector2 point,
+    float scale,
     ecs_entity_t action,
     EcsUiPointerButton button)
 {
@@ -1703,15 +1771,16 @@ static void EcsUiRaylibPushPointerEventWithAction(
         return;
     }
 
+    const Vector2 logical_point = EcsUiRaylibLogicalPoint(point, scale);
     EcsUiEvent event = {
         .type = type,
         .node = node->entity,
         .action = action,
         .payload = node->payload,
-        .x = point.x,
-        .y = point.y,
-        .start_x = point.x,
-        .start_y = point.y,
+        .x = logical_point.x,
+        .y = logical_point.y,
+        .start_x = logical_point.x,
+        .start_y = logical_point.y,
         .button = button,
     };
     (void)snprintf(event.node_id, sizeof(event.node_id), "%s", node->id);
@@ -1722,13 +1791,15 @@ static void EcsUiRaylibPushPointerEvent(
     EcsUiEventList *events,
     const EcsUiTreeNodeSnapshot *node,
     EcsUiEventType type,
-    Vector2 point)
+    Vector2 point,
+    float scale)
 {
     EcsUiRaylibPushPointerEventWithAction(
         events,
         node,
         type,
         point,
+        scale,
         node != NULL ? node->on_click : 0,
         ECS_UI_POINTER_BUTTON_PRIMARY);
 }
@@ -1736,18 +1807,22 @@ static void EcsUiRaylibPushPointerEvent(
 static void EcsUiRaylibStartPointerCapture(
     const EcsUiTreeNodeSnapshot *node,
     Vector2 point,
+    float scale,
     EcsUiPointerButton button)
 {
     if (node == NULL) {
         return;
     }
 
+    const Vector2 logical_point = EcsUiRaylibLogicalPoint(point, scale);
     g_ecs_ui_raylib_pointer_capture = (EcsUiRaylibPointerCapture){
         .active = true,
         .node = node->entity,
         .action = node->on_click,
         .payload = node->payload,
         .start = point,
+        .logical_start = logical_point,
+        .scale = scale > 0.0f ? scale : 1.0f,
         .start_time = GetTime(),
         .button = button,
     };
@@ -1771,17 +1846,19 @@ static void EcsUiRaylibPushCapturedPointerEvent(
 
     const float elapsed =
         (float)EcsUiRaylibMaxFloat((float)(GetTime() - capture->start_time), 0.001f);
-    const float delta_x = point.x - capture->start.x;
-    const float delta_y = point.y - capture->start.y;
+    const Vector2 logical_point =
+        EcsUiRaylibLogicalPoint(point, capture->scale);
+    const float delta_x = logical_point.x - capture->logical_start.x;
+    const float delta_y = logical_point.y - capture->logical_start.y;
     EcsUiEvent event = {
         .type = type,
         .node = capture->node,
         .action = capture->action,
         .payload = capture->payload,
-        .x = point.x,
-        .y = point.y,
-        .start_x = capture->start.x,
-        .start_y = capture->start.y,
+        .x = logical_point.x,
+        .y = logical_point.y,
+        .start_x = capture->logical_start.x,
+        .start_y = capture->logical_start.y,
         .delta_x = delta_x,
         .delta_y = delta_y,
         .elapsed = elapsed,
@@ -1930,6 +2007,7 @@ static void EcsUiRaylibCollectPointerEvents(
         return;
     }
 
+    const float scale = EcsUiRaylibScaleForTree(tree);
     const Vector2 point = GetMousePosition();
     if (g_ecs_ui_raylib_pointer_capture.active) {
         if (EcsUiRaylibMouseButtonDown(g_ecs_ui_raylib_pointer_capture.button)) {
@@ -1970,23 +2048,42 @@ static void EcsUiRaylibCollectPointerEvents(
         return;
     }
 
-    EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_HOVERED, point);
+    EcsUiRaylibPushPointerEvent(
+        events,
+        node,
+        ECS_UI_EVENT_HOVERED,
+        point,
+        scale);
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
         EcsUiRaylibPushPointerEventWithAction(
             events,
             node,
             ECS_UI_EVENT_SECONDARY_PRESSED,
             point,
+            scale,
             node->on_click,
             ECS_UI_POINTER_BUTTON_SECONDARY);
-        EcsUiRaylibStartPointerCapture(node, point, ECS_UI_POINTER_BUTTON_SECONDARY);
+        EcsUiRaylibStartPointerCapture(
+            node,
+            point,
+            scale,
+            ECS_UI_POINTER_BUTTON_SECONDARY);
         EcsUiRaylibPushCapturedPointerEvent(
             events,
             ECS_UI_EVENT_DRAG_STARTED,
             point);
     } else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        EcsUiRaylibPushPointerEvent(events, node, ECS_UI_EVENT_PRESSED, point);
-        EcsUiRaylibStartPointerCapture(node, point, ECS_UI_POINTER_BUTTON_PRIMARY);
+        EcsUiRaylibPushPointerEvent(
+            events,
+            node,
+            ECS_UI_EVENT_PRESSED,
+            point,
+            scale);
+        EcsUiRaylibStartPointerCapture(
+            node,
+            point,
+            scale,
+            ECS_UI_POINTER_BUTTON_PRIMARY);
         EcsUiRaylibPushCapturedPointerEvent(
             events,
             ECS_UI_EVENT_DRAG_STARTED,
@@ -2017,6 +2114,7 @@ void EcsUiRaylibDrawTreeEx(
         theme,
         options,
         0u,
+        bounds,
         bounds,
         false,
         (EcsUiTextStyle){0},

@@ -11,6 +11,11 @@ extern "C" {
 
 #define ECS_UI_CLAY_INTERACTION_TARGET_MAX 4096u
 
+/*
+ * Clay bridge inputs are physical pixels. `bounds` positions the tree's physical
+ * root box in window coordinates; emitted EcsUiEvent pointer coordinates are
+ * converted back to window-origin logical units with the tree scale.
+ */
 typedef struct EcsUiClayLayoutOptions {
     Clay_BoundingBox bounds;
     Clay_FloatingAttachPoints attach_points;
@@ -18,6 +23,7 @@ typedef struct EcsUiClayLayoutOptions {
     bool capture_pointer;
 } EcsUiClayLayoutOptions;
 
+/* Physical window pointer state consumed by the Clay bridge. */
 typedef struct EcsUiClayPointerState {
     float x;
     float y;
@@ -41,6 +47,7 @@ typedef struct EcsUiClayInteractionTarget {
     uint32_t node_index;
     uint32_t emit_order;
     uint32_t depth;
+    float scale;
     bool area;
     bool pressable;
     bool blocking;
@@ -55,8 +62,13 @@ typedef struct EcsUiClayPointerCapture {
     ecs_entity_t action;
     uint64_t payload;
     char node_id[ECS_UI_ID_MAX];
+    float scale;
+    /* Logical start coordinates for emitted drag events. */
     float start_x;
     float start_y;
+    /* Physical start coordinates kept for bridge drag-threshold tests. */
+    float physical_start_x;
+    float physical_start_y;
     double start_time;
     EcsUiPointerButton button;
 } EcsUiClayPointerCapture;
@@ -103,6 +115,11 @@ void EcsUiClayEmitTreeEx(
     const EcsUiTheme *theme,
     const EcsUiClayLayoutOptions *options,
     EcsUiClayInteractionFrame *frame);
+/*
+ * `pointer` is physical window input matching Clay's pointer state. The emitted
+ * EcsUiEvent coordinates, starts, deltas, and velocities are logical,
+ * window-origin values divided by the owning tree's scale.
+ */
 void EcsUiClayCollectFrameEvents(
     EcsUiClayInteractionFrame *frame,
     EcsUiClayPointerState pointer,
