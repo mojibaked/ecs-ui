@@ -22,6 +22,71 @@ static int Require(bool condition, const char *message)
     return 0;
 }
 
+typedef void (*EcsUiRaylibTestEventWaitingFn)(void);
+
+void EcsUiRaylibTestSetEventWaitingFns(
+    EcsUiRaylibTestEventWaitingFn enable_event_waiting,
+    EcsUiRaylibTestEventWaitingFn disable_event_waiting);
+
+typedef struct EventWaitingTrace {
+    char order[64];
+    uint32_t count;
+    bool enabled;
+} EventWaitingTrace;
+
+static EventWaitingTrace event_waiting_trace;
+
+static void EventWaitingTraceReset(void)
+{
+    event_waiting_trace = (EventWaitingTrace){0};
+}
+
+static void EventWaitingTraceAppend(char c)
+{
+    if (event_waiting_trace.count + 1u < sizeof(event_waiting_trace.order)) {
+        event_waiting_trace.order[event_waiting_trace.count] = c;
+        event_waiting_trace.count += 1u;
+        event_waiting_trace.order[event_waiting_trace.count] = '\0';
+    }
+}
+
+static void EventWaitingEnable(void)
+{
+    event_waiting_trace.enabled = true;
+    EventWaitingTraceAppend('E');
+}
+
+static void EventWaitingDisable(void)
+{
+    event_waiting_trace.enabled = false;
+    EventWaitingTraceAppend('D');
+}
+
+typedef struct EventWaitingStepCtx {
+    uint32_t present_calls;
+    uint32_t park_calls;
+    bool present_saw_enabled;
+    bool park_saw_disabled;
+} EventWaitingStepCtx;
+
+static bool EventWaitingPresent(void *ctx)
+{
+    EventWaitingStepCtx *step = (EventWaitingStepCtx *)ctx;
+    step->present_calls += 1u;
+    step->present_saw_enabled =
+        step->present_saw_enabled || event_waiting_trace.enabled;
+    return false;
+}
+
+static bool EventWaitingPark(void *ctx)
+{
+    EventWaitingStepCtx *step = (EventWaitingStepCtx *)ctx;
+    step->park_calls += 1u;
+    step->park_saw_disabled =
+        step->park_saw_disabled || !event_waiting_trace.enabled;
+    return false;
+}
+
 #if !defined(_WIN32)
 static uint64_t TestMonotonicNs(void)
 {
@@ -456,6 +521,160 @@ static int TestStepSkipsRenderForParkAndPresentOnly(void)
     EcsUiFrameSignalAccumulatorDestroy(signals);
     return result;
 }
+
+#if !defined(_WIN32)
+static int TestStepOwnsEventWaitingToggle(void)
+{
+    int result = 0;
+    TestPostCtx post = {0};
+    EcsUiRaylibParker *parker = TestCreateParker(&post);
+    EcsUiFrameSignalAccumulator *signals =
+        EcsUiFrameSignalAccumulatorCreate();
+    EcsUiWakeRegistry *registry = EcsUiWakeRegistryCreate();
+    EcsUiWakeHandle pending =
+        EcsUiWakeRegisterPending(registry, "attach.reply");
+    EcsUiRaylibStepState state;
+    EcsUiRaylibStepResult step = {0};
+    EcsUiFrameClassifyResult seed = {0};
+    EventWaitingStepCtx ctx = {0};
+
+    EcsUiRaylibTestSetEventWaitingFns(
+        EventWaitingEnable,
+        EventWaitingDisable);
+    EventWaitingTraceReset();
+    EcsUiRaylibStepStateInit(&state);
+    result |= Require(parker != NULL, "event waiting parker missing");
+    result |= Require(
+        EcsUiWakeHandleIsValid(pending),
+        "event waiting pending handle missing");
+    result |= Require(
+        EcsUiFrameClassify(signals, NULL, &seed),
+        "event waiting seed classify failed");
+
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .parker = parker,
+                .now_ns = TestMonotonicNs(),
+                .dt = 0.016,
+                .enable_event_waiting = true,
+                .hooks = {
+                    .present = EventWaitingPresent,
+                    .park = EventWaitingPark,
+                    .ctx = &ctx,
+                },
+            },
+            &step),
+        "event waiting park step failed");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PARK &&
+            step.park_armed &&
+            ctx.park_calls == 1u &&
+            !ctx.park_saw_disabled &&
+            !event_waiting_trace.enabled &&
+            strcmp(event_waiting_trace.order, "DED") == 0,
+        "event waiting park toggle mismatch");
+
+    result |= Require(
+        EcsUiWakeSetPending(registry, pending, true),
+        "event waiting pending set failed");
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .parker = parker,
+                .now_ns = TestMonotonicNs(),
+                .dt = 0.016,
+                .enable_event_waiting = true,
+                .hooks = {
+                    .present = EventWaitingPresent,
+                    .park = EventWaitingPark,
+                    .ctx = &ctx,
+                },
+            },
+            &step),
+        "event waiting hot step failed");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PRESENT_ONLY &&
+            step.frame_reason.kind == ECS_UI_FRAME_REASON_WAKE_HOT &&
+            strcmp(step.frame_reason.label, "attach.reply") == 0 &&
+            ctx.present_calls == 1u &&
+            !ctx.present_saw_enabled &&
+            ctx.park_calls == 1u &&
+            !event_waiting_trace.enabled &&
+            strcmp(event_waiting_trace.order, "DEDD") == 0,
+        "event waiting hot frame should stay nonblocking");
+
+    result |= Require(
+        EcsUiWakeSetPending(registry, pending, false),
+        "event waiting pending clear failed");
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .parker = parker,
+                .now_ns = TestMonotonicNs(),
+                .dt = 0.016,
+                .enable_event_waiting = true,
+                .hooks = {
+                    .present = EventWaitingPresent,
+                    .park = EventWaitingPark,
+                    .ctx = &ctx,
+                },
+            },
+            &step),
+        "event waiting second park step failed");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PARK &&
+            step.park_armed &&
+            ctx.park_calls == 2u &&
+            !ctx.park_saw_disabled &&
+            !event_waiting_trace.enabled &&
+            strcmp(event_waiting_trace.order, "DEDDDED") == 0,
+        "event waiting park restoration mismatch");
+
+    EventWaitingTraceReset();
+    ctx = (EventWaitingStepCtx){0};
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .parker = parker,
+                .now_ns = TestMonotonicNs(),
+                .dt = 0.016,
+                .enable_event_waiting = false,
+                .hooks = {
+                    .park = EventWaitingPark,
+                    .ctx = &ctx,
+                },
+            },
+            &step),
+        "event waiting disabled park step failed");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PARK &&
+            step.park_armed &&
+            ctx.park_calls == 1u &&
+            ctx.park_saw_disabled &&
+            !event_waiting_trace.enabled &&
+            strcmp(event_waiting_trace.order, "D") == 0,
+        "disabled event waiting should keep park nonblocking");
+
+    EcsUiRaylibTestSetEventWaitingFns(NULL, NULL);
+    EcsUiRaylibParkerDestroy(parker);
+    EcsUiWakeRegistryDestroy(registry);
+    EcsUiFrameSignalAccumulatorDestroy(signals);
+    return result;
+}
+#endif
 
 static int TestCapabilityDisabledIsVisible(void)
 {
@@ -1022,6 +1241,9 @@ int main(void)
     int result = 0;
     result |= TestStepPhaseOrdering();
     result |= TestStepSkipsRenderForParkAndPresentOnly();
+#if !defined(_WIN32)
+    result |= TestStepOwnsEventWaitingToggle();
+#endif
     result |= TestCapabilityDisabledIsVisible();
     result |= TestRunLifecycle();
     result |= TestStatsFrameReasonsAndActiveLabels();

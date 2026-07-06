@@ -85,14 +85,16 @@ typedef struct EcsUiRaylibStepHooks {
     EcsUiRaylibStepHook post_blit_screenshot;
     /*
      * Called after render/screenshot when the frame is presented. Raylib users
-     * normally put EndDrawing here so Step can arm park before the backend
-     * reaches raylib's event-waiting point.
+     * normally put EndDrawing here; Step keeps raylib event waiting disabled
+     * around this hook so non-park frames cannot block in EndDrawing.
      */
     EcsUiRaylibStepHook present;
     EcsUiRaylibStepHook after_present_cleanup;
     /*
-     * Called after a PARK frame arms the parker. Raylib users should enter the
-     * backend wait here. With default raylib frame control this usually means a
+     * Called after a PARK frame arms the parker. If enable_event_waiting is
+     * true, Step enables raylib event waiting immediately before this hook and
+     * disables it again before returning. Raylib users should enter the backend
+     * wait here. With default raylib frame control this usually means a
      * BeginDrawing/EndDrawing pair, optionally redrawing cached/current content
      * before EndDrawing if the app does not have a presentation cache.
      */
@@ -106,6 +108,12 @@ typedef struct EcsUiRaylibStepDesc {
     EcsUiRaylibParker *parker;
     uint64_t now_ns;
     double dt;
+    /*
+     * Master switch for raylib event waiting in this step. Non-park frames are
+     * always forced nonblocking; true only permits Step to enable event waiting
+     * around an armed PARK hook.
+     */
+    bool enable_event_waiting;
     bool present_when_clean;
     const char *present_policy_label;
     EcsUiRaylibStepHooks hooks;
@@ -178,8 +186,9 @@ typedef struct EcsUiRaylibRunConfig {
     const char *present_policy_label;
     /*
      * Run expects the caller to own InitWindow/CloseWindow. When true, Run
-     * enables raylib event waiting for the duration of the loop and disables it
-     * before returning.
+     * allows Step to enable raylib event waiting only around armed PARK frames.
+     * Render and present-only frames remain nonblocking. When false, Step keeps
+     * raylib event waiting disabled for every phase.
      */
     bool enable_event_waiting;
 } EcsUiRaylibRunConfig;

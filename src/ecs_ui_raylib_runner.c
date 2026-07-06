@@ -24,6 +24,17 @@
 #define ECS_UI_RAYLIB_CAPABILITY_LABEL "glfwPostEmptyEvent unavailable"
 #define ECS_UI_RAYLIB_STATS_WINDOW_NS 1000000000u
 
+typedef void (*EcsUiRaylibEventWaitingFn)(void);
+
+void EcsUiRaylibTestSetEventWaitingFns(
+    EcsUiRaylibEventWaitingFn enable_event_waiting,
+    EcsUiRaylibEventWaitingFn disable_event_waiting);
+
+static EcsUiRaylibEventWaitingFn ecs_ui_raylib_enable_event_waiting_fn =
+    EnableEventWaiting;
+static EcsUiRaylibEventWaitingFn ecs_ui_raylib_disable_event_waiting_fn =
+    DisableEventWaiting;
+
 struct EcsUiRaylibParker {
     EcsUiRaylibParkerCapabilities capabilities;
     EcsUiRaylibPostEmptyEventFn post_empty_event;
@@ -45,6 +56,29 @@ struct EcsUiRaylibParker {
     char pending_post_label[ECS_UI_ID_MAX];
 #endif
 };
+
+void EcsUiRaylibTestSetEventWaitingFns(
+    EcsUiRaylibEventWaitingFn enable_event_waiting,
+    EcsUiRaylibEventWaitingFn disable_event_waiting)
+{
+    ecs_ui_raylib_enable_event_waiting_fn =
+        enable_event_waiting != NULL ?
+            enable_event_waiting :
+            EnableEventWaiting;
+    ecs_ui_raylib_disable_event_waiting_fn =
+        disable_event_waiting != NULL ?
+            disable_event_waiting :
+            DisableEventWaiting;
+}
+
+static void EcsUiRaylibSetEventWaiting(bool enabled)
+{
+    if (enabled) {
+        ecs_ui_raylib_enable_event_waiting_fn();
+    } else {
+        ecs_ui_raylib_disable_event_waiting_fn();
+    }
+}
 
 static void EcsUiRaylibCopyLabel(
     char *out,
@@ -1166,6 +1200,7 @@ bool EcsUiRaylibStep(
     *out = (EcsUiRaylibStepResult){0};
     state->counters.steps += 1u;
     EcsUiRaylibStatsEnsureWindow(&state->stats, desc->now_ns);
+    EcsUiRaylibSetEventWaiting(false);
 
     bool immediate = false;
     void *ctx = desc->hooks.ctx;
@@ -1259,8 +1294,14 @@ bool EcsUiRaylibStep(
                 ECS_UI_RAYLIB_STATS_PARKED);
             out->park_armed = true;
             const uint64_t blocked_start_ns = EcsUiRaylibNowNs();
+            if (desc->enable_event_waiting) {
+                EcsUiRaylibSetEventWaiting(true);
+            }
             immediate =
                 EcsUiRaylibStepRunHook(desc->hooks.park, ctx) || immediate;
+            if (desc->enable_event_waiting) {
+                EcsUiRaylibSetEventWaiting(false);
+            }
             const uint64_t blocked_end_ns = EcsUiRaylibNowNs();
             const uint64_t blocked_ns =
                 blocked_end_ns >= blocked_start_ns ?
@@ -1338,10 +1379,6 @@ bool EcsUiRaylibRun(
     }
     out->parker_capabilities = EcsUiRaylibParkerGetCapabilities(parker);
 
-    if (config->enable_event_waiting) {
-        EnableEventWaiting();
-    }
-
     EcsUiRaylibStepState step_state;
     EcsUiRaylibStepStateInit(&step_state);
     bool ok = true;
@@ -1382,6 +1419,7 @@ bool EcsUiRaylibRun(
                     .parker = parker,
                     .now_ns = step_now_ns,
                     .dt = step_dt,
+                    .enable_event_waiting = config->enable_event_waiting,
                     .present_when_clean = config->present_when_clean,
                     .present_policy_label = config->present_policy_label,
                     .hooks = callbacks->step,
@@ -1414,9 +1452,7 @@ bool EcsUiRaylibRun(
         }
     }
 
-    if (config->enable_event_waiting) {
-        DisableEventWaiting();
-    }
+    EcsUiRaylibSetEventWaiting(false);
     EcsUiRaylibParkerDestroy(parker);
     return ok;
 }
