@@ -256,6 +256,13 @@ if(ECS_UI_BUILD_TESTS)
     ecs_ui_enable_warnings(ecs_ui_wake_registry)
     add_test(NAME ecs_ui_wake_registry COMMAND ecs_ui_wake_registry)
 
+    add_executable(ecs_ui_frame_classifier
+        tests/ecs_ui_frame_classifier.c)
+    target_link_libraries(ecs_ui_frame_classifier
+        PRIVATE ecs_ui)
+    ecs_ui_enable_warnings(ecs_ui_frame_classifier)
+    add_test(NAME ecs_ui_frame_classifier COMMAND ecs_ui_frame_classifier)
+
     if(TARGET ecs_ui_raylib)
         add_executable(ecs_ui_raylib_runner
             tests/ecs_ui_raylib_runner.c)

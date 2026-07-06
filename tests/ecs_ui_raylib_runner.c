@@ -287,14 +287,16 @@ static int TestStepPhaseOrdering(void)
     EcsUiRaylibStepState state;
     EcsUiRaylibStepResult step = {0};
     StepOrderCtx order = {0};
+    EcsUiFrameSignalAccumulator *signals =
+        EcsUiFrameSignalAccumulatorCreate();
 
     EcsUiRaylibStepStateInit(&state);
     result |= Require(
         EcsUiRaylibStep(
             &state,
             &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
                 .dt = 0.125,
-                .should_render = true,
                 .hooks = {
                     .pre_input_pump = StepPreInput,
                     .input_pump = StepInput,
@@ -312,12 +314,127 @@ static int TestStepPhaseOrdering(void)
         "step phase order mismatch");
     result |= Require(order.dt == 0.125, "step dt mismatch");
     result |= Require(step.rendered, "step should report render");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_RENDER_AND_PRESENT &&
+            step.frame_reason.kind == ECS_UI_FRAME_REASON_FIRST_FRAME,
+        "step should expose render classification");
     result |= Require(!step.park_armed, "step should not park without spec");
     result |= Require(
         step.counters.steps == 1u &&
             step.counters.rendered == 1u &&
             step.counters.continued == 1u,
         "step counters mismatch");
+    EcsUiFrameSignalAccumulatorDestroy(signals);
+    return result;
+}
+
+static int TestStepSkipsRenderForParkAndPresentOnly(void)
+{
+    int result = 0;
+    EcsUiFrameSignalAccumulator *signals =
+        EcsUiFrameSignalAccumulatorCreate();
+    EcsUiFrameClassifyResult seed = {0};
+    EcsUiRaylibStepState state;
+    EcsUiRaylibStepResult step = {0};
+    StepOrderCtx order = {0};
+
+    result |= Require(
+        EcsUiFrameClassify(signals, NULL, &seed),
+        "step skip seed classify failed");
+    EcsUiRaylibStepStateInit(&state);
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .dt = 0.25,
+                .hooks = {
+                    .pre_input_pump = StepPreInput,
+                    .input_pump = StepInput,
+                    .tick = StepTick,
+                    .render = StepRender,
+                    .post_blit_screenshot = StepScreenshot,
+                    .after_present_cleanup = StepAfterPresent,
+                    .ctx = &order,
+                },
+            },
+            &step),
+        "park step failed");
+    result |= Require(
+        strcmp(order.order, "PIT") == 0,
+        "park step should skip present phases");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PARK &&
+            !step.rendered &&
+            !step.presented,
+        "park step classification mismatch");
+
+    order = (StepOrderCtx){0};
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .dt = 0.25,
+                .present_when_clean = true,
+                .present_policy_label = "present-required",
+                .hooks = {
+                    .pre_input_pump = StepPreInput,
+                    .input_pump = StepInput,
+                    .tick = StepTick,
+                    .render = StepRender,
+                    .post_blit_screenshot = StepScreenshot,
+                    .after_present_cleanup = StepAfterPresent,
+                    .ctx = &order,
+                },
+            },
+            &step),
+        "present-only step failed");
+    result |= Require(
+        strcmp(order.order, "PITA") == 0,
+        "present-only step should skip render phases");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PRESENT_ONLY &&
+            step.frame_reason.kind == ECS_UI_FRAME_REASON_PRESENT_POLICY &&
+            strcmp(step.frame_reason.label, "present-required") == 0 &&
+            !step.rendered &&
+            step.presented,
+        "present-only classification mismatch");
+
+    result |= Require(
+        EcsUiFrameSignalMark(signals, ECS_UI_FRAME_MARK_SCREENSHOT_REQUEST),
+        "step screenshot mark failed");
+    order = (StepOrderCtx){0};
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .dt = 0.25,
+                .hooks = {
+                    .pre_input_pump = StepPreInput,
+                    .input_pump = StepInput,
+                    .tick = StepTick,
+                    .render = StepRender,
+                    .post_blit_screenshot = StepScreenshot,
+                    .after_present_cleanup = StepAfterPresent,
+                    .ctx = &order,
+                },
+            },
+            &step),
+        "screenshot step failed");
+    result |= Require(
+        strcmp(order.order, "PITRSA") == 0,
+        "screenshot step should run render and screenshot phases");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_RENDER_AND_PRESENT &&
+            step.frame_reason.kind ==
+                ECS_UI_FRAME_REASON_SCREENSHOT_REQUEST &&
+            step.rendered &&
+            step.presented,
+        "screenshot step classification mismatch");
+
+    EcsUiFrameSignalAccumulatorDestroy(signals);
     return result;
 }
 
@@ -364,6 +481,7 @@ int main(void)
 {
     int result = 0;
     result |= TestStepPhaseOrdering();
+    result |= TestStepSkipsRenderForParkAndPresentOnly();
     result |= TestCapabilityDisabledIsVisible();
 #if !defined(_WIN32)
     result |= TestFdWake();

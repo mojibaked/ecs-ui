@@ -17,13 +17,34 @@ typedef struct EcsUiWakeSourceSlot {
     char label[ECS_UI_ID_MAX];
 } EcsUiWakeSourceSlot;
 
+typedef struct EcsUiFrameSignalSlot {
+    uint32_t generation;
+    bool active;
+    bool has_previous;
+    uint64_t id;
+    uint64_t revision;
+    uint64_t previous_revision;
+    char label[ECS_UI_ID_MAX];
+} EcsUiFrameSignalSlot;
+
 struct EcsUiWakeRegistry {
     EcsUiWakeSourceSlot slots[ECS_UI_WAKE_SOURCE_MAX];
+};
+
+struct EcsUiFrameSignalAccumulator {
+    EcsUiFrameSignalSlot slots[ECS_UI_FRAME_SIGNAL_MAX];
+    uint32_t transient_marks;
+    bool has_classified_frame;
 };
 
 static EcsUiWakeHandle EcsUiWakeInvalidHandle(void)
 {
     return (EcsUiWakeHandle){0};
+}
+
+static EcsUiFrameSignalHandle EcsUiFrameSignalInvalidHandle(void)
+{
+    return (EcsUiFrameSignalHandle){0};
 }
 
 static void EcsUiWakeCopyLabel(char *out, size_t out_size, const char *label)
@@ -41,6 +62,11 @@ static void EcsUiWakeCopyLabel(char *out, size_t out_size, const char *label)
 }
 
 static bool EcsUiWakeLabelValid(const char *label)
+{
+    return label != NULL && label[0] != '\0';
+}
+
+static bool EcsUiFrameSignalLabelValid(const char *label)
 {
     return label != NULL && label[0] != '\0';
 }
@@ -87,6 +113,38 @@ static EcsUiWakeSourceSlot *EcsUiWakeSlotForKind(
             &slot->kind,
             memory_order_acquire);
     return slot_kind == kind ? slot : NULL;
+}
+
+static EcsUiFrameSignalSlot *EcsUiFrameSignalSlotForHandle(
+    EcsUiFrameSignalAccumulator *accumulator,
+    EcsUiFrameSignalHandle handle)
+{
+    if (accumulator == NULL || handle.index == 0u ||
+        handle.index > ECS_UI_FRAME_SIGNAL_MAX || handle.generation == 0u) {
+        return NULL;
+    }
+
+    EcsUiFrameSignalSlot *slot = &accumulator->slots[handle.index - 1u];
+    if (!slot->active || slot->generation != handle.generation) {
+        return NULL;
+    }
+    return slot;
+}
+
+static bool EcsUiFrameSignalIdActive(
+    const EcsUiFrameSignalAccumulator *accumulator,
+    uint64_t id)
+{
+    if (accumulator == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0u; i < ECS_UI_FRAME_SIGNAL_MAX; i += 1u) {
+        const EcsUiFrameSignalSlot *slot = &accumulator->slots[i];
+        if (slot->active && slot->id == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static EcsUiWakeHandle EcsUiWakeRegisterSource(
@@ -201,6 +259,83 @@ static void EcsUiWakeMaybeSetNearestDeadline(
             sizeof(spec->deadline_label),
             slot->label);
     }
+}
+
+static EcsUiFrameReason EcsUiFrameReasonWithLabel(
+    EcsUiFrameReasonKind kind,
+    const char *label)
+{
+    EcsUiFrameReason reason = {
+        .kind = kind,
+    };
+    EcsUiWakeCopyLabel(reason.label, sizeof(reason.label), label);
+    return reason;
+}
+
+static EcsUiFrameReason EcsUiFrameReasonForStable(
+    const EcsUiFrameSignalSlot *slot,
+    EcsUiFrameSignalHandle handle)
+{
+    EcsUiFrameReason reason = {
+        .kind = ECS_UI_FRAME_REASON_STABLE_REVISION,
+        .signal = handle,
+        .stable_id = slot != NULL ? slot->id : 0u,
+        .previous_revision = slot != NULL ? slot->previous_revision : 0u,
+        .revision = slot != NULL ? slot->revision : 0u,
+    };
+    if (slot != NULL) {
+        EcsUiWakeCopyLabel(reason.label, sizeof(reason.label), slot->label);
+    }
+    return reason;
+}
+
+static EcsUiFrameReason EcsUiFrameReasonForWake(
+    const EcsUiWakeSourceInfo *source)
+{
+    EcsUiFrameReason reason = {
+        .kind = ECS_UI_FRAME_REASON_WAKE_HOT,
+        .wake = source != NULL ? source->handle : (EcsUiWakeHandle){0},
+    };
+    if (source != NULL) {
+        EcsUiWakeCopyLabel(reason.label, sizeof(reason.label), source->label);
+    }
+    return reason;
+}
+
+static void EcsUiFrameClassifySetResult(
+    EcsUiFrameClassifyResult *out,
+    EcsUiFrameClassification classification,
+    EcsUiFrameReason reason,
+    bool screenshot_requested)
+{
+    if (out == NULL) {
+        return;
+    }
+    *out = (EcsUiFrameClassifyResult){
+        .classification = classification,
+        .reason = reason,
+        .should_render = classification == ECS_UI_FRAME_RENDER_AND_PRESENT,
+        .should_present = classification != ECS_UI_FRAME_PARK,
+        .should_park = classification == ECS_UI_FRAME_PARK,
+        .screenshot_requested = screenshot_requested,
+    };
+}
+
+static void EcsUiFrameSignalCommit(EcsUiFrameSignalAccumulator *accumulator)
+{
+    if (accumulator == NULL) {
+        return;
+    }
+    for (uint32_t i = 0u; i < ECS_UI_FRAME_SIGNAL_MAX; i += 1u) {
+        EcsUiFrameSignalSlot *slot = &accumulator->slots[i];
+        if (!slot->active) {
+            continue;
+        }
+        slot->previous_revision = slot->revision;
+        slot->has_previous = true;
+    }
+    accumulator->transient_marks = ECS_UI_FRAME_MARK_NONE;
+    accumulator->has_classified_frame = true;
 }
 
 bool EcsUiWakeHandleIsValid(EcsUiWakeHandle handle)
@@ -528,5 +663,207 @@ bool EcsUiWakeBuildWaitSpec(
         }
     }
 
+    return true;
+}
+
+bool EcsUiFrameSignalHandleIsValid(EcsUiFrameSignalHandle handle)
+{
+    return handle.index != 0u && handle.generation != 0u;
+}
+
+EcsUiFrameSignalAccumulator *EcsUiFrameSignalAccumulatorCreate(void)
+{
+    return (EcsUiFrameSignalAccumulator *)calloc(
+        1u,
+        sizeof(EcsUiFrameSignalAccumulator));
+}
+
+void EcsUiFrameSignalAccumulatorDestroy(
+    EcsUiFrameSignalAccumulator *accumulator)
+{
+    free(accumulator);
+}
+
+EcsUiFrameSignalHandle EcsUiFrameSignalRegisterStable(
+    EcsUiFrameSignalAccumulator *accumulator,
+    uint64_t id,
+    const char *label,
+    uint64_t revision)
+{
+    if (accumulator == NULL || !EcsUiFrameSignalLabelValid(label) ||
+        EcsUiFrameSignalIdActive(accumulator, id)) {
+        return EcsUiFrameSignalInvalidHandle();
+    }
+
+    for (uint32_t i = 0u; i < ECS_UI_FRAME_SIGNAL_MAX; i += 1u) {
+        EcsUiFrameSignalSlot *slot = &accumulator->slots[i];
+        if (slot->active) {
+            continue;
+        }
+        slot->generation += 1u;
+        if (slot->generation == 0u) {
+            slot->generation = 1u;
+        }
+        slot->active = true;
+        slot->has_previous = false;
+        slot->id = id;
+        slot->revision = revision;
+        slot->previous_revision = 0u;
+        EcsUiWakeCopyLabel(slot->label, sizeof(slot->label), label);
+        return (EcsUiFrameSignalHandle){
+            .index = i + 1u,
+            .generation = slot->generation,
+        };
+    }
+    return EcsUiFrameSignalInvalidHandle();
+}
+
+bool EcsUiFrameSignalSetRevision(
+    EcsUiFrameSignalAccumulator *accumulator,
+    EcsUiFrameSignalHandle handle,
+    uint64_t revision)
+{
+    EcsUiFrameSignalSlot *slot =
+        EcsUiFrameSignalSlotForHandle(accumulator, handle);
+    if (slot == NULL) {
+        return false;
+    }
+    slot->revision = revision;
+    return true;
+}
+
+bool EcsUiFrameSignalRemove(
+    EcsUiFrameSignalAccumulator *accumulator,
+    EcsUiFrameSignalHandle handle)
+{
+    EcsUiFrameSignalSlot *slot =
+        EcsUiFrameSignalSlotForHandle(accumulator, handle);
+    if (slot == NULL) {
+        return false;
+    }
+    slot->active = false;
+    slot->has_previous = false;
+    slot->id = 0u;
+    slot->revision = 0u;
+    slot->previous_revision = 0u;
+    slot->label[0] = '\0';
+    return true;
+}
+
+bool EcsUiFrameSignalMark(
+    EcsUiFrameSignalAccumulator *accumulator,
+    uint32_t marks)
+{
+    if (accumulator == NULL) {
+        return false;
+    }
+    accumulator->transient_marks |= marks &
+        (ECS_UI_FRAME_MARK_INPUT |
+            ECS_UI_FRAME_MARK_WINDOW_EVENT |
+            ECS_UI_FRAME_MARK_FORCE_RENDER |
+            ECS_UI_FRAME_MARK_SCREENSHOT_REQUEST);
+    return true;
+}
+
+bool EcsUiFrameSignalClearMarks(EcsUiFrameSignalAccumulator *accumulator)
+{
+    if (accumulator == NULL) {
+        return false;
+    }
+    accumulator->transient_marks = ECS_UI_FRAME_MARK_NONE;
+    return true;
+}
+
+bool EcsUiFrameClassify(
+    EcsUiFrameSignalAccumulator *accumulator,
+    const EcsUiFrameClassifyDesc *desc,
+    EcsUiFrameClassifyResult *out)
+{
+    if (accumulator == NULL || out == NULL) {
+        return false;
+    }
+
+    const uint32_t marks = accumulator->transient_marks;
+    const bool screenshot_requested =
+        (marks & ECS_UI_FRAME_MARK_SCREENSHOT_REQUEST) != 0u;
+    EcsUiFrameClassification classification = ECS_UI_FRAME_PARK;
+    EcsUiFrameReason reason =
+        EcsUiFrameReasonWithLabel(ECS_UI_FRAME_REASON_NONE, "clean");
+
+    if (!accumulator->has_classified_frame) {
+        classification = ECS_UI_FRAME_RENDER_AND_PRESENT;
+        reason =
+            EcsUiFrameReasonWithLabel(
+                ECS_UI_FRAME_REASON_FIRST_FRAME,
+                "first-frame");
+    } else if (screenshot_requested) {
+        classification = ECS_UI_FRAME_RENDER_AND_PRESENT;
+        reason =
+            EcsUiFrameReasonWithLabel(
+                ECS_UI_FRAME_REASON_SCREENSHOT_REQUEST,
+                "screenshot-request");
+    } else if ((marks & ECS_UI_FRAME_MARK_FORCE_RENDER) != 0u) {
+        classification = ECS_UI_FRAME_RENDER_AND_PRESENT;
+        reason =
+            EcsUiFrameReasonWithLabel(
+                ECS_UI_FRAME_REASON_FORCE_RENDER,
+                "force-render");
+    } else if ((marks & ECS_UI_FRAME_MARK_INPUT) != 0u) {
+        classification = ECS_UI_FRAME_RENDER_AND_PRESENT;
+        reason =
+            EcsUiFrameReasonWithLabel(ECS_UI_FRAME_REASON_INPUT, "input");
+    } else if ((marks & ECS_UI_FRAME_MARK_WINDOW_EVENT) != 0u) {
+        classification = ECS_UI_FRAME_RENDER_AND_PRESENT;
+        reason =
+            EcsUiFrameReasonWithLabel(
+                ECS_UI_FRAME_REASON_WINDOW_EVENT,
+                "window-event");
+    } else {
+        for (uint32_t i = 0u; i < ECS_UI_FRAME_SIGNAL_MAX; i += 1u) {
+            EcsUiFrameSignalSlot *slot = &accumulator->slots[i];
+            if (!slot->active) {
+                continue;
+            }
+            if (!slot->has_previous ||
+                    slot->previous_revision != slot->revision) {
+                classification = ECS_UI_FRAME_RENDER_AND_PRESENT;
+                reason =
+                    EcsUiFrameReasonForStable(
+                        slot,
+                        (EcsUiFrameSignalHandle){
+                            .index = i + 1u,
+                            .generation = slot->generation,
+                        });
+                break;
+            }
+        }
+        if (classification == ECS_UI_FRAME_PARK &&
+                desc != NULL && desc->wake != NULL && desc->wake->hot) {
+            classification = ECS_UI_FRAME_PRESENT_ONLY;
+            reason =
+                EcsUiFrameReasonForWake(
+                    desc->wake->active_count > 0u ?
+                        &desc->wake->active[0] :
+                        NULL);
+        }
+        if (classification == ECS_UI_FRAME_PARK &&
+                desc != NULL && desc->present_when_clean) {
+            classification = ECS_UI_FRAME_PRESENT_ONLY;
+            reason =
+                EcsUiFrameReasonWithLabel(
+                    ECS_UI_FRAME_REASON_PRESENT_POLICY,
+                    desc->present_policy_label != NULL &&
+                            desc->present_policy_label[0] != '\0' ?
+                        desc->present_policy_label :
+                        "present-policy");
+        }
+    }
+
+    EcsUiFrameClassifySetResult(
+        out,
+        classification,
+        reason,
+        screenshot_requested);
+    EcsUiFrameSignalCommit(accumulator);
     return true;
 }

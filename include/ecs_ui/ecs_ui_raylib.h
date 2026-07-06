@@ -86,11 +86,13 @@ typedef struct EcsUiRaylibStepHooks {
 } EcsUiRaylibStepHooks;
 
 typedef struct EcsUiRaylibStepDesc {
+    EcsUiFrameSignalAccumulator *frame_signals;
     EcsUiWakeRegistry *wake_registry;
     EcsUiRaylibParker *parker;
     uint64_t now_ns;
     double dt;
-    bool should_render;
+    bool present_when_clean;
+    const char *present_policy_label;
     EcsUiRaylibStepHooks hooks;
 } EcsUiRaylibStepDesc;
 
@@ -98,6 +100,8 @@ typedef struct EcsUiRaylibStepCounters {
     uint64_t steps;
     uint64_t rendered;
     uint64_t skipped_render;
+    uint64_t present_only;
+    uint64_t classified_park;
     uint64_t park_armed;
     uint64_t continued;
     uint64_t immediate;
@@ -111,7 +115,10 @@ typedef struct EcsUiRaylibStepState {
 typedef struct EcsUiRaylibStepResult {
     EcsUiRaylibStepCounters counters;
     EcsUiRaylibWakeReason wake_reason;
+    EcsUiFrameClassification frame_classification;
+    EcsUiFrameReason frame_reason;
     bool rendered;
+    bool presented;
     bool park_armed;
     bool immediate_next_step;
 } EcsUiRaylibStepResult;

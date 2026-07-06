@@ -747,16 +747,24 @@ static bool EcsUiRaylibStepRunTick(
     return hook != NULL && hook(dt, ctx);
 }
 
-static void EcsUiRaylibStepFillHotReason(
-    const EcsUiWakeWaitSpec *spec,
+static void EcsUiRaylibStepFillWakeReasonFromFrame(
+    const EcsUiFrameReason *frame_reason,
     EcsUiRaylibWakeReason *out)
 {
-    if (out == NULL) {
+    if (frame_reason == NULL || out == NULL ||
+        frame_reason->kind != ECS_UI_FRAME_REASON_WAKE_HOT) {
         return;
     }
-    const EcsUiWakeSourceInfo *source =
-        spec != NULL && spec->active_count > 0u ? &spec->active[0] : NULL;
-    *out = EcsUiRaylibWakeReasonForSource(ECS_UI_RAYLIB_WAKE_HOT, source);
+    *out = (EcsUiRaylibWakeReason){
+        .kind = ECS_UI_RAYLIB_WAKE_HOT,
+        .handle = frame_reason->wake,
+        .fd = -1,
+        .fd_interests = ECS_UI_WAKE_FD_INTEREST_NONE,
+    };
+    EcsUiRaylibCopyLabel(
+        out->label,
+        sizeof(out->label),
+        frame_reason->label);
 }
 
 void EcsUiRaylibStepStateInit(EcsUiRaylibStepState *state)
@@ -787,7 +795,32 @@ bool EcsUiRaylibStep(
     immediate = EcsUiRaylibStepRunTick(desc->hooks.tick, desc->dt, ctx) ||
         immediate;
 
-    if (desc->should_render) {
+    EcsUiWakeWaitSpec spec = {0};
+    const bool has_spec =
+        desc->wake_registry != NULL &&
+        EcsUiWakeBuildWaitSpec(desc->wake_registry, desc->now_ns, &spec);
+    EcsUiFrameClassifyResult frame = {0};
+    if (desc->frame_signals != NULL) {
+        (void)EcsUiFrameClassify(
+            desc->frame_signals,
+            &(EcsUiFrameClassifyDesc){
+                .wake = has_spec ? &spec : NULL,
+                .present_when_clean = desc->present_when_clean,
+                .present_policy_label = desc->present_policy_label,
+            },
+            &frame);
+    }
+    out->frame_classification = frame.classification;
+    out->frame_reason = frame.reason;
+    out->presented = frame.should_present;
+
+    if (frame.classification == ECS_UI_FRAME_PRESENT_ONLY) {
+        state->counters.present_only += 1u;
+    } else if (frame.classification == ECS_UI_FRAME_PARK) {
+        state->counters.classified_park += 1u;
+    }
+
+    if (frame.should_render) {
         state->counters.rendered += 1u;
         out->rendered = true;
         immediate = EcsUiRaylibStepRunHook(desc->hooks.render, ctx) || immediate;
@@ -800,22 +833,23 @@ bool EcsUiRaylibStep(
         state->counters.skipped_render += 1u;
     }
 
-    immediate =
-        EcsUiRaylibStepRunHook(desc->hooks.after_present_cleanup, ctx) ||
-        immediate;
+    if (frame.should_present) {
+        immediate =
+            EcsUiRaylibStepRunHook(desc->hooks.after_present_cleanup, ctx) ||
+            immediate;
+    }
     out->immediate_next_step = immediate;
-
-    EcsUiWakeWaitSpec spec = {0};
-    const bool has_spec =
-        desc->wake_registry != NULL &&
-        EcsUiWakeBuildWaitSpec(desc->wake_registry, desc->now_ns, &spec);
 
     if (immediate) {
         state->counters.immediate += 1u;
         state->counters.continued += 1u;
-    } else if (has_spec && spec.hot) {
+    } else if (frame.classification == ECS_UI_FRAME_PRESENT_ONLY) {
         state->counters.continued += 1u;
-        EcsUiRaylibStepFillHotReason(&spec, &out->wake_reason);
+        EcsUiRaylibStepFillWakeReasonFromFrame(
+            &frame.reason,
+            &out->wake_reason);
+    } else if (frame.classification == ECS_UI_FRAME_RENDER_AND_PRESENT) {
+        state->counters.continued += 1u;
     } else if (has_spec && desc->parker != NULL) {
         if (EcsUiRaylibParkerArm(desc->parker, &spec)) {
             state->counters.park_armed += 1u;
