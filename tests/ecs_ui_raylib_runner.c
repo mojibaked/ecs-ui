@@ -275,9 +275,21 @@ static bool StepScreenshot(void *ctx)
     return false;
 }
 
+static bool StepPresent(void *ctx)
+{
+    StepOrderAppend((StepOrderCtx *)ctx, 'E');
+    return false;
+}
+
 static bool StepAfterPresent(void *ctx)
 {
     StepOrderAppend((StepOrderCtx *)ctx, 'A');
+    return false;
+}
+
+static bool StepPark(void *ctx)
+{
+    StepOrderAppend((StepOrderCtx *)ctx, 'K');
     return false;
 }
 
@@ -303,6 +315,7 @@ static int TestStepPhaseOrdering(void)
                     .tick = StepTick,
                     .render = StepRender,
                     .post_blit_screenshot = StepScreenshot,
+                    .present = StepPresent,
                     .after_present_cleanup = StepAfterPresent,
                     .ctx = &order,
                 },
@@ -310,7 +323,7 @@ static int TestStepPhaseOrdering(void)
             &step),
         "step failed");
     result |= Require(
-        strcmp(order.order, "PITRSA") == 0,
+        strcmp(order.order, "PITRSEA") == 0,
         "step phase order mismatch");
     result |= Require(order.dt == 0.125, "step dt mismatch");
     result |= Require(step.rendered, "step should report render");
@@ -354,7 +367,9 @@ static int TestStepSkipsRenderForParkAndPresentOnly(void)
                     .tick = StepTick,
                     .render = StepRender,
                     .post_blit_screenshot = StepScreenshot,
+                    .present = StepPresent,
                     .after_present_cleanup = StepAfterPresent,
+                    .park = StepPark,
                     .ctx = &order,
                 },
             },
@@ -384,14 +399,16 @@ static int TestStepSkipsRenderForParkAndPresentOnly(void)
                     .tick = StepTick,
                     .render = StepRender,
                     .post_blit_screenshot = StepScreenshot,
+                    .present = StepPresent,
                     .after_present_cleanup = StepAfterPresent,
+                    .park = StepPark,
                     .ctx = &order,
                 },
             },
             &step),
         "present-only step failed");
     result |= Require(
-        strcmp(order.order, "PITA") == 0,
+        strcmp(order.order, "PITEA") == 0,
         "present-only step should skip render phases");
     result |= Require(
         step.frame_classification == ECS_UI_FRAME_PRESENT_ONLY &&
@@ -417,14 +434,16 @@ static int TestStepSkipsRenderForParkAndPresentOnly(void)
                     .tick = StepTick,
                     .render = StepRender,
                     .post_blit_screenshot = StepScreenshot,
+                    .present = StepPresent,
                     .after_present_cleanup = StepAfterPresent,
+                    .park = StepPark,
                     .ctx = &order,
                 },
             },
             &step),
         "screenshot step failed");
     result |= Require(
-        strcmp(order.order, "PITRSA") == 0,
+        strcmp(order.order, "PITRSEA") == 0,
         "screenshot step should run render and screenshot phases");
     result |= Require(
         step.frame_classification == ECS_UI_FRAME_RENDER_AND_PRESENT &&
@@ -477,12 +496,110 @@ static int TestCapabilityDisabledIsVisible(void)
     return result;
 }
 
+typedef struct RunLifecycleCtx {
+    uint32_t ticks;
+    bool quit;
+    double dt;
+} RunLifecycleCtx;
+
+static bool RunLifecycleShouldQuit(void *ctx)
+{
+    return ((RunLifecycleCtx *)ctx)->quit;
+}
+
+static bool RunLifecycleWindowShouldClose(void *ctx)
+{
+    (void)ctx;
+    return false;
+}
+
+static double RunLifecycleDeltaTime(void *ctx)
+{
+    (void)ctx;
+    return 0.016;
+}
+
+static uint64_t RunLifecycleNowNs(void *ctx)
+{
+    RunLifecycleCtx *run = (RunLifecycleCtx *)ctx;
+    return 1000000000u + ((uint64_t)run->ticks * 16000000u);
+}
+
+static bool RunLifecycleHook(void *ctx)
+{
+    (void)ctx;
+    return false;
+}
+
+static bool RunLifecycleTick(double dt, void *ctx)
+{
+    RunLifecycleCtx *run = (RunLifecycleCtx *)ctx;
+    run->dt = dt;
+    run->ticks += 1u;
+    if (run->ticks >= 3u) {
+        run->quit = true;
+    }
+    return false;
+}
+
+static int TestRunLifecycle(void)
+{
+    int result = 0;
+    EcsUiFrameSignalAccumulator *signals =
+        EcsUiFrameSignalAccumulatorCreate();
+    EcsUiWakeRegistry *registry = EcsUiWakeRegistryCreate();
+    RunLifecycleCtx ctx = {0};
+    EcsUiRaylibRunResult run = {0};
+
+    result |= Require(signals != NULL, "run signals missing");
+    result |= Require(registry != NULL, "run registry missing");
+    result |= Require(
+        EcsUiRaylibRun(
+            &(EcsUiRaylibRunConfig){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .present_when_clean = true,
+                .present_policy_label = "test-present",
+            },
+            &(EcsUiRaylibRunCallbacks){
+                .step = {
+                    .pre_input_pump = RunLifecycleHook,
+                    .input_pump = RunLifecycleHook,
+                    .tick = RunLifecycleTick,
+                    .render = RunLifecycleHook,
+                    .present = RunLifecycleHook,
+                    .after_present_cleanup = RunLifecycleHook,
+                    .ctx = &ctx,
+                },
+                .should_quit = RunLifecycleShouldQuit,
+                .window_should_close = RunLifecycleWindowShouldClose,
+                .delta_time = RunLifecycleDeltaTime,
+                .now_ns = RunLifecycleNowNs,
+            },
+            &run),
+        "run lifecycle failed");
+    result |= Require(run.quit_requested, "run should honor quit request");
+    result |= Require(!run.window_should_close, "run should not close window");
+    result |= Require(run.steps == 3u, "run should execute three steps");
+    result |= Require(ctx.ticks == 3u, "run tick count mismatch");
+    result |= Require(ctx.dt == 0.016, "run dt mismatch");
+    result |= Require(
+        run.counters.rendered == 1u &&
+            run.counters.present_only == 2u,
+        "run counters mismatch");
+
+    EcsUiWakeRegistryDestroy(registry);
+    EcsUiFrameSignalAccumulatorDestroy(signals);
+    return result;
+}
+
 int main(void)
 {
     int result = 0;
     result |= TestStepPhaseOrdering();
     result |= TestStepSkipsRenderForParkAndPresentOnly();
     result |= TestCapabilityDisabledIsVisible();
+    result |= TestRunLifecycle();
 #if !defined(_WIN32)
     result |= TestFdWake();
     result |= TestWorkerPostWake();

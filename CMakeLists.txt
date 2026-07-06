@@ -218,10 +218,10 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
             target_link_libraries(ecs_ui_clay_raylib_demo
                 PRIVATE
                     ecs_ui_clay
+                    ecs_ui_raylib
                     ecs_ui_animation
                     ecs_ui_navigation
-                    ecs_ui_text_input
-                    ${ECS_UI_RAYLIB_TARGET})
+                    ecs_ui_text_input)
         else()
             message(STATUS
                 "Clay raylib renderer not found; skipping "

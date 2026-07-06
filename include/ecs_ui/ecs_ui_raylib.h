@@ -81,7 +81,20 @@ typedef struct EcsUiRaylibStepHooks {
     EcsUiRaylibStepTickHook tick;
     EcsUiRaylibStepHook render;
     EcsUiRaylibStepHook post_blit_screenshot;
+    /*
+     * Called after render/screenshot when the frame is presented. Raylib users
+     * normally put EndDrawing here so Step can arm park before the backend
+     * reaches raylib's event-waiting point.
+     */
+    EcsUiRaylibStepHook present;
     EcsUiRaylibStepHook after_present_cleanup;
+    /*
+     * Called after a PARK frame arms the parker. Raylib users should enter the
+     * backend wait here. With default raylib frame control this usually means a
+     * BeginDrawing/EndDrawing pair, optionally redrawing cached/current content
+     * before EndDrawing if the app does not have a presentation cache.
+     */
+    EcsUiRaylibStepHook park;
     void *ctx;
 } EcsUiRaylibStepHooks;
 
@@ -122,6 +135,40 @@ typedef struct EcsUiRaylibStepResult {
     bool park_armed;
     bool immediate_next_step;
 } EcsUiRaylibStepResult;
+
+typedef bool (*EcsUiRaylibRunHook)(void *ctx);
+typedef double (*EcsUiRaylibRunDeltaTimeFn)(void *ctx);
+typedef uint64_t (*EcsUiRaylibRunNowNsFn)(void *ctx);
+
+typedef struct EcsUiRaylibRunConfig {
+    EcsUiFrameSignalAccumulator *frame_signals;
+    EcsUiWakeRegistry *wake_registry;
+    bool present_when_clean;
+    const char *present_policy_label;
+    /*
+     * Run expects the caller to own InitWindow/CloseWindow. When true, Run
+     * enables raylib event waiting for the duration of the loop and disables it
+     * before returning.
+     */
+    bool enable_event_waiting;
+} EcsUiRaylibRunConfig;
+
+typedef struct EcsUiRaylibRunCallbacks {
+    EcsUiRaylibStepHooks step;
+    EcsUiRaylibRunHook should_quit;
+    EcsUiRaylibRunHook window_should_close;
+    EcsUiRaylibRunDeltaTimeFn delta_time;
+    EcsUiRaylibRunNowNsFn now_ns;
+} EcsUiRaylibRunCallbacks;
+
+typedef struct EcsUiRaylibRunResult {
+    EcsUiRaylibStepResult last_step;
+    EcsUiRaylibStepCounters counters;
+    EcsUiRaylibParkerCapabilities parker_capabilities;
+    uint64_t steps;
+    bool window_should_close;
+    bool quit_requested;
+} EcsUiRaylibRunResult;
 
 /* `bounds` is the physical pixel root box for this render bridge. */
 void EcsUiRaylibDrawTree(
@@ -175,11 +222,16 @@ bool EcsUiRaylibParkerLastWake(
     const EcsUiRaylibParker *parker,
     EcsUiRaylibWakeReason *out);
 
+uint64_t EcsUiRaylibNowNs(void);
 void EcsUiRaylibStepStateInit(EcsUiRaylibStepState *state);
 bool EcsUiRaylibStep(
     EcsUiRaylibStepState *state,
     const EcsUiRaylibStepDesc *desc,
     EcsUiRaylibStepResult *out);
+bool EcsUiRaylibRun(
+    const EcsUiRaylibRunConfig *config,
+    const EcsUiRaylibRunCallbacks *callbacks,
+    EcsUiRaylibRunResult *out);
 
 /*
  * Override the font used for all UI text. Pass a caller-owned font (e.g. a TTF

@@ -433,6 +433,15 @@ static void *EcsUiRaylibWatcherMain(void *arg)
 }
 #endif
 
+uint64_t EcsUiRaylibNowNs(void)
+{
+#if !defined(_WIN32)
+    return EcsUiRaylibMonotonicNs();
+#else
+    return (uint64_t)(GetTime() * 1000000000.0);
+#endif
+}
+
 static void EcsUiRaylibRecordCapabilityDisabled(EcsUiRaylibParker *parker)
 {
     if (parker == NULL) {
@@ -834,11 +843,11 @@ bool EcsUiRaylibStep(
     }
 
     if (frame.should_present) {
+        immediate = EcsUiRaylibStepRunHook(desc->hooks.present, ctx) || immediate;
         immediate =
             EcsUiRaylibStepRunHook(desc->hooks.after_present_cleanup, ctx) ||
             immediate;
     }
-    out->immediate_next_step = immediate;
 
     if (immediate) {
         state->counters.immediate += 1u;
@@ -854,6 +863,13 @@ bool EcsUiRaylibStep(
         if (EcsUiRaylibParkerArm(desc->parker, &spec)) {
             state->counters.park_armed += 1u;
             out->park_armed = true;
+            immediate =
+                EcsUiRaylibStepRunHook(desc->hooks.park, ctx) || immediate;
+            if (immediate) {
+                state->counters.immediate += 1u;
+                state->counters.continued += 1u;
+            }
+            (void)EcsUiRaylibParkerLastWake(desc->parker, &out->wake_reason);
         } else {
             state->counters.capability_disabled += 1u;
             state->counters.continued += 1u;
@@ -863,6 +879,107 @@ bool EcsUiRaylibStep(
         state->counters.continued += 1u;
     }
 
+    out->immediate_next_step = immediate;
     out->counters = state->counters;
     return true;
+}
+
+static bool EcsUiRaylibRunDefaultWindowShouldClose(void *ctx)
+{
+    (void)ctx;
+    return WindowShouldClose();
+}
+
+static double EcsUiRaylibRunDefaultDeltaTime(void *ctx)
+{
+    (void)ctx;
+    return (double)GetFrameTime();
+}
+
+static uint64_t EcsUiRaylibRunDefaultNowNs(void *ctx)
+{
+    (void)ctx;
+    return EcsUiRaylibNowNs();
+}
+
+bool EcsUiRaylibRun(
+    const EcsUiRaylibRunConfig *config,
+    const EcsUiRaylibRunCallbacks *callbacks,
+    EcsUiRaylibRunResult *out)
+{
+    if (config == NULL || callbacks == NULL || out == NULL) {
+        return false;
+    }
+
+    *out = (EcsUiRaylibRunResult){0};
+    EcsUiRaylibParker *parker = EcsUiRaylibParkerCreateDefault();
+    if (parker == NULL) {
+        return false;
+    }
+    out->parker_capabilities = EcsUiRaylibParkerGetCapabilities(parker);
+
+    if (config->enable_event_waiting) {
+        EnableEventWaiting();
+    }
+
+    EcsUiRaylibStepState step_state;
+    EcsUiRaylibStepStateInit(&step_state);
+    bool ok = true;
+    for (;;) {
+        EcsUiRaylibRunHook window_should_close =
+            callbacks->window_should_close != NULL ?
+                callbacks->window_should_close :
+                EcsUiRaylibRunDefaultWindowShouldClose;
+        if (window_should_close(callbacks->step.ctx)) {
+            out->window_should_close = true;
+            break;
+        }
+
+        if (callbacks->should_quit != NULL &&
+                callbacks->should_quit(callbacks->step.ctx)) {
+            out->quit_requested = true;
+            break;
+        }
+
+        EcsUiRaylibRunDeltaTimeFn delta_time =
+            callbacks->delta_time != NULL ?
+                callbacks->delta_time :
+                EcsUiRaylibRunDefaultDeltaTime;
+        EcsUiRaylibRunNowNsFn now_ns =
+            callbacks->now_ns != NULL ?
+                callbacks->now_ns :
+                EcsUiRaylibRunDefaultNowNs;
+        EcsUiRaylibStepResult step = {0};
+        if (!EcsUiRaylibStep(
+                &step_state,
+                &(EcsUiRaylibStepDesc){
+                    .frame_signals = config->frame_signals,
+                    .wake_registry = config->wake_registry,
+                    .parker = parker,
+                    .now_ns = now_ns(callbacks->step.ctx),
+                    .dt = delta_time(callbacks->step.ctx),
+                    .present_when_clean = config->present_when_clean,
+                    .present_policy_label = config->present_policy_label,
+                    .hooks = callbacks->step,
+                },
+                &step)) {
+            ok = false;
+            break;
+        }
+        out->last_step = step;
+        out->counters = step.counters;
+        out->steps = step.counters.steps;
+
+        if (callbacks->should_quit != NULL &&
+                callbacks->should_quit(callbacks->step.ctx)) {
+            out->quit_requested = true;
+            break;
+        }
+    }
+
+    if (config->enable_event_waiting) {
+        DisableEventWaiting();
+    }
+    EcsUiRaylibParkerDestroy(parker);
+    return ok;
 }
