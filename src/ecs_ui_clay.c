@@ -41,6 +41,26 @@ static void EcsUiClayElementId(
         suffix != NULL ? suffix : "");
 }
 
+static void EcsUiClayViewportId(
+    const EcsUiTreeSnapshot *tree,
+    char *out,
+    size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+    out[0] = '\0';
+    if (tree == NULL) {
+        return;
+    }
+
+    (void)snprintf(
+        out,
+        out_size,
+        "EcsUiClayViewport_%llu",
+        (unsigned long long)tree->root);
+}
+
 static bool EcsUiClayElementIdIsZero(Clay_ElementId id)
 {
     return id.id == 0u;
@@ -80,6 +100,11 @@ static float EcsUiClayClampPositive(float value)
 static float EcsUiClayScale(void)
 {
     return g_ecs_ui_clay_scale > 0.0f ? g_ecs_ui_clay_scale : 1.0f;
+}
+
+static float EcsUiClayTreeScale(const EcsUiTreeSnapshot *tree)
+{
+    return tree != NULL && tree->scale > 0.0f ? tree->scale : 1.0f;
 }
 
 static float EcsUiClayLogicalPointerValue(float physical, float scale)
@@ -2243,11 +2268,7 @@ void EcsUiClayEmitTreeEx(
     }
 
     char viewport_id[ECS_UI_ID_MAX * 2u] = {0};
-    (void)snprintf(
-        viewport_id,
-        sizeof(viewport_id),
-        "EcsUiClayViewport_%llu",
-        (unsigned long long)tree->root);
+    EcsUiClayViewportId(tree, viewport_id, sizeof(viewport_id));
     CLAY(CLAY_SID(EcsUiClayString(viewport_id)), {
         .layout = {
             .sizing = {
@@ -2288,6 +2309,94 @@ void EcsUiClayEmitTreeEx(
         g_ecs_ui_clay_z_index_base = previous_z_index_base;
     }
     g_ecs_ui_clay_scale = previous_scale;
+}
+
+static void EcsUiClayClearSnapshotLayout(EcsUiTreeSnapshot *tree)
+{
+    if (tree == NULL) {
+        return;
+    }
+
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        EcsUiTreeNodeSnapshot *node = &tree->nodes[i];
+        node->layout_x = 0.0f;
+        node->layout_y = 0.0f;
+        node->layout_width = 0.0f;
+        node->layout_height = 0.0f;
+        node->has_layout = false;
+    }
+}
+
+static Clay_Vector2 EcsUiClaySnapshotLayoutOrigin(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiClayLayoutOptions *options)
+{
+    if (tree == NULL || options == NULL) {
+        return (Clay_Vector2){0.0f, 0.0f};
+    }
+
+    Clay_Vector2 origin = {
+        .x = options->bounds.x,
+        .y = options->bounds.y,
+    };
+    char viewport_id[ECS_UI_ID_MAX * 2u] = {0};
+    EcsUiClayViewportId(tree, viewport_id, sizeof(viewport_id));
+    Clay_ElementData viewport_data =
+        Clay_GetElementData(Clay_GetElementId(EcsUiClayString(viewport_id)));
+    if (viewport_data.found) {
+        origin.x = viewport_data.boundingBox.x;
+        origin.y = viewport_data.boundingBox.y;
+    }
+    return origin;
+}
+
+static bool EcsUiClayEnrichSnapshotNodeLayout(
+    EcsUiTreeNodeSnapshot *node,
+    float scale,
+    Clay_Vector2 origin)
+{
+    if (node == NULL || node->kind != ECS_UI_NODE_CUSTOM) {
+        return false;
+    }
+
+    char clay_id[ECS_UI_ID_MAX * 2u] = {0};
+    EcsUiClayElementId(node, NULL, clay_id, sizeof(clay_id));
+    Clay_ElementData data =
+        Clay_GetElementData(Clay_GetElementId(EcsUiClayString(clay_id)));
+    if (!data.found) {
+        return false;
+    }
+
+    node->layout_x = (data.boundingBox.x - origin.x) / scale;
+    node->layout_y = (data.boundingBox.y - origin.y) / scale;
+    node->layout_width = data.boundingBox.width / scale;
+    node->layout_height = data.boundingBox.height / scale;
+    node->has_layout = true;
+    return true;
+}
+
+uint32_t EcsUiClayEnrichSnapshotLayout(
+    EcsUiTreeSnapshot *tree,
+    const EcsUiClayLayoutOptions *options)
+{
+    if (tree == NULL) {
+        return 0u;
+    }
+
+    EcsUiClayClearSnapshotLayout(tree);
+    const float scale = EcsUiClayTreeScale(tree);
+    const Clay_Vector2 origin =
+        EcsUiClaySnapshotLayoutOrigin(tree, options);
+    uint32_t enriched_count = 0u;
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (EcsUiClayEnrichSnapshotNodeLayout(
+                &tree->nodes[i],
+                scale,
+                origin)) {
+            enriched_count += 1u;
+        }
+    }
+    return enriched_count;
 }
 
 static bool EcsUiClayNodeCapturesSelf(

@@ -473,6 +473,14 @@ typedef struct EcsUiTreeNodeSnapshot {
     EcsUiCustom custom;
     EcsUiVisual visual;
     EcsUiPlacement placement;
+    /*
+     * Enriched post-layout rectangle. Values are logical units relative to the
+     * tree root; render bridges are the only layer that applies scale/origin.
+     */
+    float layout_x;
+    float layout_y;
+    float layout_width;
+    float layout_height;
     EcsUiHitTest hit_test;
     EcsUiScrollView scroll_view;
     EcsUiTextFieldView text_field_view;
@@ -481,6 +489,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     bool has_text_style;
     bool has_text_layout;
     bool has_placement;
+    bool has_layout;
     bool has_scroll_view;
     bool has_text_field_view;
     bool hovered;
@@ -634,6 +643,10 @@ bool EcsUiReadTree(
     const ecs_world_t *world,
     ecs_entity_t root,
     EcsUiTreeSnapshot *out);
+/* Return the first snapshot node with the authored stable id, or NULL. */
+const EcsUiTreeNodeSnapshot *EcsUiTreeSnapshotFindNodeById(
+    const EcsUiTreeSnapshot *tree,
+    const char *id);
 
 void EcsUiEventListClear(EcsUiEventList *events);
 bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);

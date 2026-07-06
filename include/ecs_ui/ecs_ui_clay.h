@@ -116,6 +116,18 @@ void EcsUiClayEmitTreeEx(
     const EcsUiClayLayoutOptions *options,
     EcsUiClayInteractionFrame *frame);
 /*
+ * Enrich a snapshot with Clay post-layout rectangles from the current Clay
+ * context. Call after EcsUiClayEmitTreeEx and Clay_EndLayout for the same
+ * frame. The MVP fills custom nodes only; other nodes remain has_layout=false
+ * so all-node enrichment can be added without changing this API.
+ *
+ * Filled rectangles are logical units, tree-root relative. For bounded emits,
+ * the Clay viewport origin is subtracted before dividing by tree->scale.
+ */
+uint32_t EcsUiClayEnrichSnapshotLayout(
+    EcsUiTreeSnapshot *tree,
+    const EcsUiClayLayoutOptions *options);
+/*
  * `pointer` is physical window input matching Clay's pointer state. The emitted
  * EcsUiEvent coordinates, starts, deltas, and velocities are logical,
  * window-origin values divided by the owning tree's scale.

@@ -2058,6 +2058,22 @@ bool EcsUiReadTree(
         out) != ECS_UI_TREE_INVALID_INDEX;
 }
 
+const EcsUiTreeNodeSnapshot *EcsUiTreeSnapshotFindNodeById(
+    const EcsUiTreeSnapshot *tree,
+    const char *id)
+{
+    if (tree == NULL || id == NULL) {
+        return NULL;
+    }
+
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (strcmp(tree->nodes[i].id, id) == 0) {
+            return &tree->nodes[i];
+        }
+    }
+    return NULL;
+}
+
 void EcsUiEventListClear(EcsUiEventList *events)
 {
     if (events == NULL) {

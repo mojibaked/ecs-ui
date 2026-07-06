@@ -655,6 +655,52 @@ static int32_t FindCustomCommandIndex(
     return -1;
 }
 
+static int RequireEnrichedLayoutMatchesCustomCommand(
+    const EcsUiTreeSnapshot *tree,
+    Clay_RenderCommandArray *commands,
+    const char *node_id,
+    float scale,
+    Clay_Vector2 root_origin,
+    const char *message)
+{
+    int result = 0;
+    const EcsUiTreeNodeSnapshot *node =
+        EcsUiTreeSnapshotFindNodeById(tree, node_id);
+    Clay_RenderCommand *command = FindCustomCommand(commands, node_id);
+    result |= Require(node != NULL, "enriched layout node missing");
+    result |= Require(command != NULL, "enriched layout command missing");
+    if (node == NULL || command == NULL) {
+        (void)fprintf(stderr, "%s\n", message);
+        return result;
+    }
+
+    result |= Require(node->has_layout, "node should have enriched layout");
+    result |= RequireNear(
+        (node->layout_x * scale) + root_origin.x,
+        command->boundingBox.x,
+        0.001f,
+        "enriched layout x should match Clay bounds");
+    result |= RequireNear(
+        (node->layout_y * scale) + root_origin.y,
+        command->boundingBox.y,
+        0.001f,
+        "enriched layout y should match Clay bounds");
+    result |= RequireNear(
+        node->layout_width * scale,
+        command->boundingBox.width,
+        0.001f,
+        "enriched layout width should match Clay bounds");
+    result |= RequireNear(
+        node->layout_height * scale,
+        command->boundingBox.height,
+        0.001f,
+        "enriched layout height should match Clay bounds");
+    if (result != 0) {
+        (void)fprintf(stderr, "%s\n", message);
+    }
+    return result;
+}
+
 static Clay_RenderCommand *FindTextCommand(
     Clay_RenderCommandArray *commands,
     const char *text)
@@ -881,6 +927,181 @@ static int TestRootScaleAffectsClayLayoutOnly(void)
     }
 
     ecs_fini(world);
+    return result;
+}
+
+static int RunCustomLayoutEnrichmentCase(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create layout enrichment world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "LayoutEnrichmentRoot");
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "layout enrichment scale setup failed");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "LayoutContainer",
+            .gap = 5.0f,
+            .padding = 7.0f,
+            .preferred_width = 180.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "CanvasSurface",
+            .kind = "canvas",
+            .preferred_width = 64.0f,
+            .preferred_height = 32.0f,
+        });
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FloatingHost",
+            .preferred_width = 120.0f,
+            .preferred_height = 70.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "FloatingBackground",
+            .kind = "background",
+            .preferred_width = 120.0f,
+            .preferred_height = 70.0f,
+        });
+    ecs_entity_t floating_child = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "FloatingChild",
+            .kind = "placed",
+            .preferred_width = 30.0f,
+            .preferred_height = 20.0f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "ClipHost",
+                .preferred_width = 90.0f,
+                .preferred_height = 36.0f,
+            },
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ClippedChild",
+            .kind = "clipped",
+            .preferred_width = 72.0f,
+            .preferred_height = 24.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ClipFiller",
+            .kind = "filler",
+            .preferred_width = 72.0f,
+            .preferred_height = 48.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "layout enrichment builder failed");
+
+    ecs_set(world, floating_child, EcsUiPlacement, {
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_END,
+        .offset_x = -8.0f,
+        .offset_y = -6.0f,
+        .width = 30.0f,
+        .height = 20.0f,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "layout enrichment tree read failed");
+    const EcsUiTreeNodeSnapshot *clip_host =
+        EcsUiTreeSnapshotFindNodeById(&tree, "ClipHost");
+    result |= Require(
+        clip_host != NULL && clip_host->has_scroll_view,
+        "layout enrichment clipped case should use a scroll view");
+    ResetClayErrors();
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = {
+        .bounds = {
+            .x = 17.0f,
+            .y = 29.0f,
+            .width = 260.0f * scale,
+            .height = 220.0f * scale,
+        },
+    };
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.x + options.bounds.width + 40.0f,
+        .height = options.bounds.y + options.bounds.height + 40.0f,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+    uint32_t enriched_count =
+        EcsUiClayEnrichSnapshotLayout(&tree, &options);
+    result |= Require(
+        enriched_count >= 5u,
+        "layout enrichment should fill custom nodes");
+
+    Clay_Vector2 origin = {
+        .x = options.bounds.x,
+        .y = options.bounds.y,
+    };
+    result |= RequireEnrichedLayoutMatchesCustomCommand(
+        &tree,
+        &commands,
+        "CanvasSurface",
+        scale,
+        origin,
+        "canvas custom layout enrichment mismatch");
+    result |= RequireEnrichedLayoutMatchesCustomCommand(
+        &tree,
+        &commands,
+        "FloatingChild",
+        scale,
+        origin,
+        "placed custom layout enrichment mismatch");
+    result |= RequireEnrichedLayoutMatchesCustomCommand(
+        &tree,
+        &commands,
+        "ClippedChild",
+        scale,
+        origin,
+        "clipped custom layout enrichment mismatch");
+
+    const EcsUiTreeNodeSnapshot *container =
+        EcsUiTreeSnapshotFindNodeById(&tree, "LayoutContainer");
+    result |= Require(
+        container != NULL && !container->has_layout,
+        "ordinary containers should wait for all-node layout enrichment");
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "layout enrichment should not emit Clay errors");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestCustomLayoutEnrichmentUsesLogicalRootRelativeRects(void)
+{
+    int result = 0;
+    result |= RunCustomLayoutEnrichmentCase(1.0f);
+    result |= RunCustomLayoutEnrichmentCase(2.0f);
     return result;
 }
 
@@ -4289,6 +4510,7 @@ int main(void)
     }
 
     result |= TestRootScaleAffectsClayLayoutOnly();
+    result |= TestCustomLayoutEnrichmentUsesLogicalRootRelativeRects();
     result |= TestScaledPointerEventsAreLogical();
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestScrollViewEmitsScissorCommands();
