@@ -72,6 +72,7 @@ typedef struct EcsUiRaylibParkerDesc {
 } EcsUiRaylibParkerDesc;
 
 typedef struct EcsUiRaylibParker EcsUiRaylibParker;
+typedef struct EcsUiRaylibPresentationCache EcsUiRaylibPresentationCache;
 
 typedef bool (*EcsUiRaylibStepHook)(void *ctx);
 typedef bool (*EcsUiRaylibStepTickHook)(double dt, void *ctx);
@@ -266,6 +267,34 @@ bool EcsUiRaylibRun(
     const EcsUiRaylibRunConfig *config,
     const EcsUiRaylibRunCallbacks *callbacks,
     EcsUiRaylibRunResult *out);
+
+/*
+ * Raylib presentation cache for apps that park without redrawing. The cache
+ * owns a physical-pixel RenderTexture2D and must be created, ensured, and
+ * destroyed while the raylib context is alive. `scale` is the bridge
+ * DPI/logical scale metadata used to decide when the cache must be recreated;
+ * the helper does not transform coordinates.
+ */
+EcsUiRaylibPresentationCache *EcsUiRaylibPresentationCacheCreate(void);
+void EcsUiRaylibPresentationCacheDestroy(
+    EcsUiRaylibPresentationCache *cache);
+bool EcsUiRaylibPresentationCacheEnsure(
+    EcsUiRaylibPresentationCache *cache,
+    uint32_t physical_width,
+    uint32_t physical_height,
+    float scale);
+bool EcsUiRaylibPresentationCacheBegin(
+    EcsUiRaylibPresentationCache *cache,
+    Color clear_color);
+void EcsUiRaylibPresentationCacheEnd(EcsUiRaylibPresentationCache *cache);
+/*
+ * Draw the cached frame into the current backbuffer using raylib's y-flipped
+ * RenderTexture source convention. The caller owns BeginDrawing/EndDrawing.
+ */
+bool EcsUiRaylibPresentationCacheBlit(
+    const EcsUiRaylibPresentationCache *cache);
+bool EcsUiRaylibPresentationCacheHasCachedFrame(
+    const EcsUiRaylibPresentationCache *cache);
 
 /*
  * Override the font used for all UI text. Pass a caller-owned font (e.g. a TTF

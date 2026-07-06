@@ -1,6 +1,8 @@
 #include "ecs_ui/ecs_ui_raylib.h"
 
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /*
@@ -27,6 +29,162 @@ void EcsUiRaylibResetFont(void)
 {
     g_ecs_ui_raylib_font = (Font){0};
     g_ecs_ui_raylib_font_set = false;
+}
+
+struct EcsUiRaylibPresentationCache {
+    RenderTexture2D target;
+    uint32_t physical_width;
+    uint32_t physical_height;
+    float scale;
+    bool ready;
+    bool has_frame;
+    bool rendering;
+};
+
+static float EcsUiRaylibPresentationCacheScale(float scale)
+{
+    return scale > 0.0f ? scale : 1.0f;
+}
+
+static void EcsUiRaylibPresentationCacheRelease(
+    EcsUiRaylibPresentationCache *cache)
+{
+    if (cache == NULL) {
+        return;
+    }
+
+    if (cache->rendering) {
+        EndTextureMode();
+        cache->rendering = false;
+    }
+
+    if (cache->ready) {
+        UnloadRenderTexture(cache->target);
+    }
+
+    cache->target = (RenderTexture2D){0};
+    cache->physical_width = 0u;
+    cache->physical_height = 0u;
+    cache->scale = 1.0f;
+    cache->ready = false;
+    cache->has_frame = false;
+}
+
+EcsUiRaylibPresentationCache *EcsUiRaylibPresentationCacheCreate(void)
+{
+    EcsUiRaylibPresentationCache *cache =
+        calloc(1u, sizeof(EcsUiRaylibPresentationCache));
+    if (cache != NULL) {
+        cache->scale = 1.0f;
+    }
+    return cache;
+}
+
+void EcsUiRaylibPresentationCacheDestroy(EcsUiRaylibPresentationCache *cache)
+{
+    if (cache == NULL) {
+        return;
+    }
+
+    EcsUiRaylibPresentationCacheRelease(cache);
+    free(cache);
+}
+
+bool EcsUiRaylibPresentationCacheEnsure(
+    EcsUiRaylibPresentationCache *cache,
+    uint32_t physical_width,
+    uint32_t physical_height,
+    float scale)
+{
+    if (cache == NULL || physical_width == 0u || physical_height == 0u ||
+        physical_width > (uint32_t)INT_MAX ||
+        physical_height > (uint32_t)INT_MAX || cache->rendering) {
+        return false;
+    }
+
+    const float normalized_scale = EcsUiRaylibPresentationCacheScale(scale);
+    if (cache->ready && cache->physical_width == physical_width &&
+        cache->physical_height == physical_height &&
+        cache->scale == normalized_scale) {
+        return true;
+    }
+
+    EcsUiRaylibPresentationCacheRelease(cache);
+
+    cache->target =
+        LoadRenderTexture((int)physical_width, (int)physical_height);
+    if (cache->target.id == 0u || cache->target.texture.id == 0u) {
+        cache->target = (RenderTexture2D){0};
+        return false;
+    }
+
+    SetTextureFilter(cache->target.texture, TEXTURE_FILTER_BILINEAR);
+    cache->physical_width = physical_width;
+    cache->physical_height = physical_height;
+    cache->scale = normalized_scale;
+    cache->ready = true;
+    cache->has_frame = false;
+    return true;
+}
+
+bool EcsUiRaylibPresentationCacheBegin(
+    EcsUiRaylibPresentationCache *cache,
+    Color clear_color)
+{
+    if (cache == NULL || !cache->ready || cache->rendering) {
+        return false;
+    }
+
+    BeginTextureMode(cache->target);
+    ClearBackground(clear_color);
+    cache->rendering = true;
+    return true;
+}
+
+void EcsUiRaylibPresentationCacheEnd(EcsUiRaylibPresentationCache *cache)
+{
+    if (cache == NULL || !cache->rendering) {
+        return;
+    }
+
+    EndTextureMode();
+    cache->rendering = false;
+    cache->has_frame = true;
+}
+
+bool EcsUiRaylibPresentationCacheBlit(
+    const EcsUiRaylibPresentationCache *cache)
+{
+    if (cache == NULL || !cache->ready || !cache->has_frame ||
+        cache->rendering) {
+        return false;
+    }
+
+    DrawTexturePro(
+        cache->target.texture,
+        (Rectangle){
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = (float)cache->physical_width,
+            .height = -(float)cache->physical_height,
+        },
+        (Rectangle){
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = (float)cache->physical_width,
+            .height = (float)cache->physical_height,
+        },
+        (Vector2){0.0f, 0.0f},
+        0.0f,
+        WHITE);
+    return true;
+}
+
+bool EcsUiRaylibPresentationCacheHasCachedFrame(
+    const EcsUiRaylibPresentationCache *cache)
+{
+    return cache != NULL && cache->ready && cache->has_frame &&
+           !cache->rendering;
 }
 
 static float EcsUiRaylibMaxFloat(float a, float b)

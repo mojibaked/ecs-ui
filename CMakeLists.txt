@@ -272,6 +272,15 @@ if(ECS_UI_BUILD_TESTS)
                 Threads::Threads)
         ecs_ui_enable_warnings(ecs_ui_raylib_runner)
         add_test(NAME ecs_ui_raylib_runner COMMAND ecs_ui_raylib_runner)
+
+        add_executable(ecs_ui_raylib_presentation_cache
+            tests/ecs_ui_raylib_presentation_cache.c)
+        target_link_libraries(ecs_ui_raylib_presentation_cache
+            PRIVATE ecs_ui_raylib)
+        ecs_ui_enable_warnings(ecs_ui_raylib_presentation_cache)
+        add_test(
+            NAME ecs_ui_raylib_presentation_cache
+            COMMAND ecs_ui_raylib_presentation_cache)
     endif()
 
     if(TARGET ecs_ui_clay)
