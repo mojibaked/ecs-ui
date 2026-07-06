@@ -2683,6 +2683,159 @@ int main(void)
         !EcsUiTextInputHasFocusedField(world),
         "text cancel should blur focused field");
 
+    EcsUiEventList remaining_events = {0};
+    EcsUiApplyFrameEventsResult apply_result = EcsUiApplyFrameEvents(
+        world,
+        &(EcsUiEventList){
+            .count = 1u,
+            .events = {focus_text_event},
+        },
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_DEFAULT);
+    result |= Require(
+        apply_result.input_count == 1u &&
+            apply_result.consumed_count == 1u &&
+            apply_result.remaining_count == 0u &&
+            !apply_result.output_truncated,
+        "frame event helper should consume field focus clicks");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "frame event helper should focus linked field");
+    EcsUiEvent wrapper_text_event = {
+        .type = ECS_UI_EVENT_TEXT_INPUT,
+        .codepoint = 'y',
+    };
+    apply_result = EcsUiApplyFrameEvents(
+        world,
+        &(EcsUiEventList){
+            .count = 1u,
+            .events = {wrapper_text_event},
+        },
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_DEFAULT);
+    result |= Require(
+        apply_result.consumed_count == 1u &&
+            apply_result.remaining_count == 0u,
+        "frame event helper should consume text input");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        strcmp(EcsUiTextInputValue(world, text_field_a), "zy") == 0,
+        "frame event helper should apply text input");
+    apply_result = EcsUiApplyFrameEvents(
+        world,
+        &(EcsUiEventList){
+            .count = 2u,
+            .events = {
+                submit_text_event,
+                cancel_text_event,
+            },
+        },
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_DEFAULT);
+    result |= Require(
+        apply_result.consumed_count == 0u &&
+            apply_result.remaining_count == 2u &&
+            remaining_events.events[0].type == ECS_UI_EVENT_TEXT_SUBMIT &&
+            remaining_events.events[1].type == ECS_UI_EVENT_TEXT_CANCEL,
+        "frame event helper should preserve submit and cancel by default");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "default preserved cancel should not blur focused field");
+    apply_result = EcsUiApplyFrameEvents(
+        world,
+        &(EcsUiEventList){
+            .count = 2u,
+            .events = {
+                submit_text_event,
+                cancel_text_event,
+            },
+        },
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_SUBMIT |
+            ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_CANCEL);
+    result |= Require(
+        apply_result.consumed_count == 2u &&
+            apply_result.remaining_count == 0u,
+        "frame event helper should consume submit and cancel when requested");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        !EcsUiTextInputHasFocusedField(world),
+        "consumed cancel should request blur");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "frame event helper outside click focus setup should be created");
+    (void)ecs_progress(world, 0.0f);
+    apply_result = EcsUiApplyFrameEvents(
+        world,
+        &(EcsUiEventList){
+            .count = 1u,
+            .events = {outside_click_event},
+        },
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_DEFAULT);
+    result |= Require(
+        apply_result.consumed_count == 0u &&
+            apply_result.remaining_count == 1u &&
+            remaining_events.events[0].type == ECS_UI_EVENT_CLICKED,
+        "frame event helper should preserve outside-click app events");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        !EcsUiTextInputHasFocusedField(world),
+        "frame event helper outside click should enqueue blur");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "frame event helper refocus setup should be created");
+    (void)ecs_progress(world, 0.0f);
+    apply_result = EcsUiApplyFrameEvents(
+        world,
+        &(EcsUiEventList){
+            .count = 1u,
+            .events = {outside_click_event},
+        },
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_DEFAULT);
+    result |= Require(
+        apply_result.consumed_count == 0u &&
+            apply_result.remaining_count == 1u,
+        "frame event helper should return outside click before app refocus");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "same-frame app focus after helper outside click should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "helper outside-click blur should lose to same-frame app focus");
+    EcsUiEventList truncated_input = {
+        .count = ECS_UI_EVENT_MAX,
+        .truncated = true,
+    };
+    for (uint32_t i = 0u; i < ECS_UI_EVENT_MAX; i += 1u) {
+        truncated_input.events[i] = (EcsUiEvent){
+            .type = ECS_UI_EVENT_HOVERED,
+        };
+    }
+    apply_result = EcsUiApplyFrameEvents(
+        world,
+        &truncated_input,
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_DEFAULT);
+    result |= Require(
+        apply_result.input_count == ECS_UI_EVENT_MAX &&
+            apply_result.input_truncated &&
+            apply_result.remaining_count == ECS_UI_EVENT_MAX &&
+            apply_result.output_truncated &&
+            remaining_events.truncated,
+        "frame event helper should report truncated remaining events");
+    result |= Require(
+        EcsUiTextInputSetValue(world, text_field_a, "z") &&
+            EcsUiTextInputSetCursor(world, text_field_a, 1u) &&
+            EcsUiTextInputClearSelection(world, text_field_a),
+        "text field should be restored after frame event helper tests");
+    (void)EcsUiTextInputRequestBlur(world);
+    (void)ecs_progress(world, 0.0f);
+
     ecs_entity_t text_view_root =
         EcsUiRootEntity(world, "TextFieldViewRoot");
     ecs_entity_t text_view_style =

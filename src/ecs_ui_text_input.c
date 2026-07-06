@@ -998,6 +998,95 @@ uint32_t EcsUiTextInputApplyEvents(
     return consumed;
 }
 
+static bool EcsUiApplyFrameEventShouldConsumePolicyEvent(
+    const EcsUiEvent *event,
+    uint32_t flags)
+{
+    if (event == NULL) {
+        return false;
+    }
+    switch (event->type) {
+    case ECS_UI_EVENT_TEXT_SUBMIT:
+        return (flags & ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_SUBMIT) != 0u;
+    case ECS_UI_EVENT_TEXT_CANCEL:
+        return (flags & ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_CANCEL) != 0u;
+    default:
+        return false;
+    }
+}
+
+static bool EcsUiApplyFrameEventPreservesPolicyEvent(
+    const EcsUiEvent *event,
+    uint32_t flags)
+{
+    if (event == NULL) {
+        return false;
+    }
+    switch (event->type) {
+    case ECS_UI_EVENT_TEXT_SUBMIT:
+    case ECS_UI_EVENT_TEXT_CANCEL:
+        return !EcsUiApplyFrameEventShouldConsumePolicyEvent(event, flags);
+    default:
+        return false;
+    }
+}
+
+EcsUiApplyFrameEventsResult EcsUiApplyFrameEvents(
+    ecs_world_t *world,
+    const EcsUiEventList *in_events,
+    EcsUiEventList *out_remaining,
+    uint32_t flags)
+{
+    EcsUiApplyFrameEventsResult result = {0};
+    if (out_remaining != NULL) {
+        EcsUiEventListClear(out_remaining);
+    }
+    if (in_events == NULL) {
+        return result;
+    }
+
+    result.input_count = in_events->count;
+    result.input_truncated =
+        in_events->truncated || in_events->count > ECS_UI_EVENT_MAX;
+    const uint32_t input_count =
+        in_events->count > ECS_UI_EVENT_MAX
+            ? ECS_UI_EVENT_MAX
+            : in_events->count;
+    for (uint32_t i = 0u; i < input_count; i += 1u) {
+        const EcsUiEvent *event = &in_events->events[i];
+        bool consumed = false;
+        if (EcsUiApplyFrameEventPreservesPolicyEvent(event, flags)) {
+            consumed = false;
+        } else if (EcsUiApplyFrameEventShouldConsumePolicyEvent(event, flags)) {
+            if (event->type == ECS_UI_EVENT_TEXT_CANCEL) {
+                (void)EcsUiTextInputApplyEvent(world, event);
+            }
+            consumed = true;
+        } else {
+            consumed = EcsUiTextInputApplyEvent(world, event);
+        }
+
+        if (consumed) {
+            result.consumed_count += 1u;
+            continue;
+        }
+
+        if (!EcsUiEventListPush(out_remaining, event)) {
+            result.output_truncated = true;
+        }
+    }
+
+    if (out_remaining != NULL) {
+        if (result.input_truncated) {
+            out_remaining->truncated = true;
+        }
+        result.remaining_count = out_remaining->count;
+        result.output_truncated =
+            result.output_truncated || out_remaining->truncated;
+    }
+    return result;
+}
+
 bool EcsUiTextInputPopClipboardWrite(
     ecs_world_t *world,
     char *out,

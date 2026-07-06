@@ -38,6 +38,20 @@ typedef struct EcsUiTextFieldViewDesc {
     ecs_entity_t style_token;
 } EcsUiTextFieldViewDesc;
 
+typedef enum EcsUiApplyFrameEventFlags {
+    ECS_UI_APPLY_FRAME_EVENTS_DEFAULT = 0u,
+    ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_SUBMIT = 1u << 0u,
+    ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_CANCEL = 1u << 1u,
+} EcsUiApplyFrameEventFlags;
+
+typedef struct EcsUiApplyFrameEventsResult {
+    uint32_t input_count;
+    uint32_t consumed_count;
+    uint32_t remaining_count;
+    bool input_truncated;
+    bool output_truncated;
+} EcsUiApplyFrameEventsResult;
+
 extern ECS_COMPONENT_DECLARE(EcsUiTextField);
 extern ECS_COMPONENT_DECLARE(EcsUiTextEditState);
 extern ECS_COMPONENT_DECLARE(EcsUiTextInsertRequest);
@@ -165,6 +179,31 @@ bool EcsUiTextInputApplyEvent(
 uint32_t EcsUiTextInputApplyEvents(
     ecs_world_t *world,
     const EcsUiEventList *events);
+
+/*
+ * Apply the canonical frame-event preprocessing order for apps that dispatch
+ * renderer-neutral EcsUiEventList values:
+ *
+ *   1. route each event through reusable text-input handling;
+ *   2. skip events consumed by text input;
+ *   3. copy unconsumed events to out_remaining for app-owned dispatch.
+ *
+ * The helper only covers text input and filtering. It does not perform overlay
+ * routing or app action dispatch. ECS_UI_EVENT_TEXT_SUBMIT and
+ * ECS_UI_EVENT_TEXT_CANCEL are preserved by default because submit/cancel
+ * policy is app-owned. Set the corresponding CONSUME flag to omit that policy
+ * event from out_remaining; consuming TEXT_CANCEL also applies the low-level
+ * text-input cancel behavior, which requests blur when a field is focused.
+ *
+ * out_remaining is cleared before use. If input collection had already
+ * truncated events or out_remaining fills, output_truncated is set in the
+ * returned result and out_remaining->truncated is set.
+ */
+EcsUiApplyFrameEventsResult EcsUiApplyFrameEvents(
+    ecs_world_t *world,
+    const EcsUiEventList *in_events,
+    EcsUiEventList *out_remaining,
+    uint32_t flags);
 bool EcsUiTextInputPopClipboardWrite(
     ecs_world_t *world,
     char *out,

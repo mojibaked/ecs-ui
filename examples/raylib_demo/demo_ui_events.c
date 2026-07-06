@@ -64,14 +64,17 @@ void DemoUiApplyEvents(
         return;
     }
 
-    const DemoUiRefs *refs = ecs_singleton_get(ui_world, DemoUiRefs);
-    for (uint32_t i = 0u; i < events->count; i += 1u) {
-        const EcsUiEvent *event = &events->events[i];
-        if (refs == NULL) {
-            continue;
-        }
+    EcsUiEventList remaining_events = {0};
+    (void)EcsUiApplyFrameEvents(
+        ui_world,
+        events,
+        &remaining_events,
+        ECS_UI_APPLY_FRAME_EVENTS_CONSUME_TEXT_CANCEL);
 
-        if (EcsUiTextInputApplyEvent(ui_world, event)) {
+    const DemoUiRefs *refs = ecs_singleton_get(ui_world, DemoUiRefs);
+    for (uint32_t i = 0u; i < remaining_events.count; i += 1u) {
+        const EcsUiEvent *event = &remaining_events.events[i];
+        if (refs == NULL) {
             continue;
         }
 
