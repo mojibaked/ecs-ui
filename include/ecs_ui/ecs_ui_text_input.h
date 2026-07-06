@@ -76,6 +76,13 @@ bool EcsUiTextInputIsFocused(
     const ecs_world_t *world,
     ecs_entity_t field);
 
+/*
+ * Focus, traversal, and blur requests are accumulated during a frame and
+ * resolved once in the text-input update pipeline. Same-frame precedence is:
+ * explicit field focus, then traversal focus-next/focus-previous, then blur.
+ * Blur only wins when no focus or traversal request exists in that frame.
+ * Within each class, the last request made by these APIs wins.
+ */
 ecs_entity_t EcsUiTextInputRequestFocusField(
     ecs_world_t *world,
     ecs_entity_t field);

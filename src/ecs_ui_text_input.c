@@ -2,11 +2,29 @@
 
 #include <string.h>
 
+typedef struct EcsUiTextFocusRequestSequence {
+    uint64_t sequence;
+} EcsUiTextFocusRequestSequence;
+
+typedef struct EcsUiTextFocusRequestAccumulator {
+    uint64_t next_sequence;
+    uint64_t focus_sequence;
+    uint64_t traversal_sequence;
+    uint64_t blur_sequence;
+    ecs_entity_t focus_field;
+    int32_t traversal_direction;
+    bool has_focus;
+    bool has_traversal;
+    bool has_blur;
+} EcsUiTextFocusRequestAccumulator;
+
 ECS_COMPONENT_DECLARE(EcsUiTextField);
 ECS_COMPONENT_DECLARE(EcsUiTextEditState);
 ECS_COMPONENT_DECLARE(EcsUiTextInsertRequest);
 ECS_COMPONENT_DECLARE(EcsUiTextPasteRequest);
 ECS_COMPONENT_DECLARE(EcsUiTextClipboardWriteRequest);
+ECS_COMPONENT_DECLARE(EcsUiTextFocusRequestSequence);
+ECS_COMPONENT_DECLARE(EcsUiTextFocusRequestAccumulator);
 ECS_TAG_DECLARE(EcsUiFocusedTextField);
 ECS_TAG_DECLARE(EcsUiTextFieldUiNode);
 ECS_TAG_DECLARE(EcsUiTextFieldValueUiNode);
@@ -35,6 +53,8 @@ static bool EcsUiTextInputReady(void)
         ecs_id(EcsUiTextInsertRequest) != 0 &&
         ecs_id(EcsUiTextPasteRequest) != 0 &&
         ecs_id(EcsUiTextClipboardWriteRequest) != 0 &&
+        ecs_id(EcsUiTextFocusRequestSequence) != 0 &&
+        ecs_id(EcsUiTextFocusRequestAccumulator) != 0 &&
         EcsUiFocusedTextField != 0 && EcsUiTextFieldUiNode != 0 &&
         EcsUiTextFieldValueUiNode != 0 && EcsUiForTextField != 0 &&
         EcsUiFocusTextFieldRequest != 0 &&
@@ -351,6 +371,76 @@ bool EcsUiTextInputIsFocused(
     return field != 0 && EcsUiTextInputFocusedField(world) == field;
 }
 
+static bool EcsUiTextInputFocusAccumulator(
+    ecs_world_t *world,
+    ecs_entity_t *out_root,
+    EcsUiTextFocusRequestAccumulator *out_accumulator)
+{
+    if (out_root != NULL) {
+        *out_root = 0;
+    }
+    if (out_accumulator != NULL) {
+        *out_accumulator = (EcsUiTextFocusRequestAccumulator){0};
+    }
+    if (world == NULL || out_accumulator == NULL) {
+        return false;
+    }
+    ecs_entity_t root = EcsUiTextInputRoot(world);
+    if (root == 0) {
+        return false;
+    }
+    if (out_root != NULL) {
+        *out_root = root;
+    }
+    const EcsUiTextFocusRequestAccumulator *existing =
+        ecs_get(world, root, EcsUiTextFocusRequestAccumulator);
+    if (existing != NULL) {
+        *out_accumulator = *existing;
+    }
+    return true;
+}
+
+static void EcsUiTextInputStoreFocusAccumulator(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    const EcsUiTextFocusRequestAccumulator *accumulator)
+{
+    if (world == NULL || root == 0 || accumulator == NULL) {
+        return;
+    }
+    ecs_set_ptr(world, root, EcsUiTextFocusRequestAccumulator, accumulator);
+}
+
+static uint64_t EcsUiTextInputNextFocusSequence(
+    EcsUiTextFocusRequestAccumulator *accumulator)
+{
+    if (accumulator == NULL) {
+        return 0u;
+    }
+    accumulator->next_sequence += 1u;
+    if (accumulator->next_sequence == 0u) {
+        accumulator->next_sequence = 1u;
+    }
+    return accumulator->next_sequence;
+}
+
+static void EcsUiTextInputStampFocusRequest(
+    ecs_world_t *world,
+    ecs_entity_t request,
+    uint64_t sequence)
+{
+    if (world == NULL || request == 0 || sequence == 0u) {
+        return;
+    }
+    ecs_set(
+        world,
+        request,
+        EcsUiTextFocusRequestSequence,
+        {
+            .sequence = sequence,
+        });
+}
+
 ecs_entity_t EcsUiTextInputRequestFocusField(
     ecs_world_t *world,
     ecs_entity_t field)
@@ -358,7 +448,25 @@ ecs_entity_t EcsUiTextInputRequestFocusField(
     if (world == NULL || field == 0 || !EcsUiTextInputReady()) {
         return 0;
     }
-    return ecs_new_w_pair(world, EcsUiFocusTextFieldRequest, field);
+    ecs_entity_t request =
+        ecs_new_w_pair(world, EcsUiFocusTextFieldRequest, field);
+    ecs_entity_t root = 0;
+    EcsUiTextFocusRequestAccumulator accumulator = {0};
+    bool has_accumulator =
+        EcsUiTextInputFocusAccumulator(world, &root, &accumulator);
+    uint64_t sequence = EcsUiTextInputNextFocusSequence(&accumulator);
+    if (request == 0 || !has_accumulator || sequence == 0u) {
+        if (request != 0) {
+            ecs_delete(world, request);
+        }
+        return 0;
+    }
+    accumulator.has_focus = true;
+    accumulator.focus_sequence = sequence;
+    accumulator.focus_field = field;
+    EcsUiTextInputStampFocusRequest(world, request, sequence);
+    EcsUiTextInputStoreFocusAccumulator(world, root, &accumulator);
+    return request;
 }
 
 ecs_entity_t EcsUiTextInputRequestFocusNext(ecs_world_t *world)
@@ -366,7 +474,24 @@ ecs_entity_t EcsUiTextInputRequestFocusNext(ecs_world_t *world)
     if (world == NULL || !EcsUiTextInputReady()) {
         return 0;
     }
-    return ecs_new_w_id(world, EcsUiFocusNextTextFieldRequest);
+    ecs_entity_t request = ecs_new_w_id(world, EcsUiFocusNextTextFieldRequest);
+    ecs_entity_t root = 0;
+    EcsUiTextFocusRequestAccumulator accumulator = {0};
+    bool has_accumulator =
+        EcsUiTextInputFocusAccumulator(world, &root, &accumulator);
+    uint64_t sequence = EcsUiTextInputNextFocusSequence(&accumulator);
+    if (request == 0 || !has_accumulator || sequence == 0u) {
+        if (request != 0) {
+            ecs_delete(world, request);
+        }
+        return 0;
+    }
+    accumulator.has_traversal = true;
+    accumulator.traversal_sequence = sequence;
+    accumulator.traversal_direction = 1;
+    EcsUiTextInputStampFocusRequest(world, request, sequence);
+    EcsUiTextInputStoreFocusAccumulator(world, root, &accumulator);
+    return request;
 }
 
 ecs_entity_t EcsUiTextInputRequestFocusPrevious(ecs_world_t *world)
@@ -374,7 +499,25 @@ ecs_entity_t EcsUiTextInputRequestFocusPrevious(ecs_world_t *world)
     if (world == NULL || !EcsUiTextInputReady()) {
         return 0;
     }
-    return ecs_new_w_id(world, EcsUiFocusPreviousTextFieldRequest);
+    ecs_entity_t request =
+        ecs_new_w_id(world, EcsUiFocusPreviousTextFieldRequest);
+    ecs_entity_t root = 0;
+    EcsUiTextFocusRequestAccumulator accumulator = {0};
+    bool has_accumulator =
+        EcsUiTextInputFocusAccumulator(world, &root, &accumulator);
+    uint64_t sequence = EcsUiTextInputNextFocusSequence(&accumulator);
+    if (request == 0 || !has_accumulator || sequence == 0u) {
+        if (request != 0) {
+            ecs_delete(world, request);
+        }
+        return 0;
+    }
+    accumulator.has_traversal = true;
+    accumulator.traversal_sequence = sequence;
+    accumulator.traversal_direction = -1;
+    EcsUiTextInputStampFocusRequest(world, request, sequence);
+    EcsUiTextInputStoreFocusAccumulator(world, root, &accumulator);
+    return request;
 }
 
 ecs_entity_t EcsUiTextInputRequestBlur(ecs_world_t *world)
@@ -382,7 +525,23 @@ ecs_entity_t EcsUiTextInputRequestBlur(ecs_world_t *world)
     if (world == NULL || !EcsUiTextInputReady()) {
         return 0;
     }
-    return ecs_new_w_id(world, EcsUiBlurTextFieldRequest);
+    ecs_entity_t request = ecs_new_w_id(world, EcsUiBlurTextFieldRequest);
+    ecs_entity_t root = 0;
+    EcsUiTextFocusRequestAccumulator accumulator = {0};
+    bool has_accumulator =
+        EcsUiTextInputFocusAccumulator(world, &root, &accumulator);
+    uint64_t sequence = EcsUiTextInputNextFocusSequence(&accumulator);
+    if (request == 0 || !has_accumulator || sequence == 0u) {
+        if (request != 0) {
+            ecs_delete(world, request);
+        }
+        return 0;
+    }
+    accumulator.has_blur = true;
+    accumulator.blur_sequence = sequence;
+    EcsUiTextInputStampFocusRequest(world, request, sequence);
+    EcsUiTextInputStoreFocusAccumulator(world, root, &accumulator);
+    return request;
 }
 
 ecs_entity_t EcsUiTextInputRequestInsert(
@@ -1348,25 +1507,31 @@ static bool EcsUiTextInputExtendSelectionToEdge(
     return changed;
 }
 
-static void EcsUiTextInputFocusFieldSystem(ecs_iter_t *it)
+static void EcsUiTextInputFocusField(
+    ecs_world_t *world,
+    ecs_entity_t field)
 {
-    for (int32_t i = 0; i < it->count; i += 1) {
-        ecs_entity_t field =
-            ecs_get_target(
-                it->world,
-                it->entities[i],
-                EcsUiFocusTextFieldRequest,
-                0);
-        if (field != 0 && ecs_has(it->world, field, EcsUiTextField)) {
-            (void)EcsUiTextInputEnsureEditState(it->world, field);
-            ecs_add_pair(
-                it->world,
-                EcsUiTextInputRoot(it->world),
-                EcsUiFocusedTextField,
-                field);
-        }
-        ecs_delete(it->world, it->entities[i]);
+    if (world == NULL || field == 0 || !ecs_has(world, field, EcsUiTextField)) {
+        return;
     }
+    (void)EcsUiTextInputEnsureEditState(world, field);
+    ecs_add_pair(
+        world,
+        EcsUiTextInputRoot(world),
+        EcsUiFocusedTextField,
+        field);
+}
+
+static void EcsUiTextInputBlurFocusedField(ecs_world_t *world)
+{
+    if (world == NULL) {
+        return;
+    }
+    ecs_remove_pair(
+        world,
+        EcsUiTextInputRoot(world),
+        EcsUiFocusedTextField,
+        EcsWildcard);
 }
 
 static ecs_entity_t EcsUiTextInputFieldForTraversal(
@@ -1415,42 +1580,41 @@ static ecs_entity_t EcsUiTextInputFieldForTraversal(
     return fields[next_index];
 }
 
-static void EcsUiTextInputFocusTraversalSystem(ecs_iter_t *it, int32_t direction)
+static void EcsUiTextInputDeleteFocusRequestEntities(ecs_world_t *world)
 {
-    for (int32_t i = 0; i < it->count; i += 1) {
-        ecs_entity_t field =
-            EcsUiTextInputFieldForTraversal(it->world, direction);
-        if (field != 0) {
-            (void)EcsUiTextInputEnsureEditState(it->world, field);
-            ecs_add_pair(
-                it->world,
-                EcsUiTextInputRoot(it->world),
-                EcsUiFocusedTextField,
-                field);
-        }
-        ecs_delete(it->world, it->entities[i]);
+    if (world == NULL) {
+        return;
     }
+    ecs_delete_with(world, ecs_pair(EcsUiFocusTextFieldRequest, EcsWildcard));
+    ecs_delete_with(world, EcsUiFocusNextTextFieldRequest);
+    ecs_delete_with(world, EcsUiFocusPreviousTextFieldRequest);
+    ecs_delete_with(world, EcsUiBlurTextFieldRequest);
 }
 
-static void EcsUiTextInputFocusNextSystem(ecs_iter_t *it)
+static void EcsUiTextInputResolveFocusRequestsSystem(ecs_iter_t *it)
 {
-    EcsUiTextInputFocusTraversalSystem(it, 1);
-}
+    EcsUiTextFocusRequestAccumulator *requests =
+        ecs_field(it, EcsUiTextFocusRequestAccumulator, 0);
 
-static void EcsUiTextInputFocusPreviousSystem(ecs_iter_t *it)
-{
-    EcsUiTextInputFocusTraversalSystem(it, -1);
-}
-
-static void EcsUiTextInputBlurFieldSystem(ecs_iter_t *it)
-{
     for (int32_t i = 0; i < it->count; i += 1) {
-        ecs_remove_pair(
+        EcsUiTextFocusRequestAccumulator request = requests[i];
+        if (request.has_focus) {
+            EcsUiTextInputFocusField(it->world, request.focus_field);
+        } else if (request.has_traversal) {
+            EcsUiTextInputFocusField(
+                it->world,
+                EcsUiTextInputFieldForTraversal(
+                    it->world,
+                    request.traversal_direction));
+        } else if (request.has_blur) {
+            EcsUiTextInputBlurFocusedField(it->world);
+        }
+
+        EcsUiTextInputDeleteFocusRequestEntities(it->world);
+        ecs_remove(
             it->world,
-            EcsUiTextInputRoot(it->world),
-            EcsUiFocusedTextField,
-            EcsWildcard);
-        ecs_delete(it->world, it->entities[i]);
+            it->entities[i],
+            EcsUiTextFocusRequestAccumulator);
     }
 }
 
@@ -1671,6 +1835,8 @@ void EcsUiTextInputImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiTextInsertRequest);
     ECS_COMPONENT_DEFINE(world, EcsUiTextPasteRequest);
     ECS_COMPONENT_DEFINE(world, EcsUiTextClipboardWriteRequest);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextFocusRequestSequence);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextFocusRequestAccumulator);
     ECS_TAG_DEFINE(world, EcsUiFocusedTextField);
     ECS_TAG_DEFINE(world, EcsUiTextFieldUiNode);
     ECS_TAG_DEFINE(world, EcsUiTextFieldValueUiNode);
@@ -1701,46 +1867,13 @@ void EcsUiTextInputImport(ecs_world_t *world)
 
     (void)ecs_system(world, {
         .entity = ecs_entity(world, {
-            .name = "EcsUiTextInputFocusFieldSystem",
+            .name = "EcsUiTextInputResolveFocusRequestsSystem",
             .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
         }),
         .query.terms = {
-            {.id = ecs_pair(EcsUiFocusTextFieldRequest, EcsWildcard)},
+            {.id = ecs_id(EcsUiTextFocusRequestAccumulator)},
         },
-        .callback = EcsUiTextInputFocusFieldSystem,
-    });
-
-    (void)ecs_system(world, {
-        .entity = ecs_entity(world, {
-            .name = "EcsUiTextInputBlurFieldSystem",
-            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
-        }),
-        .query.terms = {
-            {.id = EcsUiBlurTextFieldRequest},
-        },
-        .callback = EcsUiTextInputBlurFieldSystem,
-    });
-
-    (void)ecs_system(world, {
-        .entity = ecs_entity(world, {
-            .name = "EcsUiTextInputFocusNextSystem",
-            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
-        }),
-        .query.terms = {
-            {.id = EcsUiFocusNextTextFieldRequest},
-        },
-        .callback = EcsUiTextInputFocusNextSystem,
-    });
-
-    (void)ecs_system(world, {
-        .entity = ecs_entity(world, {
-            .name = "EcsUiTextInputFocusPreviousSystem",
-            .add = ecs_ids(ecs_dependson(EcsOnUpdate)),
-        }),
-        .query.terms = {
-            {.id = EcsUiFocusPreviousTextFieldRequest},
-        },
-        .callback = EcsUiTextInputFocusPreviousSystem,
+        .callback = EcsUiTextInputResolveFocusRequestsSystem,
     });
 
     (void)ecs_system(world, {

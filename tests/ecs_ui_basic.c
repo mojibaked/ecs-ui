@@ -2537,6 +2537,42 @@ int main(void)
     result |= Require(
         EcsUiTextInputFocusedField(world) == text_field_b,
         "focus previous should wrap to second field");
+    result |= Require(
+        EcsUiTextInputRequestBlur(world) != 0 &&
+            EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "same-frame blur then focus requests should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "same-frame blur before focus should keep explicit focus");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_b) != 0 &&
+            EcsUiTextInputRequestBlur(world) != 0,
+        "same-frame focus then blur requests should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_b,
+        "same-frame focus before blur should keep explicit focus");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0 &&
+            EcsUiTextInputRequestFocusField(world, text_field_b) != 0,
+        "same-frame double focus requests should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_b,
+        "same-frame double focus should use last writer");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "focus setup for traversal precedence should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputRequestFocusNext(world) != 0 &&
+            EcsUiTextInputRequestBlur(world) != 0,
+        "same-frame traversal and blur requests should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_b,
+        "same-frame traversal should win over blur");
     (void)EcsUiTextInputRequestBlur(world);
     (void)ecs_progress(world, 0.0f);
     ecs_entity_t text_field_node =
@@ -2603,6 +2639,16 @@ int main(void)
     EcsUiEvent outside_click_event = {
         .type = ECS_UI_EVENT_CLICKED,
     };
+    result |= Require(
+        !EcsUiTextInputApplyEvent(world, &outside_click_event),
+        "outside click blur should not consume app click before app refocus");
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, text_field_a) != 0,
+        "same-frame app refocus request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        EcsUiTextInputFocusedField(world) == text_field_a,
+        "same-frame outside click blur should lose to app focus request");
     result |= Require(
         !EcsUiTextInputApplyEvent(world, &outside_click_event),
         "outside click blur should not consume app click");
