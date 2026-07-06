@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +22,7 @@
 
 #define ECS_UI_RAYLIB_POST_LABEL "post"
 #define ECS_UI_RAYLIB_CAPABILITY_LABEL "glfwPostEmptyEvent unavailable"
+#define ECS_UI_RAYLIB_STATS_WINDOW_NS 1000000000u
 
 struct EcsUiRaylibParker {
     EcsUiRaylibParkerCapabilities capabilities;
@@ -776,11 +778,380 @@ static void EcsUiRaylibStepFillWakeReasonFromFrame(
         frame_reason->label);
 }
 
+typedef enum EcsUiRaylibStatsMetric {
+    ECS_UI_RAYLIB_STATS_RENDERED = 0,
+    ECS_UI_RAYLIB_STATS_PRESENTED_ONLY = 1,
+    ECS_UI_RAYLIB_STATS_PARKED = 2,
+    ECS_UI_RAYLIB_STATS_WAKE_FD = 3,
+    ECS_UI_RAYLIB_STATS_WAKE_POST = 4,
+    ECS_UI_RAYLIB_STATS_WAKE_DEADLINE = 5,
+    ECS_UI_RAYLIB_STATS_WAKE_INPUT_OS_EVENT = 6,
+    ECS_UI_RAYLIB_STATS_FORCE_RENDER = 7,
+    ECS_UI_RAYLIB_STATS_CAPABILITY_FALLBACKS = 8,
+    ECS_UI_RAYLIB_STATS_PARK_FAILURES = 9,
+} EcsUiRaylibStatsMetric;
+
+static bool EcsUiRaylibWakeHandleEquals(
+    EcsUiWakeHandle a,
+    EcsUiWakeHandle b)
+{
+    return a.index == b.index && a.generation == b.generation;
+}
+
+static void EcsUiRaylibStatsEnsureWindow(
+    EcsUiRaylibRunnerStats *stats,
+    uint64_t now_ns)
+{
+    if (stats == NULL) {
+        return;
+    }
+    if (!stats->window_valid) {
+        stats->window_valid = true;
+        stats->window_start_ns = now_ns;
+        return;
+    }
+    if (now_ns < stats->window_start_ns ||
+            now_ns - stats->window_start_ns >=
+                ECS_UI_RAYLIB_STATS_WINDOW_NS) {
+        stats->window = (EcsUiRaylibStatsCounters){0};
+        stats->window_start_ns = now_ns;
+    }
+}
+
+static void EcsUiRaylibStatsIncrementCounter(
+    EcsUiRaylibStatsCounters *counters,
+    EcsUiRaylibStatsMetric metric)
+{
+    if (counters == NULL) {
+        return;
+    }
+    switch (metric) {
+    case ECS_UI_RAYLIB_STATS_RENDERED:
+        counters->rendered += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_PRESENTED_ONLY:
+        counters->presented_only += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_PARKED:
+        counters->parked += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_WAKE_FD:
+        counters->wake_fd += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_WAKE_POST:
+        counters->wake_post += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_WAKE_DEADLINE:
+        counters->wake_deadline += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_WAKE_INPUT_OS_EVENT:
+        counters->wake_input_os_event += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_FORCE_RENDER:
+        counters->force_render += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_CAPABILITY_FALLBACKS:
+        counters->capability_fallbacks += 1u;
+        break;
+    case ECS_UI_RAYLIB_STATS_PARK_FAILURES:
+        counters->park_failures += 1u;
+        break;
+    }
+}
+
+static void EcsUiRaylibStatsIncrement(
+    EcsUiRaylibRunnerStats *stats,
+    uint64_t now_ns,
+    EcsUiRaylibStatsMetric metric)
+{
+    if (stats == NULL) {
+        return;
+    }
+    EcsUiRaylibStatsEnsureWindow(stats, now_ns);
+    EcsUiRaylibStatsIncrementCounter(&stats->total, metric);
+    EcsUiRaylibStatsIncrementCounter(&stats->window, metric);
+}
+
+static void EcsUiRaylibStatsAddBlocked(
+    EcsUiRaylibRunnerStats *stats,
+    uint64_t blocked_ns)
+{
+    if (stats == NULL) {
+        return;
+    }
+    stats->last_blocked_ns = blocked_ns;
+    stats->blocked_ns_total += blocked_ns;
+}
+
+static void EcsUiRaylibStatsSetActiveLabels(
+    EcsUiRaylibRunnerStats *stats,
+    const EcsUiWakeWaitSpec *spec)
+{
+    if (stats == NULL) {
+        return;
+    }
+    stats->active_wake_label_count = 0u;
+    stats->active_wake_labels_truncated =
+        spec != NULL && spec->active_truncated;
+    if (spec == NULL) {
+        return;
+    }
+    for (uint32_t i = 0u; i < spec->active_count &&
+            i < ECS_UI_WAKE_SOURCE_MAX; i += 1u) {
+        EcsUiRaylibCopyLabel(
+            stats->active_wake_labels[i],
+            sizeof(stats->active_wake_labels[i]),
+            spec->active[i].label);
+        stats->active_wake_label_count += 1u;
+    }
+    if (spec->active_count > ECS_UI_WAKE_SOURCE_MAX) {
+        stats->active_wake_labels_truncated = true;
+    }
+}
+
+static const EcsUiWakeSourceInfo *EcsUiRaylibFindActiveWakeSource(
+    const EcsUiWakeWaitSpec *spec,
+    EcsUiWakeHandle handle)
+{
+    if (spec == NULL || !EcsUiWakeHandleIsValid(handle)) {
+        return NULL;
+    }
+    for (uint32_t i = 0u; i < spec->active_count; i += 1u) {
+        if (EcsUiRaylibWakeHandleEquals(spec->active[i].handle, handle)) {
+            return &spec->active[i];
+        }
+    }
+    return NULL;
+}
+
+static void EcsUiRaylibStatsRecordWakeReason(
+    EcsUiRaylibRunnerStats *stats,
+    uint64_t now_ns,
+    const EcsUiRaylibWakeReason *reason)
+{
+    if (stats == NULL || reason == NULL) {
+        return;
+    }
+    switch (reason->kind) {
+    case ECS_UI_RAYLIB_WAKE_FD:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_WAKE_FD);
+        break;
+    case ECS_UI_RAYLIB_WAKE_POST:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_WAKE_POST);
+        break;
+    case ECS_UI_RAYLIB_WAKE_DEADLINE:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_WAKE_DEADLINE);
+        break;
+    case ECS_UI_RAYLIB_WAKE_OS_EVENT:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_WAKE_INPUT_OS_EVENT);
+        break;
+    case ECS_UI_RAYLIB_WAKE_CAPABILITY_DISABLED:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_CAPABILITY_FALLBACKS);
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_PARK_FAILURES);
+        break;
+    case ECS_UI_RAYLIB_WAKE_ERROR:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_PARK_FAILURES);
+        break;
+    case ECS_UI_RAYLIB_WAKE_NONE:
+    case ECS_UI_RAYLIB_WAKE_HOT:
+        break;
+    }
+}
+
+static void EcsUiRaylibStatsRecordFrameReason(
+    EcsUiRaylibRunnerStats *stats,
+    uint64_t now_ns,
+    const EcsUiFrameReason *reason,
+    const EcsUiWakeWaitSpec *spec)
+{
+    if (stats == NULL || reason == NULL) {
+        return;
+    }
+    switch (reason->kind) {
+    case ECS_UI_FRAME_REASON_INPUT:
+    case ECS_UI_FRAME_REASON_WINDOW_EVENT:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_WAKE_INPUT_OS_EVENT);
+        break;
+    case ECS_UI_FRAME_REASON_FORCE_RENDER:
+        EcsUiRaylibStatsIncrement(
+            stats,
+            now_ns,
+            ECS_UI_RAYLIB_STATS_FORCE_RENDER);
+        break;
+    case ECS_UI_FRAME_REASON_WAKE_HOT: {
+        const EcsUiWakeSourceInfo *source =
+            EcsUiRaylibFindActiveWakeSource(spec, reason->wake);
+        if (source != NULL &&
+                source->kind == ECS_UI_WAKE_SOURCE_DEADLINE) {
+            EcsUiRaylibStatsIncrement(
+                stats,
+                now_ns,
+                ECS_UI_RAYLIB_STATS_WAKE_DEADLINE);
+        }
+        break;
+    }
+    case ECS_UI_FRAME_REASON_NONE:
+    case ECS_UI_FRAME_REASON_FIRST_FRAME:
+    case ECS_UI_FRAME_REASON_STABLE_REVISION:
+    case ECS_UI_FRAME_REASON_SCREENSHOT_REQUEST:
+    case ECS_UI_FRAME_REASON_PRESENT_POLICY:
+        break;
+    }
+}
+
+static EcsUiRaylibWakeReason EcsUiRaylibOsEventWakeReason(void)
+{
+    return EcsUiRaylibWakeReasonWithLabel(
+        ECS_UI_RAYLIB_WAKE_OS_EVENT,
+        "os-event");
+}
+
+static const char *EcsUiRaylibWakeReasonKindName(
+    EcsUiRaylibWakeReasonKind kind)
+{
+    switch (kind) {
+    case ECS_UI_RAYLIB_WAKE_NONE:
+        return "none";
+    case ECS_UI_RAYLIB_WAKE_HOT:
+        return "hot";
+    case ECS_UI_RAYLIB_WAKE_FD:
+        return "fd";
+    case ECS_UI_RAYLIB_WAKE_POST:
+        return "post";
+    case ECS_UI_RAYLIB_WAKE_DEADLINE:
+        return "deadline";
+    case ECS_UI_RAYLIB_WAKE_CAPABILITY_DISABLED:
+        return "capability-disabled";
+    case ECS_UI_RAYLIB_WAKE_ERROR:
+        return "error";
+    case ECS_UI_RAYLIB_WAKE_OS_EVENT:
+        return "os-event";
+    }
+    return "unknown";
+}
+
+static const char *EcsUiFrameReasonKindName(EcsUiFrameReasonKind kind)
+{
+    switch (kind) {
+    case ECS_UI_FRAME_REASON_NONE:
+        return "none";
+    case ECS_UI_FRAME_REASON_FIRST_FRAME:
+        return "first-frame";
+    case ECS_UI_FRAME_REASON_STABLE_REVISION:
+        return "stable-revision";
+    case ECS_UI_FRAME_REASON_INPUT:
+        return "input";
+    case ECS_UI_FRAME_REASON_WINDOW_EVENT:
+        return "window-event";
+    case ECS_UI_FRAME_REASON_FORCE_RENDER:
+        return "force-render";
+    case ECS_UI_FRAME_REASON_SCREENSHOT_REQUEST:
+        return "screenshot-request";
+    case ECS_UI_FRAME_REASON_WAKE_HOT:
+        return "wake-hot";
+    case ECS_UI_FRAME_REASON_PRESENT_POLICY:
+        return "present-policy";
+    }
+    return "unknown";
+}
+
+static bool EcsUiRaylibStatsEnvEnabled(void)
+{
+    const char *value = getenv("ECS_UI_RUNNER_STATS");
+    return value != NULL && value[0] != '\0' &&
+        !(value[0] == '0' && value[1] == '\0');
+}
+
+static void EcsUiRaylibStatsReport(
+    const EcsUiRaylibRunnerStats *stats,
+    FILE *stream)
+{
+    if (stats == NULL || stream == NULL) {
+        return;
+    }
+    const double blocked_ms =
+        (double)stats->last_blocked_ns / 1000000.0;
+    const double blocked_total_ms =
+        (double)stats->blocked_ns_total / 1000000.0;
+    (void)fprintf(
+        stream,
+        "ecs-ui-runner stats "
+        "rendered=%llu present_only=%llu parked=%llu "
+        "wake_fd=%llu wake_post=%llu wake_deadline=%llu "
+        "wake_input_os=%llu force_render=%llu "
+        "capability_fallbacks=%llu park_failures=%llu "
+        "blocked_ms=%.3f blocked_total_ms=%.3f "
+        "last_wake=%s:%s last_render=%s:%s active_wake=[",
+        (unsigned long long)stats->window.rendered,
+        (unsigned long long)stats->window.presented_only,
+        (unsigned long long)stats->window.parked,
+        (unsigned long long)stats->window.wake_fd,
+        (unsigned long long)stats->window.wake_post,
+        (unsigned long long)stats->window.wake_deadline,
+        (unsigned long long)stats->window.wake_input_os_event,
+        (unsigned long long)stats->window.force_render,
+        (unsigned long long)stats->window.capability_fallbacks,
+        (unsigned long long)stats->window.park_failures,
+        blocked_ms,
+        blocked_total_ms,
+        EcsUiRaylibWakeReasonKindName(
+            stats->last_park_exit_reason.kind),
+        stats->last_park_exit_reason.label,
+        EcsUiFrameReasonKindName(stats->last_render_reason.kind),
+        stats->last_render_reason.label);
+    for (uint32_t i = 0u; i < stats->active_wake_label_count; i += 1u) {
+        (void)fprintf(
+            stream,
+            "%s%s",
+            i == 0u ? "" : ",",
+            stats->active_wake_labels[i]);
+    }
+    (void)fprintf(
+        stream,
+        "]%s\n",
+        stats->active_wake_labels_truncated ? " truncated" : "");
+}
+
 void EcsUiRaylibStepStateInit(EcsUiRaylibStepState *state)
 {
     if (state != NULL) {
         *state = (EcsUiRaylibStepState){0};
     }
+}
+
+bool EcsUiRaylibStepStateGetStats(
+    const EcsUiRaylibStepState *state,
+    EcsUiRaylibRunnerStats *out)
+{
+    if (state == NULL || out == NULL) {
+        return false;
+    }
+    *out = state->stats;
+    return true;
 }
 
 bool EcsUiRaylibStep(
@@ -794,6 +1165,7 @@ bool EcsUiRaylibStep(
 
     *out = (EcsUiRaylibStepResult){0};
     state->counters.steps += 1u;
+    EcsUiRaylibStatsEnsureWindow(&state->stats, desc->now_ns);
 
     bool immediate = false;
     void *ctx = desc->hooks.ctx;
@@ -808,6 +1180,9 @@ bool EcsUiRaylibStep(
     const bool has_spec =
         desc->wake_registry != NULL &&
         EcsUiWakeBuildWaitSpec(desc->wake_registry, desc->now_ns, &spec);
+    EcsUiRaylibStatsSetActiveLabels(
+        &state->stats,
+        has_spec ? &spec : NULL);
     EcsUiFrameClassifyResult frame = {0};
     if (desc->frame_signals != NULL) {
         (void)EcsUiFrameClassify(
@@ -822,15 +1197,29 @@ bool EcsUiRaylibStep(
     out->frame_classification = frame.classification;
     out->frame_reason = frame.reason;
     out->presented = frame.should_present;
+    EcsUiRaylibStatsRecordFrameReason(
+        &state->stats,
+        desc->now_ns,
+        &frame.reason,
+        has_spec ? &spec : NULL);
 
     if (frame.classification == ECS_UI_FRAME_PRESENT_ONLY) {
         state->counters.present_only += 1u;
+        EcsUiRaylibStatsIncrement(
+            &state->stats,
+            desc->now_ns,
+            ECS_UI_RAYLIB_STATS_PRESENTED_ONLY);
     } else if (frame.classification == ECS_UI_FRAME_PARK) {
         state->counters.classified_park += 1u;
     }
 
     if (frame.should_render) {
         state->counters.rendered += 1u;
+        EcsUiRaylibStatsIncrement(
+            &state->stats,
+            desc->now_ns,
+            ECS_UI_RAYLIB_STATS_RENDERED);
+        state->stats.last_render_reason = frame.reason;
         out->rendered = true;
         immediate = EcsUiRaylibStepRunHook(desc->hooks.render, ctx) || immediate;
         immediate =
@@ -860,20 +1249,50 @@ bool EcsUiRaylibStep(
     } else if (frame.classification == ECS_UI_FRAME_RENDER_AND_PRESENT) {
         state->counters.continued += 1u;
     } else if (has_spec && desc->parker != NULL) {
+        const uint64_t wake_sequence =
+            EcsUiRaylibParkerWakeSequence(desc->parker);
         if (EcsUiRaylibParkerArm(desc->parker, &spec)) {
             state->counters.park_armed += 1u;
+            EcsUiRaylibStatsIncrement(
+                &state->stats,
+                desc->now_ns,
+                ECS_UI_RAYLIB_STATS_PARKED);
             out->park_armed = true;
+            const uint64_t blocked_start_ns = EcsUiRaylibNowNs();
             immediate =
                 EcsUiRaylibStepRunHook(desc->hooks.park, ctx) || immediate;
+            const uint64_t blocked_end_ns = EcsUiRaylibNowNs();
+            const uint64_t blocked_ns =
+                blocked_end_ns >= blocked_start_ns ?
+                    blocked_end_ns - blocked_start_ns :
+                    0u;
+            EcsUiRaylibStatsAddBlocked(&state->stats, blocked_ns);
             if (immediate) {
                 state->counters.immediate += 1u;
                 state->counters.continued += 1u;
             }
-            (void)EcsUiRaylibParkerLastWake(desc->parker, &out->wake_reason);
+            if (EcsUiRaylibParkerWakeSequence(desc->parker) >
+                    wake_sequence) {
+                (void)EcsUiRaylibParkerLastWake(
+                    desc->parker,
+                    &out->wake_reason);
+            } else {
+                out->wake_reason = EcsUiRaylibOsEventWakeReason();
+            }
+            state->stats.last_park_exit_reason = out->wake_reason;
+            EcsUiRaylibStatsRecordWakeReason(
+                &state->stats,
+                desc->now_ns,
+                &out->wake_reason);
         } else {
             state->counters.capability_disabled += 1u;
             state->counters.continued += 1u;
             (void)EcsUiRaylibParkerLastWake(desc->parker, &out->wake_reason);
+            state->stats.last_park_exit_reason = out->wake_reason;
+            EcsUiRaylibStatsRecordWakeReason(
+                &state->stats,
+                desc->now_ns,
+                &out->wake_reason);
         }
     } else {
         state->counters.continued += 1u;
@@ -881,6 +1300,7 @@ bool EcsUiRaylibStep(
 
     out->immediate_next_step = immediate;
     out->counters = state->counters;
+    out->stats = state->stats;
     return true;
 }
 
@@ -925,6 +1345,8 @@ bool EcsUiRaylibRun(
     EcsUiRaylibStepState step_state;
     EcsUiRaylibStepStateInit(&step_state);
     bool ok = true;
+    const bool report_stats = EcsUiRaylibStatsEnvEnabled();
+    uint64_t next_report_ns = 0u;
     for (;;) {
         EcsUiRaylibRunHook window_should_close =
             callbacks->window_should_close != NULL ?
@@ -949,6 +1371,8 @@ bool EcsUiRaylibRun(
             callbacks->now_ns != NULL ?
                 callbacks->now_ns :
                 EcsUiRaylibRunDefaultNowNs;
+        const uint64_t step_now_ns = now_ns(callbacks->step.ctx);
+        const double step_dt = delta_time(callbacks->step.ctx);
         EcsUiRaylibStepResult step = {0};
         if (!EcsUiRaylibStep(
                 &step_state,
@@ -956,8 +1380,8 @@ bool EcsUiRaylibRun(
                     .frame_signals = config->frame_signals,
                     .wake_registry = config->wake_registry,
                     .parker = parker,
-                    .now_ns = now_ns(callbacks->step.ctx),
-                    .dt = delta_time(callbacks->step.ctx),
+                    .now_ns = step_now_ns,
+                    .dt = step_dt,
                     .present_when_clean = config->present_when_clean,
                     .present_policy_label = config->present_policy_label,
                     .hooks = callbacks->step,
@@ -968,7 +1392,20 @@ bool EcsUiRaylibRun(
         }
         out->last_step = step;
         out->counters = step.counters;
+        out->stats = step.stats;
         out->steps = step.counters.steps;
+
+        if (report_stats) {
+            if (next_report_ns == 0u) {
+                next_report_ns = step_now_ns + ECS_UI_RAYLIB_STATS_WINDOW_NS;
+            }
+            if (step_now_ns >= next_report_ns) {
+                EcsUiRaylibStatsReport(&step.stats, stderr);
+                do {
+                    next_report_ns += ECS_UI_RAYLIB_STATS_WINDOW_NS;
+                } while (step_now_ns >= next_report_ns);
+            }
+        }
 
         if (callbacks->should_quit != NULL &&
                 callbacks->should_quit(callbacks->step.ctx)) {

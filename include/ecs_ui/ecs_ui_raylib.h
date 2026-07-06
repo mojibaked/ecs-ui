@@ -45,6 +45,7 @@ typedef enum EcsUiRaylibWakeReasonKind {
     ECS_UI_RAYLIB_WAKE_DEADLINE = 4,
     ECS_UI_RAYLIB_WAKE_CAPABILITY_DISABLED = 5,
     ECS_UI_RAYLIB_WAKE_ERROR = 6,
+    ECS_UI_RAYLIB_WAKE_OS_EVENT = 7,
 } EcsUiRaylibWakeReasonKind;
 
 typedef struct EcsUiRaylibWakeReason {
@@ -121,12 +122,41 @@ typedef struct EcsUiRaylibStepCounters {
     uint64_t capability_disabled;
 } EcsUiRaylibStepCounters;
 
+typedef struct EcsUiRaylibStatsCounters {
+    uint64_t rendered;
+    uint64_t presented_only;
+    uint64_t parked;
+    uint64_t wake_fd;
+    uint64_t wake_post;
+    uint64_t wake_deadline;
+    uint64_t wake_input_os_event;
+    uint64_t force_render;
+    uint64_t capability_fallbacks;
+    uint64_t park_failures;
+} EcsUiRaylibStatsCounters;
+
+typedef struct EcsUiRaylibRunnerStats {
+    EcsUiRaylibStatsCounters total;
+    EcsUiRaylibStatsCounters window;
+    bool window_valid;
+    uint64_t window_start_ns;
+    uint64_t last_blocked_ns;
+    uint64_t blocked_ns_total;
+    EcsUiRaylibWakeReason last_park_exit_reason;
+    EcsUiFrameReason last_render_reason;
+    char active_wake_labels[ECS_UI_WAKE_SOURCE_MAX][ECS_UI_ID_MAX];
+    uint32_t active_wake_label_count;
+    bool active_wake_labels_truncated;
+} EcsUiRaylibRunnerStats;
+
 typedef struct EcsUiRaylibStepState {
     EcsUiRaylibStepCounters counters;
+    EcsUiRaylibRunnerStats stats;
 } EcsUiRaylibStepState;
 
 typedef struct EcsUiRaylibStepResult {
     EcsUiRaylibStepCounters counters;
+    EcsUiRaylibRunnerStats stats;
     EcsUiRaylibWakeReason wake_reason;
     EcsUiFrameClassification frame_classification;
     EcsUiFrameReason frame_reason;
@@ -164,6 +194,7 @@ typedef struct EcsUiRaylibRunCallbacks {
 typedef struct EcsUiRaylibRunResult {
     EcsUiRaylibStepResult last_step;
     EcsUiRaylibStepCounters counters;
+    EcsUiRaylibRunnerStats stats;
     EcsUiRaylibParkerCapabilities parker_capabilities;
     uint64_t steps;
     bool window_should_close;
@@ -224,6 +255,9 @@ bool EcsUiRaylibParkerLastWake(
 
 uint64_t EcsUiRaylibNowNs(void);
 void EcsUiRaylibStepStateInit(EcsUiRaylibStepState *state);
+bool EcsUiRaylibStepStateGetStats(
+    const EcsUiRaylibStepState *state,
+    EcsUiRaylibRunnerStats *out);
 bool EcsUiRaylibStep(
     EcsUiRaylibStepState *state,
     const EcsUiRaylibStepDesc *desc,
