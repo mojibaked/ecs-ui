@@ -71,7 +71,8 @@ add_library(ecs_ui STATIC
     src/ecs_ui_overlay.c
     src/ecs_ui_projection.c
     src/ecs_ui_runner.c
-    src/ecs_ui_scroll_state.c)
+    src/ecs_ui_scroll_state.c
+    src/ecs_ui_style.c)
 add_library(ecs_ui::ecs_ui ALIAS ecs_ui)
 target_include_directories(ecs_ui
     PUBLIC

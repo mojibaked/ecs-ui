@@ -1,5 +1,6 @@
 #include "ecs_ui/ecs_ui_clay.h"
 #include "ecs_ui_scroll_state.h"
+#include "ecs_ui_style.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -174,17 +175,6 @@ static Clay_Vector2 EcsUiClayPointAnchorOffset(
     };
 }
 
-static float EcsUiClayClamp01(float value)
-{
-    if (value < 0.0f) {
-        return 0.0f;
-    }
-    if (value > 1.0f) {
-        return 1.0f;
-    }
-    return value;
-}
-
 static int16_t EcsUiClayZIndex(int16_t relative)
 {
     int value = (int)g_ecs_ui_clay_z_index_base + (int)relative;
@@ -224,41 +214,40 @@ static Clay_SizingAxis EcsUiClayFixed(float value)
     return CLAY_SIZING_FIXED(EcsUiClayScaled(value));
 }
 
+static EcsUiStyleColor EcsUiClayStyleFromClay(Clay_Color color)
+{
+    return (EcsUiStyleColor){
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = color.a,
+    };
+}
+
+static Clay_Color EcsUiClayStyleColor(EcsUiStyleColor color)
+{
+    return (Clay_Color){
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = color.a,
+    };
+}
+
+static float EcsUiClayClamp01(float value)
+{
+    return EcsUiStyleClamp01(value);
+}
+
 static Clay_Color EcsUiClayApplyOpacity(Clay_Color color, float opacity)
 {
-    color.a *= EcsUiClayClamp01(opacity);
-    return color;
+    return EcsUiClayStyleColor(
+        EcsUiStyleApplyOpacity(EcsUiClayStyleFromClay(color), opacity));
 }
 
 static Clay_Color EcsUiClayColor(EcsUiColor color)
 {
-    return (Clay_Color){
-        .r = (float)color.r,
-        .g = (float)color.g,
-        .b = (float)color.b,
-        .a = (float)color.a,
-    };
-}
-
-static Clay_Color EcsUiClayLerpColor(
-    Clay_Color from,
-    Clay_Color to,
-    float amount)
-{
-    const float t = EcsUiClayClamp01(amount);
-    return (Clay_Color){
-        .r = from.r + ((to.r - from.r) * t),
-        .g = from.g + ((to.g - from.g) * t),
-        .b = from.b + ((to.b - from.b) * t),
-        .a = from.a + ((to.a - from.a) * t),
-    };
-}
-
-static Clay_Color EcsUiClayStyleColorOr(
-    EcsUiColor color,
-    Clay_Color fallback)
-{
-    return color.a != 0u ? EcsUiClayColor(color) : fallback;
+    return EcsUiClayStyleColor(EcsUiStyleColorFrom(color));
 }
 
 static float EcsUiClayRoleTextSize(EcsUiTextRole role)
@@ -335,24 +324,14 @@ static Clay_Color EcsUiClayTextColor(
     bool has_text_style,
     bool disabled)
 {
-    if (has_text_style) {
-        if (disabled && text_style.disabled_color.a != 0u) {
-            return EcsUiClayColor(text_style.disabled_color);
-        }
-        if (role == ECS_UI_TEXT_CAPTION && text_style.muted_color.a != 0u) {
-            return EcsUiClayColor(text_style.muted_color);
-        }
-        if (text_style.color.a != 0u) {
-            return EcsUiClayColor(text_style.color);
-        }
-    }
-    if (inverse) {
-        return EcsUiClayColor(theme->text_inverse);
-    }
-    if (role == ECS_UI_TEXT_CAPTION) {
-        return EcsUiClayColor(theme->text_muted);
-    }
-    return EcsUiClayColor(theme->text);
+    return EcsUiClayStyleColor(
+        EcsUiStyleTextColor(
+            theme,
+            role,
+            inverse,
+            text_style,
+            has_text_style,
+            disabled));
 }
 
 static Clay_TextElementConfig *EcsUiClayTextConfig(
@@ -389,31 +368,7 @@ static Clay_Color EcsUiClayButtonColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
 {
-    if (node != NULL && node->button.disabled) {
-        return EcsUiClayColor(theme->button_disabled);
-    }
-
-    Clay_Color fill = EcsUiClayColor(theme->button);
-    switch (node != NULL ? node->button.variant : ECS_UI_BUTTON_DEFAULT) {
-    case ECS_UI_BUTTON_PRIMARY:
-        fill = EcsUiClayColor(theme->button_primary);
-        break;
-    case ECS_UI_BUTTON_SUBTLE:
-        fill = EcsUiClayColor(theme->button_subtle);
-        break;
-    case ECS_UI_BUTTON_DANGER:
-        fill = EcsUiClayColor(theme->button_danger);
-        break;
-    case ECS_UI_BUTTON_DEFAULT:
-    default:
-        fill = EcsUiClayColor(theme->button);
-        break;
-    }
-
-    return EcsUiClayLerpColor(
-        fill,
-        (Clay_Color){255.0f, 255.0f, 255.0f, fill.a},
-        node != NULL ? EcsUiClayClamp01(node->visual.highlight) * 0.42f : 0.0f);
+    return EcsUiClayStyleColor(EcsUiStyleButtonColor(theme, node));
 }
 
 static float EcsUiClayCustomHeight(const EcsUiTreeNodeSnapshot *node)
@@ -567,29 +522,17 @@ static float EcsUiClayBoxPadding(
 
 static bool EcsUiClayHasNineSlice(const EcsUiTreeNodeSnapshot *node)
 {
-    return node != NULL && node->has_nine_slice_style &&
-        node->nine_slice_style.image[0] != '\0';
+    return EcsUiStyleHasNineSlice(node);
 }
 
 static Clay_Color EcsUiClayContainerBackground(
     const EcsUiTreeNodeSnapshot *node,
     Clay_Color fallback)
 {
-    if (EcsUiClayHasNineSlice(node)) {
-        return (Clay_Color){0};
-    }
-    if (node == NULL || !node->has_box_style) {
-        return fallback;
-    }
-    Clay_Color fill = EcsUiClayStyleColorOr(
-        node->box_style.background,
-        fallback);
-    if (node->hover_within) {
-        fill = EcsUiClayStyleColorOr(
-            node->box_style.hover_background,
-            fill);
-    }
-    return fill;
+    return EcsUiClayStyleColor(
+        EcsUiStyleContainerBackground(
+            node,
+            EcsUiClayStyleFromClay(fallback)));
 }
 
 static Clay_Color EcsUiClayTransparent(void)
@@ -600,10 +543,7 @@ static Clay_Color EcsUiClayTransparent(void)
 static Clay_Color EcsUiClayNineSliceTint(
     const EcsUiTreeNodeSnapshot *node)
 {
-    if (!EcsUiClayHasNineSlice(node) || node->nine_slice_style.tint.a == 0u) {
-        return (Clay_Color){255.0f, 255.0f, 255.0f, 255.0f};
-    }
-    return EcsUiClayColor(node->nine_slice_style.tint);
+    return EcsUiClayStyleColor(EcsUiStyleNineSliceTint(node));
 }
 
 static Clay_CustomElementConfig EcsUiClayNineSliceCustom(
@@ -616,35 +556,20 @@ static Clay_CustomElementConfig EcsUiClayNineSliceCustom(
 
 static bool EcsUiClayHasBevel(const EcsUiTreeNodeSnapshot *node)
 {
-    return node != NULL && !EcsUiClayHasNineSlice(node) && node->has_box_style &&
-        node->box_style.bevel != ECS_UI_BEVEL_NONE;
+    return EcsUiStyleHasBevel(node);
 }
 
 static bool EcsUiClayHasDrawableBevel(const EcsUiTreeNodeSnapshot *node)
 {
-    return EcsUiClayHasBevel(node) &&
-        node->box_style.bevel_light.a != 0u &&
-        node->box_style.bevel_dark.a != 0u;
+    return EcsUiStyleHasDrawableBevel(node);
 }
 
 static Clay_CornerRadius EcsUiClayCornerRadius(
     const EcsUiTreeNodeSnapshot *node,
     float fallback)
 {
-    if (EcsUiClayHasNineSlice(node)) {
-        return (Clay_CornerRadius){0};
-    }
-    if (EcsUiClayHasBevel(node)) {
-        return (Clay_CornerRadius){0};
-    }
-
-    float radius = fallback;
-    if (node != NULL && node->has_box_style && node->box_style.radius > 0.0f) {
-        radius = node->box_style.radius < 1.0f ?
-            node->box_style.radius * 50.0f :
-            node->box_style.radius;
-    }
-    radius = EcsUiClayScaled(radius);
+    const float radius = EcsUiClayScaled(
+        EcsUiStyleCornerRadius(node, fallback));
     return (Clay_CornerRadius){
         .topLeft = radius,
         .topRight = radius,
@@ -783,34 +708,7 @@ static Clay_Color EcsUiClayPressableColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
 {
-    Clay_Color fill = EcsUiClayColor(theme->button_subtle);
-    if (node == NULL || !node->has_box_style) {
-        if (node != NULL && node->hover_within) {
-            fill = EcsUiClayApplyOpacity(fill, 0.86f);
-        }
-        return EcsUiClayLerpColor(
-            fill,
-            (Clay_Color){255.0f, 255.0f, 255.0f, fill.a},
-            node != NULL ? EcsUiClayClamp01(node->visual.highlight) * 0.42f : 0.0f);
-    }
-
-    fill = EcsUiClayColor(node->box_style.background);
-    if (node->pressable.disabled) {
-        fill = EcsUiClayStyleColorOr(
-            node->box_style.disabled_background,
-            fill);
-    } else if (node->hover_within) {
-        fill = EcsUiClayStyleColorOr(
-            node->box_style.hover_background,
-            fill);
-    }
-    Clay_Color highlight = EcsUiClayStyleColorOr(
-        node->box_style.highlight_background,
-        (Clay_Color){255.0f, 255.0f, 255.0f, fill.a});
-    return EcsUiClayLerpColor(
-        fill,
-        highlight,
-        EcsUiClayClamp01(node->visual.highlight));
+    return EcsUiClayStyleColor(EcsUiStylePressableColor(theme, node));
 }
 
 static uint32_t EcsUiClayChildCount(
@@ -1395,8 +1293,7 @@ static void EcsUiClayEmitSelectedTextRange(
 
     char clay_id[ECS_UI_ID_MAX * 2u] = {0};
     EcsUiClayElementId(node, "_Selection", clay_id, sizeof(clay_id));
-    Clay_Color selection = EcsUiClayColor(theme->button_primary);
-    selection.a *= 0.35f;
+    Clay_Color selection = EcsUiClayStyleColor(EcsUiStyleSelectionColor(theme));
     CLAY(CLAY_SID(EcsUiClayString(clay_id)), {
         .layout = {
             .childAlignment = {
@@ -1770,19 +1667,13 @@ static void EcsUiClayRegisterWrapperBlocker(
 static Clay_Color EcsUiClayBevelTopLeftColor(
     const EcsUiTreeNodeSnapshot *node)
 {
-    return EcsUiClayColor(
-        node->box_style.bevel == ECS_UI_BEVEL_SUNKEN ?
-            node->box_style.bevel_dark :
-            node->box_style.bevel_light);
+    return EcsUiClayStyleColor(EcsUiStyleBevelTopLeftColor(node));
 }
 
 static Clay_Color EcsUiClayBevelBottomRightColor(
     const EcsUiTreeNodeSnapshot *node)
 {
-    return EcsUiClayColor(
-        node->box_style.bevel == ECS_UI_BEVEL_SUNKEN ?
-            node->box_style.bevel_light :
-            node->box_style.bevel_dark);
+    return EcsUiClayStyleColor(EcsUiStyleBevelBottomRightColor(node));
 }
 
 static void EcsUiClayEmitBevelEdge(
@@ -2445,7 +2336,7 @@ static void EcsUiClayEmitNodeContent(
                 },
             },
             .backgroundColor = EcsUiClayApplyOpacity(
-                (Clay_Color){0.0f, 0.0f, 0.0f, 255.0f},
+                EcsUiClayStyleColor(EcsUiStyleIconColor()),
                 opacity),
             .custom = {
                 .customData = (void *)node,
