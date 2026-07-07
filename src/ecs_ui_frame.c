@@ -36,6 +36,10 @@ typedef struct EcsUiFrameBackend {
     EcsUiClayInteractionFrame clay_frame;
     EcsUiInteractionFrame *active_frame;
     EcsUiFrameInternalBackend selected_backend;
+    const EcsUiSolverScrollOffset *solver_scroll_offsets;
+    uint32_t solver_scroll_offset_count;
+    EcsUiSolverScrollContent *solver_scroll_contents;
+    uint32_t solver_scroll_content_count;
 } EcsUiFrameBackend;
 
 static EcsUiFrameBackend g_ecs_ui_frame_backend;
@@ -48,6 +52,24 @@ void EcsUiFrameInternalSelectBackend(EcsUiFrameInternalBackend backend)
 EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void)
 {
     return g_ecs_ui_frame_backend.selected_backend;
+}
+
+void EcsUiFrameInternalSetNativeScrollOffsets(
+    const EcsUiSolverScrollOffset *offsets,
+    uint32_t count)
+{
+    g_ecs_ui_frame_backend.solver_scroll_offsets = offsets;
+    g_ecs_ui_frame_backend.solver_scroll_offset_count =
+        offsets != NULL ? count : 0u;
+}
+
+void EcsUiFrameInternalSetNativeScrollContentOutput(
+    EcsUiSolverScrollContent *contents,
+    uint32_t count)
+{
+    g_ecs_ui_frame_backend.solver_scroll_contents = contents;
+    g_ecs_ui_frame_backend.solver_scroll_content_count =
+        contents != NULL ? count : 0u;
 }
 
 static void EcsUiFrameReportError(
@@ -534,6 +556,10 @@ const EcsUiDrawList *EcsUiFrameRun(
                     .surface_height = backend->desc.surface_height,
                     .measure_text = backend->desc.measure_text,
                     .measure_user_data = backend->desc.measure_user_data,
+                    .scroll_offsets = backend->solver_scroll_offsets,
+                    .scroll_offset_count = backend->solver_scroll_offset_count,
+                    .scroll_contents = backend->solver_scroll_contents,
+                    .scroll_content_count = backend->solver_scroll_content_count,
                     .force_divergence =
                         backend->selected_backend ==
                             ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE,

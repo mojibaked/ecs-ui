@@ -3,6 +3,7 @@
 
 #include "ecs_ui/ecs_ui_clay.h"
 #include "ecs_ui/ecs_ui_frame.h"
+#include "ecs_ui_solver.h"
 
 typedef enum EcsUiFrameInternalBackend {
     ECS_UI_FRAME_INTERNAL_BACKEND_CLAY = 0,
@@ -21,5 +22,11 @@ EcsUiClayLayoutOptions EcsUiFrameInternalClayLayoutOptions(
     const EcsUiFrameLayoutOptions *options);
 void EcsUiFrameInternalSelectBackend(EcsUiFrameInternalBackend backend);
 EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void);
+void EcsUiFrameInternalSetNativeScrollOffsets(
+    const EcsUiSolverScrollOffset *offsets,
+    uint32_t count);
+void EcsUiFrameInternalSetNativeScrollContentOutput(
+    EcsUiSolverScrollContent *contents,
+    uint32_t count);
 
 #endif

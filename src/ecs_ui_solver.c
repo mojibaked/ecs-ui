@@ -30,6 +30,10 @@ typedef struct EcsUiSolverContext {
     float surface_height;
     EcsUiMeasureTextFn measure_text;
     void *measure_user_data;
+    const EcsUiSolverScrollOffset *scroll_offsets;
+    uint32_t scroll_offset_count;
+    EcsUiSolverScrollContent *scroll_contents;
+    uint32_t scroll_content_count;
     char *error_message;
     size_t error_message_size;
     bool failed;
@@ -423,15 +427,6 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
             EcsUiSolverSetError(ctx, message);
             return false;
         }
-        if (node->has_scroll_view) {
-            (void)snprintf(
-                message,
-                sizeof(message),
-                "unsupported scroll/clip on node kind %d -- stage 6b",
-                (int)node->kind);
-            EcsUiSolverSetError(ctx, message);
-            return false;
-        }
     }
     return true;
 }
@@ -496,6 +491,53 @@ static bool EcsUiSolverChildInParentFlow(
     uint32_t child)
 {
     return EcsUiSolverZStackChildInFlow(tree, parent, child);
+}
+
+static bool EcsUiSolverScrollClipsAxis(
+    const EcsUiTreeNodeSnapshot *node,
+    bool x_axis)
+{
+    if (node == NULL || !node->has_scroll_view) {
+        return false;
+    }
+    const uint32_t axis = x_axis ? ECS_UI_SCROLL_AXIS_X : ECS_UI_SCROLL_AXIS_Y;
+    return (node->scroll_view.axes & axis) != 0u;
+}
+
+static EcsUiSolverScrollOffset EcsUiSolverScrollOffsetForNode(
+    const EcsUiSolverContext *ctx,
+    uint32_t index)
+{
+    if (ctx == NULL || ctx->scroll_offsets == NULL) {
+        return (EcsUiSolverScrollOffset){0};
+    }
+    for (uint32_t i = 0u; i < ctx->scroll_offset_count; i += 1u) {
+        const EcsUiSolverScrollOffset *offset = &ctx->scroll_offsets[i];
+        if (offset->node_index == index) {
+            return *offset;
+        }
+    }
+    return (EcsUiSolverScrollOffset){0};
+}
+
+static void EcsUiSolverReportScrollContent(
+    EcsUiSolverContext *ctx,
+    uint32_t index,
+    float width,
+    float height)
+{
+    if (ctx == NULL || ctx->scroll_contents == NULL) {
+        return;
+    }
+    for (uint32_t i = 0u; i < ctx->scroll_content_count; i += 1u) {
+        EcsUiSolverScrollContent *content = &ctx->scroll_contents[i];
+        if (content->node_index == index) {
+            content->width = width;
+            content->height = height;
+            content->valid = true;
+            return;
+        }
+    }
 }
 
 static bool EcsUiSolverHasVisualOffset(const EcsUiTreeNodeSnapshot *node)
@@ -905,6 +947,8 @@ static void EcsUiSolverComputeBottomUp(
         node->kind == ECS_UI_NODE_BUTTON ||
         node->kind == ECS_UI_NODE_PRESSABLE;
     const bool horizontal = EcsUiSolverLayoutHorizontal(node);
+    const bool clips_x = EcsUiSolverScrollClipsAxis(node, true);
+    const bool clips_y = EcsUiSolverScrollClipsAxis(node, false);
 
     float width = 0.0f;
     float height = 0.0f;
@@ -938,21 +982,35 @@ static void EcsUiSolverComputeBottomUp(
             if (horizontal) {
                 if (visible_child_count > 0u) {
                     width += gap;
-                    min_width += gap;
+                    if (!clips_x) {
+                        min_width += gap;
+                    }
                 }
                 width += child_width;
-                min_width += child_min_width;
+                if (!clips_x) {
+                    min_width += child_min_width;
+                }
                 height = EcsUiSolverMaxFloat(height, child_height);
-                min_height = EcsUiSolverMaxFloat(min_height, child_min_height);
+                if (!clips_y) {
+                    min_height =
+                        EcsUiSolverMaxFloat(min_height, child_min_height);
+                }
             } else {
                 if (visible_child_count > 0u) {
                     height += gap;
-                    min_height += gap;
+                    if (!clips_y) {
+                        min_height += gap;
+                    }
                 }
                 height += child_height;
-                min_height += child_min_height;
+                if (!clips_y) {
+                    min_height += child_min_height;
+                }
                 width = EcsUiSolverMaxFloat(width, child_width);
-                min_width = EcsUiSolverMaxFloat(min_width, child_min_width);
+                if (!clips_x) {
+                    min_width =
+                        EcsUiSolverMaxFloat(min_width, child_min_width);
+                }
             }
             visible_child_count += 1u;
         }
@@ -961,14 +1019,18 @@ static void EcsUiSolverComputeBottomUp(
             min_width += padding_left + padding_right;
             if (visible_child_count > 0u) {
                 height += padding_top + padding_bottom;
-                min_height += padding_top + padding_bottom;
+                if (!clips_y) {
+                    min_height += padding_top + padding_bottom;
+                }
             }
         } else {
             height += padding_top + padding_bottom;
             min_height += padding_top + padding_bottom;
             if (visible_child_count > 0u) {
                 width += padding_left + padding_right;
-                min_width += padding_left + padding_right;
+                if (!clips_x) {
+                    min_width += padding_left + padding_right;
+                }
             }
         }
     }
@@ -1204,14 +1266,31 @@ static void EcsUiSolverSolveAxisTopDown(
         const float free_space = parent_size - parent_padding - inner;
         if (free_space > 0.0f && grow_count > 0u) {
             EcsUiSolverWaterFillGrow(ctx, index, x_axis, free_space);
-        } else if (free_space < 0.0f) {
+        } else if (free_space < 0.0f &&
+                !EcsUiSolverScrollClipsAxis(node, x_axis)) {
             EcsUiSolverCompressResizable(ctx, index, x_axis, free_space);
             if (ctx->failed) {
                 return;
             }
         }
     } else {
-        const float max_size = parent_size - parent_padding;
+        float max_size = parent_size - parent_padding;
+        if (EcsUiSolverScrollClipsAxis(node, x_axis)) {
+            float inner_content_size = 0.0f;
+            for (uint32_t child = node->first_child;
+                 child != ECS_UI_TREE_INVALID_INDEX;
+                 child = tree->nodes[child].next_sibling) {
+                EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+                if (!child_metrics->visible ||
+                        !EcsUiSolverChildInParentFlow(tree, index, child)) {
+                    continue;
+                }
+                inner_content_size = EcsUiSolverMaxFloat(
+                    inner_content_size,
+                    *EcsUiSolverAxisFlowSize(child_metrics, x_axis));
+            }
+            max_size = EcsUiSolverMaxFloat(max_size, inner_content_size);
+        }
         for (uint32_t child = node->first_child;
              child != ECS_UI_TREE_INVALID_INDEX;
              child = tree->nodes[child].next_sibling) {
@@ -1373,6 +1452,28 @@ static float EcsUiSolverChildrenMainSize(
             child_metrics->flow_width :
             child_metrics->flow_height;
         visible_child_count += 1u;
+    }
+    return size;
+}
+
+static float EcsUiSolverChildrenOffAxisSize(
+    EcsUiSolverContext *ctx,
+    uint32_t index,
+    bool horizontal)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    float size = 0.0f;
+    for (uint32_t child = tree->nodes[index].first_child;
+         child != ECS_UI_TREE_INVALID_INDEX;
+         child = tree->nodes[child].next_sibling) {
+        EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+        if (!child_metrics->visible ||
+                !EcsUiSolverChildInParentFlow(tree, index, child)) {
+            continue;
+        }
+        size = EcsUiSolverMaxFloat(
+            size,
+            horizontal ? child_metrics->flow_height : child_metrics->flow_width);
     }
     return size;
 }
@@ -1621,6 +1722,17 @@ static void EcsUiSolverPlaceNode(
     const float gap = EcsUiSolverGap(tree, node);
     const float main_children_size =
         EcsUiSolverChildrenMainSize(ctx, index, horizontal);
+    if (node->has_scroll_view) {
+        const float off_axis_size =
+            EcsUiSolverChildrenOffAxisSize(ctx, index, horizontal);
+        EcsUiSolverReportScrollContent(
+            ctx,
+            index,
+            (horizontal ? main_children_size : off_axis_size) +
+                padding_left + padding_right,
+            (horizontal ? off_axis_size : main_children_size) +
+                padding_top + padding_bottom);
+    }
     const float main_inner_size = horizontal ?
         rect.width - padding_left - padding_right :
         rect.height - padding_top - padding_bottom;
@@ -1628,6 +1740,14 @@ static void EcsUiSolverPlaceNode(
         EcsUiSolverMainAxisOffset(node, horizontal, main_inner_size - main_children_size);
     float cursor_x = content_x + (horizontal ? main_offset : 0.0f);
     float cursor_y = content_y + (!horizontal ? main_offset : 0.0f);
+    EcsUiSolverScrollOffset scroll_offset =
+        EcsUiSolverScrollOffsetForNode(ctx, index);
+    if (!EcsUiSolverScrollClipsAxis(node, true)) {
+        scroll_offset.offset_x = 0.0f;
+    }
+    if (!EcsUiSolverScrollClipsAxis(node, false)) {
+        scroll_offset.offset_y = 0.0f;
+    }
     uint32_t child_count = 0u;
     for (uint32_t child = node->first_child;
          child != ECS_UI_TREE_INVALID_INDEX;
@@ -1656,6 +1776,8 @@ static void EcsUiSolverPlaceNode(
             .width = child_metrics->flow_width,
             .height = child_metrics->flow_height,
         };
+        child_rect.x += scroll_offset.offset_x;
+        child_rect.y += scroll_offset.offset_y;
         if (child_metrics->offset_wrapper) {
             EcsUiSolverSizeFloatingChildAxis(
                 ctx,
@@ -1790,6 +1912,14 @@ bool EcsUiSolverRun(
         .measure_text = options != NULL ? options->measure_text : NULL,
         .measure_user_data =
             options != NULL ? options->measure_user_data : NULL,
+        .scroll_offsets =
+            options != NULL ? options->scroll_offsets : NULL,
+        .scroll_offset_count =
+            options != NULL ? options->scroll_offset_count : 0u,
+        .scroll_contents =
+            options != NULL ? options->scroll_contents : NULL,
+        .scroll_content_count =
+            options != NULL ? options->scroll_content_count : 0u,
         .error_message = options != NULL ? options->error_message : NULL,
         .error_message_size =
             options != NULL ? options->error_message_size : 0u,

@@ -14,9 +14,17 @@ typedef struct TestFrameErrors {
 
 typedef int (*BuildParityTreeFn)(ecs_world_t *world, ecs_entity_t root);
 
+typedef struct TestScrollOffset {
+    const char *id;
+    float x;
+    float y;
+} TestScrollOffset;
+
 typedef struct ParityTreeCase {
     const char *name;
     BuildParityTreeFn build;
+    const TestScrollOffset *scroll_offsets;
+    uint32_t scroll_offset_count;
 } ParityTreeCase;
 
 static int Require(bool condition, const char *message)
@@ -125,6 +133,63 @@ static void BuildNodePath(
 static float AbsFloat(float value)
 {
     return value < 0.0f ? -value : value;
+}
+
+static int RequireNear(
+    float actual,
+    float expected,
+    float epsilon,
+    const char *message)
+{
+    if (AbsFloat(actual - expected) <= epsilon) {
+        return 0;
+    }
+    (void)fprintf(
+        stderr,
+        "%s: actual %.3f expected %.3f\n",
+        message,
+        actual,
+        expected);
+    return 1;
+}
+
+static Clay_String TestClayString(const char *text)
+{
+    return (Clay_String){
+        .isStaticallyAllocated = false,
+        .length = text != NULL ? (int32_t)strlen(text) : 0,
+        .chars = text != NULL ? text : "",
+    };
+}
+
+static Clay_ElementId TestClayNodeElementId(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    char id[ECS_UI_ID_MAX * 2u] = {0};
+    const char *authored_id =
+        node != NULL && node->id[0] != '\0' ? node->id : "Node";
+    (void)snprintf(
+        id,
+        sizeof(id),
+        "%s_%llu",
+        authored_id,
+        (unsigned long long)(node != NULL ? node->entity : 0));
+    return Clay_GetElementId(TestClayString(id));
+}
+
+static uint32_t FindTreeNodeIndex(
+    const EcsUiTreeSnapshot *tree,
+    const char *id)
+{
+    if (tree == NULL || id == NULL) {
+        return ECS_UI_TREE_INVALID_INDEX;
+    }
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        if (strcmp(tree->nodes[i].id, id) == 0) {
+            return i;
+        }
+    }
+    return ECS_UI_TREE_INVALID_INDEX;
 }
 
 static bool RectDiffers(
@@ -545,34 +610,6 @@ static int BuildUnsupportedTextFieldView(
     return Require(
         EcsUiBuilderOk(&builder),
         "unsupported text field builder failed");
-}
-
-static int BuildUnsupportedScrollView(
-    ecs_world_t *world,
-    ecs_entity_t root)
-{
-    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
-    (void)EcsUiBeginVScrollView(
-        &builder,
-        (EcsUiScrollViewDesc){
-            .stack = {
-                .id = "UnsupportedScrollView",
-                .preferred_width = 80.0f,
-                .preferred_height = 60.0f,
-            },
-            .axes = ECS_UI_SCROLL_AXIS_Y,
-        });
-    (void)EcsUiAddCustom(
-        &builder,
-        (EcsUiCustomDesc){
-            .id = "UnsupportedScrollChild",
-            .kind = "parity.unsupported",
-            .preferred_width = 10.0f,
-            .preferred_height = 10.0f,
-        });
-    EcsUiEnd(&builder);
-    EcsUiBuilderEnd(&builder);
-    return Require(EcsUiBuilderOk(&builder), "unsupported scroll builder failed");
 }
 
 static int BuildFitStackSizing(
@@ -3940,6 +3977,578 @@ static int BuildZStackNestingFit(
     return Require(EcsUiBuilderOk(&builder), "zstack nesting builder failed");
 }
 
+static int BuildVerticalScrollOverflow(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "VerticalScroll",
+                .preferred_width = 94.5f,
+                .preferred_height = 54.5f,
+                .gap = 3.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "VerticalScrollA",
+            .kind = "parity.scroll",
+            .preferred_width = 70.5f,
+            .preferred_height = 42.5f,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "VerticalScrollB",
+            .kind = "parity.scroll",
+            .preferred_width = 74.5f,
+            .preferred_height = 44.5f,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "vertical scroll builder failed");
+}
+
+static int BuildHorizontalScrollOverflow(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "HorizontalScroll",
+                .preferred_width = 78.5f,
+                .preferred_height = 48.5f,
+                .gap = 3.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_X,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "HorizontalScrollA",
+            .kind = "parity.scroll",
+            .preferred_width = 48.5f,
+            .preferred_height = 30.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "HorizontalScrollB",
+            .kind = "parity.scroll",
+            .preferred_width = 50.5f,
+            .preferred_height = 32.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "horizontal scroll builder failed");
+}
+
+static int BuildBothAxesScroll(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "BothAxesScroll",
+                .preferred_width = 64.5f,
+                .preferred_height = 52.5f,
+                .gap = 2.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_X | ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "BothAxesA",
+            .kind = "parity.scroll",
+            .preferred_width = 92.5f,
+            .preferred_height = 38.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "BothAxesB",
+            .kind = "parity.scroll",
+            .preferred_width = 98.5f,
+            .preferred_height = 40.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "both axes scroll builder failed");
+}
+
+static int BuildScrollOffsetsInjected(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "OffsetScroll",
+                .preferred_width = 88.5f,
+                .preferred_height = 66.5f,
+                .gap = 2.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetScrollNested",
+            .preferred_width = 120.5f,
+            .height_sizing = ECS_UI_SIZE_FIT,
+            .gap = 2.25f,
+            .padding = 1.25f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetScrollChildA",
+            .kind = "parity.scroll",
+            .preferred_width = 108.5f,
+            .preferred_height = 38.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetScrollChildB",
+            .kind = "parity.scroll",
+            .preferred_width = 112.5f,
+            .preferred_height = 52.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "scroll offset builder failed");
+}
+
+static int BuildScrollOffsetBeyondContent(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "BeyondScroll",
+                .preferred_width = 72.5f,
+                .preferred_height = 48.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "BeyondScrollChild",
+            .kind = "parity.scroll",
+            .preferred_width = 40.5f,
+            .preferred_height = 90.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "beyond scroll builder failed");
+}
+
+static int BuildScrollOffAxisGrowExtends(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "HorizontalClipVerticalStack",
+                .preferred_width = 56.5f,
+                .preferred_height = 78.5f,
+                .gap = 2.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_X,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "HorizontalClipGrowWide",
+            .kind = "parity.scroll",
+            .preferred_width = 116.5f,
+            .preferred_height = 24.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "HorizontalClipPlain",
+            .kind = "parity.scroll",
+            .preferred_width = 80.5f,
+            .preferred_height = 20.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "scroll off-axis grow builder failed");
+}
+
+static int BuildScrollMinExclusionCompression(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ScrollCompressParent",
+            .preferred_width = 82.5f,
+            .preferred_height = 54.5f,
+            .gap = 3.5f,
+            .padding = 2.25f,
+        });
+    (void)EcsUiBeginHScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "CompressScroll",
+                .preferred_height = 40.5f,
+                .width_sizing = ECS_UI_SIZE_FIT,
+                .gap = 2.25f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_X,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "CompressScrollWide",
+            .kind = "parity.scroll",
+            .preferred_width = 120.5f,
+            .preferred_height = 28.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "CompressScrollSibling",
+            .kind = "parity.scroll",
+            .preferred_width = 30.5f,
+            .preferred_height = 30.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "scroll min exclusion compression builder failed");
+}
+
+static int BuildScrollTextMinExclusionCompression(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ScrollTextCompressParent",
+            .preferred_width = 86.5f,
+            .preferred_height = 52.5f,
+            .gap = 3.5f,
+            .padding = 2.25f,
+        });
+    (void)EcsUiBeginHScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "TextMinCompressScroll",
+                .preferred_height = 40.5f,
+                .width_sizing = ECS_UI_SIZE_FIT,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_X,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextMinCompressValue",
+            .text = "supercalifragilistic alpha beta gamma",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextMinCompressSibling",
+            .kind = "parity.scroll",
+            .preferred_width = 28.5f,
+            .preferred_height = 28.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "scroll text min exclusion compression builder failed");
+}
+
+static int BuildScrollFitClippedAxis(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "FitScroll",
+                .preferred_width = 86.5f,
+                .height_sizing = ECS_UI_SIZE_FIT,
+                .gap = 2.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "FitScrollA",
+            .kind = "parity.scroll",
+            .preferred_width = 40.5f,
+            .preferred_height = 18.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "FitScrollB",
+            .kind = "parity.scroll",
+            .preferred_width = 44.5f,
+            .preferred_height = 20.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "scroll fit builder failed");
+}
+
+static int BuildScrollText(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "TextScroll",
+                .preferred_width = 98.5f,
+                .preferred_height = 48.5f,
+                .gap = 2.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextScrollValue",
+            .text = "wide words in scroll content",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextScrollSibling",
+            .kind = "parity.scroll",
+            .preferred_width = 50.5f,
+            .preferred_height = 28.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "scroll text builder failed");
+}
+
+static int BuildHorizontalScrollTextNoCompression(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "TextNoCompressScroll",
+                .preferred_width = 74.5f,
+                .preferred_height = 42.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_X,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextNoCompressValue",
+            .text = "alpha beta gamma delta epsilon",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "horizontal scroll text no-compression builder failed");
+}
+
+static int BuildScrollZStack(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "ZScroll",
+                .preferred_width = 110.5f,
+                .preferred_height = 58.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ScrolledZ",
+            .preferred_width = 92.5f,
+            .preferred_height = 80.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ScrolledZFlow",
+            .kind = "parity.scroll-z",
+            .preferred_width = 20.5f,
+            .preferred_height = 14.5f,
+        });
+    ecs_entity_t floating = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ScrolledZFloating",
+            .kind = "parity.scroll-z",
+            .preferred_width = 40.5f,
+            .preferred_height = 22.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, floating, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_END,
+        .offset_x = -3.25f,
+        .offset_y = -4.25f,
+        .width = 40.5f,
+        .height = 22.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "scroll zstack builder failed");
+}
+
+static const TestScrollOffset kScrollOffsetsInjected[] = {
+    {.id = "OffsetScroll", .x = 0.0f, .y = -8.25f},
+};
+
+static const TestScrollOffset kScrollOffsetBeyond[] = {
+    {.id = "BeyondScroll", .x = 0.0f, .y = -160.5f},
+};
+
+static const TestScrollOffset kScrollZStackOffset[] = {
+    {.id = "ZScroll", .x = 0.0f, .y = -12.5f},
+};
+
 static EcsUiFrameLayoutOptions LayoutOptions(float scale)
 {
     return (EcsUiFrameLayoutOptions){
@@ -3950,6 +4559,195 @@ static EcsUiFrameLayoutOptions LayoutOptions(float scale)
             .height = 180.0f * scale,
         },
     };
+}
+
+static uint32_t PrepareSolverScrollOffsetsFromClay(
+    const EcsUiTreeSnapshot *tree,
+    const ParityTreeCase *parity_case,
+    float scale,
+    EcsUiSolverScrollOffset *out,
+    uint32_t out_count)
+{
+    if (tree == NULL || parity_case == NULL || out == NULL) {
+        return 0u;
+    }
+    uint32_t count = 0u;
+    for (uint32_t i = 0u; i < parity_case->scroll_offset_count; i += 1u) {
+        if (count >= out_count) {
+            break;
+        }
+        const TestScrollOffset *offset = &parity_case->scroll_offsets[i];
+        const uint32_t index = FindTreeNodeIndex(tree, offset->id);
+        if (index == ECS_UI_TREE_INVALID_INDEX) {
+            continue;
+        }
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(&tree->nodes[index]));
+        if (!data.found) {
+            continue;
+        }
+        out[count] = (EcsUiSolverScrollOffset){
+            .node_index = index,
+            .offset_x = data.config.childOffset.x / scale,
+            .offset_y = data.config.childOffset.y / scale,
+        };
+        count += 1u;
+    }
+    return count;
+}
+
+static int InjectClayScrollOffsets(
+    const EcsUiTreeSnapshot *tree,
+    const ParityTreeCase *parity_case,
+    float scale)
+{
+    int result = 0;
+    if (tree == NULL || parity_case == NULL) {
+        return 0;
+    }
+    for (uint32_t i = 0u; i < parity_case->scroll_offset_count; i += 1u) {
+        const TestScrollOffset *offset = &parity_case->scroll_offsets[i];
+        const uint32_t index = FindTreeNodeIndex(tree, offset->id);
+        result |= Require(
+            index != ECS_UI_TREE_INVALID_INDEX,
+            "scroll offset node missing");
+        if (index == ECS_UI_TREE_INVALID_INDEX) {
+            continue;
+        }
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(&tree->nodes[index]));
+        result |= Require(data.found, "scroll offset container data missing");
+        result |= Require(
+            data.scrollPosition != NULL,
+            "scroll offset position missing");
+        if (data.found && data.scrollPosition != NULL) {
+            data.scrollPosition->x = offset->x * scale;
+            data.scrollPosition->y = offset->y * scale;
+        }
+    }
+    return result;
+}
+
+static int RequirePrimedScrollOffsets(
+    const EcsUiTreeSnapshot *tree,
+    const ParityTreeCase *parity_case,
+    float scale)
+{
+    int result = 0;
+    if (tree == NULL || parity_case == NULL) {
+        return 0;
+    }
+    for (uint32_t i = 0u; i < parity_case->scroll_offset_count; i += 1u) {
+        const TestScrollOffset *offset = &parity_case->scroll_offsets[i];
+        const uint32_t index = FindTreeNodeIndex(tree, offset->id);
+        result |= Require(
+            index != ECS_UI_TREE_INVALID_INDEX,
+            "primed scroll offset node missing");
+        if (index == ECS_UI_TREE_INVALID_INDEX) {
+            continue;
+        }
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(&tree->nodes[index]));
+        result |= Require(data.found, "primed scroll offset data missing");
+        if (!data.found) {
+            continue;
+        }
+        const float observed_x = data.config.childOffset.x / scale;
+        const float observed_y = data.config.childOffset.y / scale;
+        const bool requested_nonzero =
+            AbsFloat(offset->x) > 0.001f || AbsFloat(offset->y) > 0.001f;
+        const bool observed_nonzero =
+            AbsFloat(observed_x) > 0.001f || AbsFloat(observed_y) > 0.001f;
+        char message[256] = {0};
+        (void)snprintf(
+            message,
+            sizeof(message),
+            "%s scale %.1f: primed scroll offset for %s stayed zero",
+            parity_case->name,
+            scale,
+            offset->id);
+        result |= Require(!requested_nonzero || observed_nonzero, message);
+        if (strcmp(offset->id, "BeyondScroll") == 0) {
+            const bool clamped =
+                AbsFloat(observed_x - offset->x) > 0.001f ||
+                AbsFloat(observed_y - offset->y) > 0.001f;
+            (void)snprintf(
+                message,
+                sizeof(message),
+                "%s scale %.1f: BeyondScroll did not clamp requested offset",
+                parity_case->name,
+                scale);
+            result |= Require(clamped, message);
+        }
+    }
+    return result;
+}
+
+static int RequireScrollContentDiff(
+    const EcsUiTreeSnapshot *reference,
+    const EcsUiSolverScrollContent *candidate,
+    uint32_t candidate_count,
+    const char *case_name,
+    float scale)
+{
+    int result = 0;
+    if (reference == NULL || candidate == NULL) {
+        return 0;
+    }
+    for (uint32_t i = 0u; i < reference->count; i += 1u) {
+        const EcsUiTreeNodeSnapshot *node = &reference->nodes[i];
+        if (!node->has_scroll_view) {
+            continue;
+        }
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(node));
+        char message[256] = {0};
+        (void)snprintf(
+            message,
+            sizeof(message),
+            "%s scale %.1f: scroll content data missing for %s",
+            case_name,
+            scale,
+            node->id);
+        result |= Require(data.found, message);
+        result |= Require(
+            i < candidate_count && candidate[i].valid,
+            "native scroll content data missing");
+        if (!data.found || i >= candidate_count || !candidate[i].valid) {
+            continue;
+        }
+        if (data.contentDimensions.width == 0.0f &&
+                data.contentDimensions.height == 0.0f) {
+            continue;
+        }
+        const float clay_width =
+            data.contentDimensions.width / scale;
+        const float clay_height =
+            data.contentDimensions.height / scale;
+        (void)snprintf(
+            message,
+            sizeof(message),
+            "%s scale %.1f: scroll content width mismatch for %s",
+            case_name,
+            scale,
+            node->id);
+        result |= RequireNear(candidate[i].width, clay_width, 0.001f, message);
+        (void)snprintf(
+            message,
+            sizeof(message),
+            "%s scale %.1f: scroll content height mismatch for %s",
+            case_name,
+            scale,
+            node->id);
+        result |= RequireNear(candidate[i].height, clay_height, 0.001f, message);
+    }
+    return result;
+}
+
+static void ClearClayScrollState(void)
+{
+    Clay_UpdateScrollContainers(false, (Clay_Vector2){0}, 0.0f);
+    Clay_UpdateScrollContainers(false, (Clay_Vector2){0}, 0.0f);
 }
 
 static int RunParityCase(const ParityTreeCase *parity_case, float scale)
@@ -3992,6 +4790,7 @@ static int RunParityCase(const ParityTreeCase *parity_case, float scale)
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.x + options.physical_bounds.width + 40.0f,
         options.physical_bounds.y + options.physical_bounds.height + 40.0f);
+    ClearClayScrollState();
 
     result |= RunFrameWithBackend(
         &clay_tree,
@@ -3999,6 +4798,27 @@ static int RunParityCase(const ParityTreeCase *parity_case, float scale)
         &options,
         ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
         "clay parity frame failed");
+    if (parity_case->scroll_offset_count > 0u) {
+        result |= InjectClayScrollOffsets(&clay_tree, parity_case, scale);
+        Clay_UpdateScrollContainers(false, (Clay_Vector2){0}, 0.0f);
+        result |= RunFrameWithBackend(
+            &clay_tree,
+            &theme,
+            &options,
+            ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+            "clay scrolled parity frame failed");
+        result |= RequirePrimedScrollOffsets(&clay_tree, parity_case, scale);
+    }
+    EcsUiSolverScrollOffset solver_offsets[ECS_UI_TREE_NODE_MAX] = {0};
+    const uint32_t solver_offset_count = PrepareSolverScrollOffsetsFromClay(
+        &clay_tree,
+        parity_case,
+        scale,
+        solver_offsets,
+        ECS_UI_TREE_NODE_MAX);
+    EcsUiFrameInternalSetNativeScrollOffsets(
+        solver_offset_count > 0u ? solver_offsets : NULL,
+        solver_offset_count);
     result |= RunFrameWithBackend(
         &diverge_tree,
         &theme,
@@ -4019,6 +4839,13 @@ static int RunParityCase(const ParityTreeCase *parity_case, float scale)
         strstr(divergence, "divergent node path") != NULL,
         "solver scoreboard did not report a divergent node path");
 
+    EcsUiSolverScrollContent scroll_contents[ECS_UI_TREE_NODE_MAX] = {0};
+    for (uint32_t i = 0u; i < native_tree.count; i += 1u) {
+        scroll_contents[i].node_index = i;
+    }
+    EcsUiFrameInternalSetNativeScrollContentOutput(
+        scroll_contents,
+        native_tree.count);
     result |= RunFrameWithBackend(
         &native_tree,
         &theme,
@@ -4030,7 +4857,16 @@ static int RunParityCase(const ParityTreeCase *parity_case, float scale)
         &native_tree,
         parity_case->name,
         scale);
+    result |= RequireScrollContentDiff(
+        &clay_tree,
+        scroll_contents,
+        native_tree.count,
+        parity_case->name,
+        scale);
 
+    EcsUiFrameInternalSetNativeScrollContentOutput(NULL, 0u);
+    EcsUiFrameInternalSetNativeScrollOffsets(NULL, 0u);
+    ClearClayScrollState();
     EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     ecs_fini(world);
     return result;
@@ -4158,11 +4994,6 @@ static int TestUnsupportedStageFailures(TestFrameErrors *errors)
         "unsupported_text_field_view",
         BuildUnsupportedTextFieldView,
         "unsupported text-field view on node kind 9 -- stage 6c");
-    result |= RunUnsupportedCase(
-        errors,
-        "unsupported_scroll_view",
-        BuildUnsupportedScrollView,
-        "unsupported scroll/clip on node kind 2 -- stage 6b");
     return result;
 }
 
@@ -4441,6 +5272,63 @@ int main(void)
         {
             .name = "zstack_nesting_fit",
             .build = BuildZStackNestingFit,
+        },
+        {
+            .name = "vertical_scroll_overflow",
+            .build = BuildVerticalScrollOverflow,
+        },
+        {
+            .name = "horizontal_scroll_overflow",
+            .build = BuildHorizontalScrollOverflow,
+        },
+        {
+            .name = "both_axes_scroll",
+            .build = BuildBothAxesScroll,
+        },
+        {
+            .name = "scroll_offsets_injected",
+            .build = BuildScrollOffsetsInjected,
+            .scroll_offsets = kScrollOffsetsInjected,
+            .scroll_offset_count =
+                sizeof(kScrollOffsetsInjected) / sizeof(kScrollOffsetsInjected[0]),
+        },
+        {
+            .name = "scroll_offset_beyond_content",
+            .build = BuildScrollOffsetBeyondContent,
+            .scroll_offsets = kScrollOffsetBeyond,
+            .scroll_offset_count =
+                sizeof(kScrollOffsetBeyond) / sizeof(kScrollOffsetBeyond[0]),
+        },
+        {
+            .name = "scroll_off_axis_grow_extends",
+            .build = BuildScrollOffAxisGrowExtends,
+        },
+        {
+            .name = "scroll_min_exclusion_compression",
+            .build = BuildScrollMinExclusionCompression,
+        },
+        {
+            .name = "scroll_text_min_exclusion_compression",
+            .build = BuildScrollTextMinExclusionCompression,
+        },
+        {
+            .name = "scroll_fit_clipped_axis",
+            .build = BuildScrollFitClippedAxis,
+        },
+        {
+            .name = "scroll_text",
+            .build = BuildScrollText,
+        },
+        {
+            .name = "horizontal_scroll_text_no_compression",
+            .build = BuildHorizontalScrollTextNoCompression,
+        },
+        {
+            .name = "scroll_zstack",
+            .build = BuildScrollZStack,
+            .scroll_offsets = kScrollZStackOffset,
+            .scroll_offset_count =
+                sizeof(kScrollZStackOffset) / sizeof(kScrollZStackOffset[0]),
         },
         {
             .name = "vertical_grow_distribution",

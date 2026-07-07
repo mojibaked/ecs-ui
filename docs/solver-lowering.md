@@ -36,9 +36,9 @@ current Stage 1 rules are:
   are 16 by 16.
 
 Unstaged features must fail loudly instead of producing plausible rects. After
-stage 6a, the remaining loud guards are scroll containers (`-- stage 6b`) and
-pressables with text-field synthetic children (`-- stage 6c`); the frame backend
-reports the solver error and returns no draw list for that run.
+stage 6b, the remaining loud guard is pressables with text-field synthetic
+children (`-- stage 6c`); the frame backend reports the solver error and
+returns no draw list for that run.
 
 The Stage 2 grow subset is deliberately narrower than Clay's full grow/shrink
 algorithm. It covers positive free space on the parent's layout axis with
@@ -431,13 +431,19 @@ authored scroll axes and childOffset is Clay's retained per-id scroll
 position (physical px, mutated by the wheel handler between frames). Layout
 effects the solver must reproduce:
 - No compression on a clipped axis (children keep their sizes on overflow).
-- Off-axis GROW children inside a clipped-axis parent get their max extended
-  to max(parent inner size, inner content size) instead of parent inner.
+- Off-axis GROW children get their max extended to max(parent inner size,
+  inner content size) only when the axis currently being solved is clipped.
+  For example, a vertical stack with horizontal clip extends x-axis grow
+  children; a vertical-only scroll container does not extend those x sizes.
 - The close pass EXCLUDES children's minDimensions on clipped axes (the
   scroll container's own min on that axis is padding only) — this feeds
   ancestor compression floors.
-- Descendant positions shift by childOffset during placement (scroll offsets
-  move children; the container rect is unaffected).
+- Normal descendant positions shift by childOffset during placement (scroll
+  offsets move children; the container rect is unaffected). Floating roots
+  attached inside clip contents do not receive Clay's extra clip-root
+  childOffset correction because ecs-ui leaves external scroll handling off;
+  ZStack floaters inside a normally scrolled child still move when their
+  attach parent rect was shifted by normal placement.
 - Content dims: Clay reports contentSize = content + padding via
   Clay_GetScrollContainerData, computed in the positioning pass from final
   child sizes. The solver computes and reports the same per scroll node; the
@@ -446,9 +452,19 @@ effects the solver must reproduce:
   (EcsUiClayStackContentWidth/Height) used only when Clay reports zero — the
   fallback is input-routing code, not layout, and is NOT part of solver
   parity.
-- Offsets are retained CLAY state, not snapshot state: the parity harness
-  must inject offsets explicitly (write Clay's scrollPosition between frames,
-  pass the same per-node offsets to the solver via run options).
+- Offsets are retained CLAY state, not snapshot state. In this Clay revision,
+  a direct write to `Clay_GetScrollContainerData(id).scrollPosition` is visible
+  through that API but does not by itself guarantee the next bridge
+  `Clay_GetScrollOffset()` declaration sees it; the harness therefore primes
+  Clay through its normal scroll update path and passes the actual
+  `clip.childOffset` observed on the reference frame to the solver as logical
+  run options. That path also means out-of-range requested offsets are clamped
+  before layout by Clay's retained-scroll update; the prototype does not claim
+  an unclamped direct-injection behavior.
+- Native solver run options normalize observed scroll offsets to authored
+  clipped axes before placement. Clay's positioning would add a nonzero
+  off-axis childOffset component if one were present, but ecs-ui's retained
+  scroll mutation path does not produce that off-axis state.
 
 ### Stage 6 scope
 
