@@ -930,7 +930,7 @@ static int TestRootScaleAffectsClayLayoutOnly(void)
     return result;
 }
 
-static int RunCustomLayoutEnrichmentCase(float scale)
+static int RunLayoutEnrichmentCase(float scale)
 {
     int result = 0;
     ecs_world_t *world = CreateWorld();
@@ -1009,6 +1009,18 @@ static int RunCustomLayoutEnrichmentCase(float scale)
             .preferred_height = 48.0f,
         });
     EcsUiEnd(&builder);
+    (void)EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = "EnrichButton",
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "EnrichButtonLabel",
+            .text = "ok",
+        });
+    EcsUiEnd(&builder);
     EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
     result |= Require(
@@ -1055,8 +1067,8 @@ static int RunCustomLayoutEnrichmentCase(float scale)
     uint32_t enriched_count =
         EcsUiClayEnrichSnapshotLayout(&tree, &options);
     result |= Require(
-        enriched_count >= 5u,
-        "layout enrichment should fill custom nodes");
+        enriched_count == tree.count,
+        "all-node layout enrichment should fill every emitted node");
 
     Clay_Vector2 origin = {
         .x = options.bounds.x,
@@ -1086,9 +1098,72 @@ static int RunCustomLayoutEnrichmentCase(float scale)
 
     const EcsUiTreeNodeSnapshot *container =
         EcsUiTreeSnapshotFindNodeById(&tree, "LayoutContainer");
+    const EcsUiTreeNodeSnapshot *canvas =
+        EcsUiTreeSnapshotFindNodeById(&tree, "CanvasSurface");
     result |= Require(
-        container != NULL && !container->has_layout,
-        "ordinary containers should wait for all-node layout enrichment");
+        container != NULL && container->has_layout,
+        "ordinary containers should receive enriched layout");
+    if (container != NULL && container->has_layout && canvas != NULL) {
+        result |= RequireNear(
+            container->layout_width,
+            180.0f,
+            0.001f,
+            "container enriched width should stay logical");
+        result |= RequireNear(
+            canvas->layout_x,
+            container->layout_x + 7.0f,
+            0.001f,
+            "canvas should sit inside the container padding on x");
+        result |= RequireNear(
+            canvas->layout_y,
+            container->layout_y + 7.0f,
+            0.001f,
+            "canvas should sit inside the container padding on y");
+    }
+    result |= Require(
+        clip_host != NULL && clip_host->has_layout,
+        "scroll hosts should receive enriched layout");
+    if (clip_host != NULL && clip_host->has_layout) {
+        result |= RequireNear(
+            clip_host->layout_height,
+            36.0f,
+            0.001f,
+            "clip host should keep its clipped logical height");
+    }
+    const EcsUiTreeNodeSnapshot *enrich_button =
+        EcsUiTreeSnapshotFindNodeById(&tree, "EnrichButton");
+    result |= Require(
+        enrich_button != NULL && enrich_button->has_layout,
+        "buttons should receive enriched layout");
+    if (enrich_button != NULL && enrich_button->has_layout &&
+        container != NULL && container->has_layout &&
+        clip_host != NULL && clip_host->has_layout) {
+        result |= RequireNear(
+            enrich_button->layout_x,
+            container->layout_x + 7.0f,
+            0.001f,
+            "button should sit inside the container padding on x");
+        result |= RequireNear(
+            enrich_button->layout_y,
+            clip_host->layout_y + clip_host->layout_height + 5.0f,
+            0.001f,
+            "button should stack below the clip host with the container gap");
+    }
+    result |= Require(
+        tree.count > 0u && tree.nodes[0].has_layout,
+        "root node should receive enriched layout");
+    if (tree.count > 0u && tree.nodes[0].has_layout) {
+        result |= RequireNear(
+            tree.nodes[0].layout_x,
+            0.0f,
+            0.001f,
+            "root enriched x should be zero after origin subtraction");
+        result |= RequireNear(
+            tree.nodes[0].layout_y,
+            0.0f,
+            0.001f,
+            "root enriched y should be zero after origin subtraction");
+    }
     result |= Require(
         g_clay_errors.count == 0u,
         "layout enrichment should not emit Clay errors");
@@ -1097,11 +1172,11 @@ static int RunCustomLayoutEnrichmentCase(float scale)
     return result;
 }
 
-static int TestCustomLayoutEnrichmentUsesLogicalRootRelativeRects(void)
+static int TestLayoutEnrichmentUsesLogicalRootRelativeRects(void)
 {
     int result = 0;
-    result |= RunCustomLayoutEnrichmentCase(1.0f);
-    result |= RunCustomLayoutEnrichmentCase(2.0f);
+    result |= RunLayoutEnrichmentCase(1.0f);
+    result |= RunLayoutEnrichmentCase(2.0f);
     return result;
 }
 
@@ -4510,7 +4585,7 @@ int main(void)
     }
 
     result |= TestRootScaleAffectsClayLayoutOnly();
-    result |= TestCustomLayoutEnrichmentUsesLogicalRootRelativeRects();
+    result |= TestLayoutEnrichmentUsesLogicalRootRelativeRects();
     result |= TestScaledPointerEventsAreLogical();
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestScrollViewEmitsScissorCommands();

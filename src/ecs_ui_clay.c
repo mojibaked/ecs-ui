@@ -2355,7 +2355,7 @@ static bool EcsUiClayEnrichSnapshotNodeLayout(
     float scale,
     Clay_Vector2 origin)
 {
-    if (node == NULL || node->kind != ECS_UI_NODE_CUSTOM) {
+    if (node == NULL || node->kind == ECS_UI_NODE_NONE) {
         return false;
     }
 

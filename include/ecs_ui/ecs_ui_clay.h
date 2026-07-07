@@ -118,8 +118,9 @@ void EcsUiClayEmitTreeEx(
 /*
  * Enrich a snapshot with Clay post-layout rectangles from the current Clay
  * context. Call after EcsUiClayEmitTreeEx and Clay_EndLayout for the same
- * frame. The MVP fills custom nodes only; other nodes remain has_layout=false
- * so all-node enrichment can be added without changing this API.
+ * frame. Fills every node whose Clay element was emitted this frame; nodes
+ * skipped by emission (for example fully transparent subtrees) remain
+ * has_layout=false.
  *
  * Filled rectangles are logical units, tree-root relative. For bounded emits,
  * the Clay viewport origin is subtracted before dividing by tree->scale.
