@@ -2262,7 +2262,7 @@ static void EcsUiDebugDumpNode(
     if (node->has_layout) {
         EcsUiDebugDumpAppend(
             writer,
-            " layout=(%.3g,%.3g %.3gx%.3g)",
+            " layout=(%.9g,%.9g %.9gx%.9g)",
             node->layout_x,
             node->layout_y,
             node->layout_width,
