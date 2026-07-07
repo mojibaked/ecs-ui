@@ -18,6 +18,11 @@ typedef struct EcsUiTextFocusRequestAccumulator {
     bool has_blur;
 } EcsUiTextFocusRequestAccumulator;
 
+typedef struct EcsUiTextInputState {
+    uint64_t revision;
+    uint64_t projected_revision;
+} EcsUiTextInputState;
+
 ECS_COMPONENT_DECLARE(EcsUiTextField);
 ECS_COMPONENT_DECLARE(EcsUiTextEditState);
 ECS_COMPONENT_DECLARE(EcsUiTextInsertRequest);
@@ -25,6 +30,7 @@ ECS_COMPONENT_DECLARE(EcsUiTextPasteRequest);
 ECS_COMPONENT_DECLARE(EcsUiTextClipboardWriteRequest);
 ECS_COMPONENT_DECLARE(EcsUiTextFocusRequestSequence);
 ECS_COMPONENT_DECLARE(EcsUiTextFocusRequestAccumulator);
+ECS_COMPONENT_DECLARE(EcsUiTextInputState);
 ECS_TAG_DECLARE(EcsUiFocusedTextField);
 ECS_TAG_DECLARE(EcsUiTextFieldUiNode);
 ECS_TAG_DECLARE(EcsUiTextFieldValueUiNode);
@@ -55,6 +61,7 @@ static bool EcsUiTextInputReady(void)
         ecs_id(EcsUiTextClipboardWriteRequest) != 0 &&
         ecs_id(EcsUiTextFocusRequestSequence) != 0 &&
         ecs_id(EcsUiTextFocusRequestAccumulator) != 0 &&
+        ecs_id(EcsUiTextInputState) != 0 &&
         EcsUiFocusedTextField != 0 && EcsUiTextFieldUiNode != 0 &&
         EcsUiTextFieldValueUiNode != 0 && EcsUiForTextField != 0 &&
         EcsUiFocusTextFieldRequest != 0 &&
@@ -301,6 +308,28 @@ static ecs_entity_t EcsUiTextInputRootEntity(const ecs_world_t *world)
     return ecs_lookup(world, "EcsUiTextInput");
 }
 
+static uint64_t EcsUiTextInputNextRevision(uint64_t revision)
+{
+    revision += 1u;
+    return revision != 0u ? revision : 1u;
+}
+
+static void EcsUiTextInputBumpStateRevision(ecs_world_t *world)
+{
+    if (world == NULL || ecs_id(EcsUiTextInputState) == 0) {
+        return;
+    }
+
+    ecs_entity_t root = EcsUiTextInputRoot(world);
+    EcsUiTextInputState *state =
+        root != 0 ? ecs_get_mut(world, root, EcsUiTextInputState) : NULL;
+    if (state == NULL) {
+        return;
+    }
+    state->revision = EcsUiTextInputNextRevision(state->revision);
+    ecs_modified(world, root, EcsUiTextInputState);
+}
+
 ecs_entity_t EcsUiTextInputRoot(ecs_world_t *world)
 {
     if (world == NULL) {
@@ -309,6 +338,17 @@ ecs_entity_t EcsUiTextInputRoot(ecs_world_t *world)
     ecs_entity_t root = ecs_entity(world, {.name = "EcsUiTextInput"});
     if (root != 0) {
         ecs_add_id(world, root, EcsOrderedChildren);
+        if (ecs_id(EcsUiTextInputState) != 0 &&
+            !ecs_has(world, root, EcsUiTextInputState)) {
+            ecs_set(
+                world,
+                root,
+                EcsUiTextInputState,
+                {
+                    .revision = 0u,
+                    .projected_revision = 0u,
+                });
+        }
     }
     return root;
 }
@@ -369,6 +409,18 @@ bool EcsUiTextInputIsFocused(
     ecs_entity_t field)
 {
     return field != 0 && EcsUiTextInputFocusedField(world) == field;
+}
+
+uint64_t EcsUiTextInputStateRevision(const ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return 0u;
+    }
+
+    ecs_entity_t root = EcsUiTextInputRootEntity(world);
+    const EcsUiTextInputState *state =
+        root != 0 ? ecs_get(world, root, EcsUiTextInputState) : NULL;
+    return state != NULL ? state->revision : 0u;
 }
 
 static bool EcsUiTextInputFocusAccumulator(
@@ -771,20 +823,38 @@ bool EcsUiTextInputSetValue(
         return false;
     }
 
+    char copied_value[ECS_UI_TEXT_MAX] = {0};
     EcsUiTextInputCopyString(
-        field_data->value,
-        sizeof(field_data->value),
+        copied_value,
+        sizeof(copied_value),
         value);
+    bool changed = strcmp(field_data->value, copied_value) != 0;
+    if (changed) {
+        EcsUiTextInputCopyString(
+            field_data->value,
+            sizeof(field_data->value),
+            copied_value);
+        ecs_modified(world, field, EcsUiTextField);
+    }
     uint32_t length = EcsUiTextInputClampCursor(field_data, UINT32_MAX);
-    ecs_modified(world, field, EcsUiTextField);
 
     EcsUiTextEditState *edit_state =
         EcsUiTextInputEnsureEditState(world, field);
     if (edit_state != NULL) {
-        edit_state->cursor =
+        uint32_t next_cursor =
             edit_state->cursor > length ? length : edit_state->cursor;
-        EcsUiTextInputClearEditSelection(edit_state);
-        ecs_modified(world, field, EcsUiTextEditState);
+        bool edit_changed = edit_state->cursor != next_cursor ||
+            edit_state->selection_anchor != next_cursor ||
+            edit_state->selection_focus != next_cursor;
+        if (edit_changed) {
+            edit_state->cursor = next_cursor;
+            EcsUiTextInputClearEditSelection(edit_state);
+            ecs_modified(world, field, EcsUiTextEditState);
+            changed = true;
+        }
+    }
+    if (changed) {
+        EcsUiTextInputBumpStateRevision(world);
     }
     return true;
 }
@@ -804,11 +874,20 @@ bool EcsUiTextInputSetPlaceholder(
         return false;
     }
 
+    char copied_placeholder[ECS_UI_TEXT_MAX] = {0};
+    EcsUiTextInputCopyString(
+        copied_placeholder,
+        sizeof(copied_placeholder),
+        placeholder);
+    if (strcmp(field_data->placeholder, copied_placeholder) == 0) {
+        return true;
+    }
     EcsUiTextInputCopyString(
         field_data->placeholder,
         sizeof(field_data->placeholder),
-        placeholder);
+        copied_placeholder);
     ecs_modified(world, field, EcsUiTextField);
+    EcsUiTextInputBumpStateRevision(world);
     return true;
 }
 
@@ -838,11 +917,14 @@ bool EcsUiTextInputSetCursor(
 
     uint32_t clamped_cursor =
         EcsUiTextInputClampCursor(field_data, cursor);
-    if (edit_state->cursor != clamped_cursor) {
+    bool changed = edit_state->cursor != clamped_cursor ||
+        EcsUiTextInputEditStateHasSelection(edit_state);
+    if (changed) {
         edit_state->cursor = clamped_cursor;
+        EcsUiTextInputClearEditSelection(edit_state);
+        ecs_modified(world, field, EcsUiTextEditState);
+        EcsUiTextInputBumpStateRevision(world);
     }
-    EcsUiTextInputClearEditSelection(edit_state);
-    ecs_modified(world, field, EcsUiTextEditState);
     return true;
 }
 
@@ -863,6 +945,7 @@ bool EcsUiTextInputClearSelection(
     if (EcsUiTextInputEditStateHasSelection(edit_state)) {
         EcsUiTextInputClearEditSelection(edit_state);
         ecs_modified(world, field, EcsUiTextEditState);
+        EcsUiTextInputBumpStateRevision(world);
     }
     return true;
 }
@@ -1181,19 +1264,24 @@ bool EcsUiTextInputProjectFieldView(
         const EcsUiTextEditState *edit_state =
             ecs_get(world, field, EcsUiTextEditState);
         const uint32_t cursor = EcsUiTextInputCursor(world, field);
-        EcsUiTextFieldView view = {
-            .value_node = value_node,
-            .cursor = cursor,
-            .selection_anchor = edit_state != NULL ?
-                edit_state->selection_anchor :
-                cursor,
-            .selection_focus = edit_state != NULL ?
-                edit_state->selection_focus :
-                cursor,
-            .caret_width = 2.0f,
-            .focused = focused,
-        };
-        ecs_set_ptr(world, field_node, EcsUiTextFieldView, &view);
+        EcsUiTextFieldView view;
+        memset(&view, 0, sizeof(view));
+        view.value_node = value_node;
+        view.cursor = cursor;
+        view.selection_anchor = edit_state != NULL ?
+            edit_state->selection_anchor :
+            cursor;
+        view.selection_focus = edit_state != NULL ?
+            edit_state->selection_focus :
+            cursor;
+        view.caret_width = 2.0f;
+        view.focused = focused;
+        const EcsUiTextFieldView *existing_view =
+            ecs_get(world, field_node, EcsUiTextFieldView);
+        if (existing_view == NULL ||
+            memcmp(existing_view, &view, sizeof(view)) != 0) {
+            ecs_set_ptr(world, field_node, EcsUiTextFieldView, &view);
+        }
 
         const float highlight = focused ? 0.22f : 0.0f;
         const EcsUiVisual *existing =
@@ -1201,8 +1289,8 @@ bool EcsUiTextInputProjectFieldView(
         EcsUiVisual visual = existing != NULL ? *existing : (EcsUiVisual){0};
         visual.opacity = 1.0f;
         visual.highlight = highlight;
-        if (existing == NULL || existing->opacity != visual.opacity ||
-            existing->highlight != visual.highlight) {
+        if (existing == NULL ||
+            memcmp(existing, &visual, sizeof(visual)) != 0) {
             ecs_set_ptr(world, field_node, EcsUiVisual, &visual);
         }
         projected = true;
@@ -1596,12 +1684,16 @@ static bool EcsUiTextInputExtendSelectionToEdge(
     return changed;
 }
 
-static void EcsUiTextInputFocusField(
+static bool EcsUiTextInputFocusField(
     ecs_world_t *world,
     ecs_entity_t field)
 {
     if (world == NULL || field == 0 || !ecs_has(world, field, EcsUiTextField)) {
-        return;
+        return false;
+    }
+    if (EcsUiTextInputFocusedField(world) == field) {
+        (void)EcsUiTextInputEnsureEditState(world, field);
+        return false;
     }
     (void)EcsUiTextInputEnsureEditState(world, field);
     ecs_add_pair(
@@ -1609,18 +1701,25 @@ static void EcsUiTextInputFocusField(
         EcsUiTextInputRoot(world),
         EcsUiFocusedTextField,
         field);
+    EcsUiTextInputBumpStateRevision(world);
+    return true;
 }
 
-static void EcsUiTextInputBlurFocusedField(ecs_world_t *world)
+static bool EcsUiTextInputBlurFocusedField(ecs_world_t *world)
 {
     if (world == NULL) {
-        return;
+        return false;
+    }
+    if (!EcsUiTextInputHasFocusedField(world)) {
+        return false;
     }
     ecs_remove_pair(
         world,
         EcsUiTextInputRoot(world),
         EcsUiFocusedTextField,
         EcsWildcard);
+    EcsUiTextInputBumpStateRevision(world);
+    return true;
 }
 
 static ecs_entity_t EcsUiTextInputFieldForTraversal(
@@ -1724,6 +1823,7 @@ static void EcsUiTextInputInsertSystem(ecs_iter_t *it)
                 requests[i].codepoint)) {
             ecs_modified(it->world, field, EcsUiTextField);
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1746,6 +1846,7 @@ static void EcsUiTextInputPasteSystem(ecs_iter_t *it)
                 requests[i].text)) {
             ecs_modified(it->world, field, EcsUiTextField);
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1762,6 +1863,7 @@ static void EcsUiTextInputDeleteSystem(ecs_iter_t *it)
         if (EcsUiTextInputDeleteBeforeCursor(field_data, edit_state)) {
             ecs_modified(it->world, field, EcsUiTextField);
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1784,6 +1886,7 @@ static void EcsUiTextInputClipboardSystem(ecs_iter_t *it, bool cut)
             if (cut && EcsUiTextInputDeleteSelection(field_data, edit_state)) {
                 ecs_modified(it->world, field, EcsUiTextField);
                 ecs_modified(it->world, field, EcsUiTextEditState);
+                EcsUiTextInputBumpStateRevision(it->world);
             }
             (void)EcsUiTextInputCreateClipboardWrite(
                 it->world,
@@ -1813,6 +1916,7 @@ static void EcsUiTextInputMoveCursorSystem(ecs_iter_t *it, int32_t direction)
             field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
         if (EcsUiTextInputMoveCursor(field_data, edit_state, direction)) {
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1843,6 +1947,7 @@ static void EcsUiTextInputCursorToEdgeSystem(
                 edit_state,
                 to_end)) {
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1868,6 +1973,7 @@ static void EcsUiTextInputSelectSystem(ecs_iter_t *it, int32_t direction)
             field != 0 ? ecs_get_mut(it->world, field, EcsUiTextField) : NULL;
         if (EcsUiTextInputExtendSelection(field_data, edit_state, direction)) {
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1898,6 +2004,7 @@ static void EcsUiTextInputSelectToEdgeSystem(
                 edit_state,
                 to_end)) {
             ecs_modified(it->world, field, EcsUiTextEditState);
+            EcsUiTextInputBumpStateRevision(it->world);
         }
         ecs_delete(it->world, it->entities[i]);
     }
@@ -1913,6 +2020,51 @@ static void EcsUiTextInputSelectEndSystem(ecs_iter_t *it)
     EcsUiTextInputSelectToEdgeSystem(it, true);
 }
 
+static bool EcsUiTextInputProjectLiveFieldViews(ecs_world_t *world)
+{
+    if (world == NULL || !EcsUiTextInputReady()) {
+        return false;
+    }
+
+    ecs_entity_t root = EcsUiTextInputRootEntity(world);
+    if (root == 0) {
+        return false;
+    }
+
+    ecs_entities_t children = ecs_get_ordered_children(world, root);
+    for (int32_t i = 0; i < children.count; i += 1) {
+        ecs_entity_t field = children.ids[i];
+        if (ecs_has(world, field, EcsUiTextField) &&
+            EcsUiTextInputFieldUiNode(world, field) != 0) {
+            (void)EcsUiTextInputProjectFieldView(world, field);
+        }
+    }
+    return true;
+}
+
+static void EcsUiTextInputProjectFieldViewsSystem(ecs_iter_t *it)
+{
+    EcsUiTextInputState *states =
+        ecs_field(it, EcsUiTextInputState, 0);
+
+    for (int32_t i = 0; i < it->count; i += 1) {
+        uint64_t revision = states[i].revision;
+        if (revision == states[i].projected_revision) {
+            continue;
+        }
+        if (!EcsUiTextInputProjectLiveFieldViews(it->world)) {
+            continue;
+        }
+
+        EcsUiTextInputState *state =
+            ecs_get_mut(it->world, it->entities[i], EcsUiTextInputState);
+        if (state != NULL) {
+            state->projected_revision = revision;
+            ecs_modified(it->world, it->entities[i], EcsUiTextInputState);
+        }
+    }
+}
+
 void EcsUiTextInputImport(ecs_world_t *world)
 {
     if (world == NULL) {
@@ -1926,6 +2078,7 @@ void EcsUiTextInputImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiTextClipboardWriteRequest);
     ECS_COMPONENT_DEFINE(world, EcsUiTextFocusRequestSequence);
     ECS_COMPONENT_DEFINE(world, EcsUiTextFocusRequestAccumulator);
+    ECS_COMPONENT_DEFINE(world, EcsUiTextInputState);
     ECS_TAG_DEFINE(world, EcsUiFocusedTextField);
     ECS_TAG_DEFINE(world, EcsUiTextFieldUiNode);
     ECS_TAG_DEFINE(world, EcsUiTextFieldValueUiNode);
@@ -2106,5 +2259,20 @@ void EcsUiTextInputImport(ecs_world_t *world)
             {.id = EcsUiTextSelectEndRequest},
         },
         .callback = EcsUiTextInputSelectEndSystem,
+    });
+
+    /* Keep this registration last and immediate in the next built-in phase:
+       Flecs merges deferred OnUpdate focus/edit commands before immediate
+       systems, so field views see resolved state in the same progress. */
+    (void)ecs_system(world, {
+        .entity = ecs_entity(world, {
+            .name = "EcsUiTextInputProjectFieldViewsSystem",
+        }),
+        .phase = EcsOnValidate,
+        .query.terms = {
+            {.id = ecs_id(EcsUiTextInputState)},
+        },
+        .callback = EcsUiTextInputProjectFieldViewsSystem,
+        .immediate = true,
     });
 }

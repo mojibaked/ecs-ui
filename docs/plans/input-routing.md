@@ -30,6 +30,13 @@ v1 deliberately excludes bubbling, scroll chaining, and gesture arenas — addit
 - Host (texelotl desktop): register as a stable frame signal alongside window metrics /
   ui scale / projections / canvas surface / selection mask; set revision each step.
   A change during progress marks the frame unsettled → exactly one follow-up frame.
+- Field-node views are still stamped at emit time for hosts that render immediately
+  after building, but the text-input module also runs an immediate post-`EcsOnUpdate`
+  re-projection system. The immediate system forces Flecs to merge deferred focus/edit
+  commands first, compares `revision` with a private `projected_revision`, then
+  re-stamps live field nodes so same-progress resolved focus/cursor/value state
+  reaches the rendered tree without waiting for another input wake; idle frames
+  early-out without component writes.
 
 Acceptance: file dialog opened on a parked app paints the path field focused with no
 input nudge; repeated identical SetValue/SetPlaceholder and focus-request-on-already-
@@ -80,6 +87,14 @@ Acceptance: pointer reply <100ms with the window on a hidden desktop; an immedia
 following state/tree read observes the injected effect; screenshot still waits for a
 real frame; unrelated commands reply while a screenshot is pending; runner returns to
 park; full mock-inpaint drive green.
+
+Verified 2026-07-07 with one documented residual: after an applied input, the step's
+EndDrawing can still block on a hidden surface until the compositor grants a frame, so
+RAPID SEQUENTIAL driving of a hidden window gates on compositor frame grants (measured:
+first reply 11ms, an immediately-following apply-command can wait seconds; reads always
+reply; screenshots complete on the next granted frame; parking unaffected). This is the
+occlusion-aware-present alternative deliberately deferred at design review; sustained
+headless driving uses Xvfb, which never blocks presents.
 
 ## Watch-item (verify after Stage A)
 

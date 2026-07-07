@@ -89,6 +89,7 @@ bool EcsUiTextInputHasFocusedField(const ecs_world_t *world);
 bool EcsUiTextInputIsFocused(
     const ecs_world_t *world,
     ecs_entity_t field);
+uint64_t EcsUiTextInputStateRevision(const ecs_world_t *world);
 
 /*
  * Focus, traversal, and blur requests are accumulated during a frame and

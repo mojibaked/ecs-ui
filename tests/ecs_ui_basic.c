@@ -40,6 +40,24 @@ static int RequireNear(
     return 0;
 }
 
+static int RequireTextRevision(
+    const ecs_world_t *world,
+    uint64_t expected,
+    const char *message)
+{
+    uint64_t actual = EcsUiTextInputStateRevision(world);
+    if (actual != expected) {
+        (void)fprintf(
+            stderr,
+            "%s: actual=%llu expected=%llu\n",
+            message,
+            (unsigned long long)actual,
+            (unsigned long long)expected);
+        return 1;
+    }
+    return 0;
+}
+
 static float TestColorLuminance(EcsUiColor color)
 {
     return ((float)color.r * 0.2126f) +
@@ -1308,6 +1326,186 @@ static ecs_world_t *TestCreateImportedWorld(const char *message)
     return world;
 }
 
+static int TestTextInputStateRevision(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create text revision world");
+    if (world == NULL) {
+        return 1;
+    }
+    EcsUiTextInputImport(world);
+
+    uint64_t revision = 0u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "initial text input revision should be zero");
+
+    ecs_entity_t field =
+        EcsUiTextInputField(world, "RevisionTextField", "placeholder");
+    result |= Require(field != 0, "revision text field should be created");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "creating a text field should not bump revision");
+
+    result |= Require(
+        EcsUiTextInputSetPlaceholder(world, field, "placeholder"),
+        "identical placeholder set should succeed");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "identical placeholder set should not bump revision");
+    result |= Require(
+        EcsUiTextInputSetPlaceholder(world, field, "next placeholder"),
+        "different placeholder set should succeed");
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "different placeholder set should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputSetValue(world, field, ""),
+        "identical empty value set should succeed");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "identical value set should not bump revision");
+    result |= Require(
+        EcsUiTextInputSetValue(world, field, "abc"),
+        "different value set should succeed");
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "different value set should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputSetCursor(world, field, 0u),
+        "identical cursor set should succeed");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "identical cursor set should not bump revision");
+    result |= Require(
+        EcsUiTextInputSetCursor(world, field, 1u),
+        "different cursor set should succeed");
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "different cursor set should bump revision once");
+    result |= Require(
+        EcsUiTextInputSetCursor(world, field, 1u),
+        "repeated cursor set should succeed");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "repeated cursor set should not bump revision");
+
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, field) != 0,
+        "focus request should be created for revision test");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "focus request creation should not bump revision");
+    (void)ecs_progress(world, 0.0f);
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "focus resolution should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputRequestFocusField(world, field) != 0,
+        "same-field focus request should be created");
+    (void)ecs_progress(world, 0.0f);
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "focus request on already-focused field should not bump revision");
+
+    result |= Require(
+        EcsUiTextInputRequestMoveCursorRight(world) != 0,
+        "cursor move request should be created");
+    (void)ecs_progress(world, 0.0f);
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "cursor move should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputRequestInsert(world, 'X') != 0,
+        "insert request should be created for revision test");
+    (void)ecs_progress(world, 0.0f);
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "insert should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputRequestDelete(world) != 0,
+        "delete request should be created for revision test");
+    (void)ecs_progress(world, 0.0f);
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "delete should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputRequestSelectRight(world) != 0,
+        "selection request should be created for revision test");
+    (void)ecs_progress(world, 0.0f);
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "selection change should bump revision once");
+
+    result |= Require(
+        EcsUiTextInputClearSelection(world, field),
+        "clear selection should succeed");
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "clear selection should bump revision once");
+    result |= Require(
+        EcsUiTextInputClearSelection(world, field),
+        "repeated clear selection should succeed");
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "repeated clear selection should not bump revision");
+
+    result |= Require(
+        EcsUiTextInputRequestBlur(world) != 0,
+        "blur request should be created for revision test");
+    (void)ecs_progress(world, 0.0f);
+    revision += 1u;
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "blur should bump revision once");
+    result |= Require(
+        EcsUiTextInputRequestBlur(world) != 0,
+        "second blur request should be created for revision test");
+    (void)ecs_progress(world, 0.0f);
+    result |= RequireTextRevision(
+        world,
+        revision,
+        "blur with no focused field should not bump revision");
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestBuilderKeyedRowsReusePruneAndOrder(void)
 {
     int result = 0;
@@ -1480,6 +1678,88 @@ static bool TestObserveOnSet(
         .callback = TestCountOnSet,
         .ctx = count,
     }) != 0;
+}
+
+static int TestTextInputFieldViewReprojection(void)
+{
+    int result = 0;
+    ecs_world_t *world =
+        TestCreateImportedWorld("failed to create text view projection world");
+    if (world == NULL) {
+        return 1;
+    }
+    EcsUiTextInputImport(world);
+
+    ecs_entity_t field =
+        EcsUiTextInputField(world, "ReprojectTextField", "placeholder");
+    result |= Require(field != 0, "reprojection text field should be created");
+    result |= Require(
+        EcsUiTextInputSetValue(world, field, "abc"),
+        "reprojection field value should be set");
+    result |= Require(
+        EcsUiTextInputSetCursor(world, field, 1u),
+        "reprojection field cursor should be set");
+
+    ecs_entity_t root =
+        EcsUiRootEntity(world, "TextFieldReprojectionRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field_node = EcsUiTextInputBuildFieldView(
+        &builder,
+        field,
+        (EcsUiTextFieldViewDesc){
+            .field_id = "ReprojectTextFieldView",
+            .value_id = "ReprojectTextFieldValue",
+        });
+    EcsUiBuilderEnd(&builder);
+    ecs_entity_t value_node = EcsUiTextInputFieldValueUiNode(world, field);
+    result |= Require(
+        EcsUiBuilderOk(&builder) && field_node != 0 && value_node != 0,
+        "reprojection field view should build");
+
+    (void)ecs_progress(world, 0.0f);
+    uint32_t on_set_count = 0u;
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiTextFieldView), &on_set_count),
+        "text field view observer failed");
+    result |= Require(
+        TestObserveOnSet(world, ecs_id(EcsUiVisual), &on_set_count),
+        "text field visual observer failed");
+    (void)ecs_progress(world, 0.0f);
+    result |= Require(
+        on_set_count == 0u,
+        "text field view reproject should idle without component writes");
+
+    EcsUiEvent focus_event = {
+        .type = ECS_UI_EVENT_CLICKED,
+        .node = field_node,
+    };
+    result |= Require(
+        EcsUiTextInputApplyEvent(world, &focus_event),
+        "reprojection field view should focus through router");
+    (void)ecs_progress(world, 0.0f);
+
+    const EcsUiTextFieldView *view =
+        ecs_get(world, field_node, EcsUiTextFieldView);
+    const EcsUiVisual *visual = ecs_get(world, field_node, EcsUiVisual);
+    const EcsUiText *text = ecs_get(world, value_node, EcsUiText);
+    result |= Require(
+        view != NULL && view->focused && view->cursor == 1u &&
+            view->selection_anchor == 1u &&
+            view->selection_focus == 1u &&
+            view->value_node == value_node,
+        "text field view should reproject focused state in same progress");
+    result |= Require(
+        text != NULL && strcmp(text->text, "abc") == 0 &&
+            text->role == ECS_UI_TEXT_BUTTON,
+        "text field view should reproject value text in same progress");
+    result |= RequireNear(
+        visual != NULL ? visual->highlight : 0.0f,
+        0.22f,
+        0.001f,
+        "text field view should reproject focus highlight in same progress");
+
+    ecs_fini(world);
+    return result;
 }
 
 static int TestBuilderSkipsIdenticalWrites(void)
@@ -1870,6 +2150,8 @@ int main(void)
     result |= TestBuilderRejectsDeferredWorld();
     result |= TestBuilderSkipsIdenticalWrites();
     result |= TestThemeSkipsIdenticalWrites();
+    result |= TestTextInputStateRevision();
+    result |= TestTextInputFieldViewReprojection();
     result |= TestNineSliceStyleResolvesThroughThemeAndBuilder();
     result |= TestButtonPreferredSizeSnapshot();
     result |= TestOverlayState();
@@ -2889,9 +3171,6 @@ int main(void)
         EcsUiTextInputApplyEvent(world, &focus_view_event),
         "text field view should focus through router");
     (void)ecs_progress(world, 0.0f);
-    result |= Require(
-        EcsUiTextInputProjectFieldView(world, text_field_a),
-        "text field view projection should update focused field");
     text_view_text =
         text_view_value != 0 ? ecs_get(world, text_view_value, EcsUiText) : NULL;
     const EcsUiVisual *text_view_visual =
