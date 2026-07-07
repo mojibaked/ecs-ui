@@ -260,6 +260,30 @@ static const EcsUiTreeNodeSnapshot *FindTreeNode(
     return NULL;
 }
 
+static Clay_String TestClayString(const char *text)
+{
+    return (Clay_String){
+        .isStaticallyAllocated = false,
+        .length = text != NULL ? (int32_t)strlen(text) : 0,
+        .chars = text != NULL ? text : "",
+    };
+}
+
+static Clay_ElementId TestClayNodeElementId(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    char id[ECS_UI_ID_MAX * 2u] = {0};
+    const char *authored_id =
+        node != NULL && node->id[0] != '\0' ? node->id : "Node";
+    (void)snprintf(
+        id,
+        sizeof(id),
+        "%s_%llu",
+        authored_id,
+        (unsigned long long)(node != NULL ? node->entity : 0));
+    return Clay_GetElementId(TestClayString(id));
+}
+
 static Clay_RenderCommand *FindCustomCommand(
     Clay_RenderCommandArray *commands,
     const char *node_id)
@@ -1080,6 +1104,465 @@ static int TestCapturePointerTranslation(void)
     return result;
 }
 
+static int BuildScrollStateTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale,
+    ecs_entity_t *out_scroll)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set scroll scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FrameScrollFit",
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+            .padding = 1.25f,
+        });
+    ecs_entity_t scroll = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "FrameScrollState",
+                .preferred_width = 96.5f,
+                .preferred_height = 42.5f,
+                .gap = 2.5f,
+                .padding = 1.25f,
+            },
+        });
+    for (int i = 0; i < 6; i += 1) {
+        char id[ECS_UI_ID_MAX] = {0};
+        (void)snprintf(id, sizeof(id), "FrameScrollStateRow%d", i);
+        (void)EcsUiAddCustom(
+            &builder,
+            (EcsUiCustomDesc){
+                .id = id,
+                .kind = "frame.scroll",
+                .preferred_width = 88.5f,
+                .preferred_height = 30.5f,
+            });
+    }
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "frame scroll-state builder failed");
+    if (out_scroll != NULL) {
+        *out_scroll = scroll;
+    }
+    return result;
+}
+
+static int RunScrollStateFrame(
+    EcsUiTreeSnapshot *tree,
+    const EcsUiTheme *theme,
+    const EcsUiFrameLayoutOptions *options,
+    EcsUiInteractionState *state,
+    EcsUiPointerState pointer,
+    EcsUiInteractionFrame *out_frame)
+{
+    EcsUiInteractionFrame frame = {
+        .state = state,
+    };
+    EcsUiFrameBackendSetSurfaceSize(
+        options->physical_bounds.width,
+        options->physical_bounds.height);
+    const EcsUiDrawList *draw_list =
+        EcsUiFrameRun(tree, theme, options, &pointer, &frame);
+    int result = Require(draw_list != NULL, "scroll-state frame run failed");
+    EcsUiEventList events = {0};
+    EcsUiFrameCollectEvents(&frame, pointer, &events);
+    if (out_frame != NULL) {
+        *out_frame = frame;
+    }
+    return result;
+}
+
+static int RunScrollLayoutFrame(
+    EcsUiTreeSnapshot *tree,
+    const EcsUiTheme *theme,
+    const EcsUiFrameLayoutOptions *options)
+{
+    EcsUiFrameBackendSetSurfaceSize(
+        options->physical_bounds.width,
+        options->physical_bounds.height);
+    const EcsUiDrawList *draw_list =
+        EcsUiFrameRun(tree, theme, options, NULL, NULL);
+    return Require(draw_list != NULL, "scroll layout frame run failed");
+}
+
+static float ExpectedScrollClamp(float content, float viewport)
+{
+    float max_scroll = content - viewport;
+    if (max_scroll < 0.0f) {
+        max_scroll = 0.0f;
+    }
+    return -max_scroll;
+}
+
+static int TestScrollStateOwnership(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scroll-state world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "FrameScrollStateRoot");
+    ecs_entity_t scroll = 0;
+    result |= BuildScrollStateTree(world, root, scale, &scroll);
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+
+    ecs_set(world, scroll, EcsUiScrollState, {.offset_y = -8.25f});
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read scroll sync tree");
+    EcsUiInteractionState state = {0};
+    EcsUiFrameInteractionStateInit(&state);
+    EcsUiInteractionFrame frame = {0};
+    result |= RunScrollStateFrame(
+        &tree,
+        &theme,
+        &options,
+        &state,
+        (EcsUiPointerState){0},
+        &frame);
+    const EcsUiTreeNodeSnapshot *scroll_node =
+        EcsUiTreeSnapshotFindNodeById(&tree, "FrameScrollState");
+    result |= Require(scroll_node != NULL, "scroll sync node missing");
+    if (scroll_node != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll_node));
+        result |= Require(data.found, "scroll sync clay data missing");
+        if (data.found && data.scrollPosition != NULL) {
+            result |= RequireNear(
+                data.scrollPosition->y,
+                -8.25f * scale,
+                0.001f,
+                "clay retained scroll should follow component");
+        }
+    }
+
+    ecs_set(world, scroll, EcsUiScrollState, {0});
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read wheel timing tree");
+    EcsUiFrameInteractionStateInit(&state);
+    EcsUiPointerState wheel = {
+        .x = 10.0f * scale,
+        .y = 10.0f * scale,
+        .scroll_y = -1.0f,
+    };
+    result |= RunScrollStateFrame(&tree, &theme, &options, &state, wheel, &frame);
+    result |= Require(frame.scroll_consumed, "wheel should queue scroll update");
+    result |= Require(
+        frame.pending_scroll_count == 1u,
+        "wheel should produce one pending scroll update");
+    if (frame.pending_scroll_count > 0u) {
+        result |= RequireNear(
+            frame.pending_scrolls[0].offset_y,
+            -10.0f / scale,
+            0.001f,
+            "pending scroll offset should be logical");
+    }
+    const EcsUiScrollState *before_apply =
+        ecs_get(world, scroll, EcsUiScrollState);
+    result |= RequireNear(
+        before_apply != NULL ? before_apply->offset_y : 99.0f,
+        0.0f,
+        0.001f,
+        "wheel should not mutate component before apply");
+    result |= Require(EcsUiFrameApply(world, &frame), "scroll apply failed");
+    const EcsUiScrollState *after_apply =
+        ecs_get(world, scroll, EcsUiScrollState);
+    result |= RequireNear(
+        after_apply != NULL ? after_apply->offset_y : 0.0f,
+        -10.0f / scale,
+        0.001f,
+        "apply should commit pending scroll");
+
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read next-frame scroll tree");
+    result |= RunScrollStateFrame(
+        &tree,
+        &theme,
+        &options,
+        &state,
+        (EcsUiPointerState){0},
+        &frame);
+    scroll_node = EcsUiTreeSnapshotFindNodeById(&tree, "FrameScrollState");
+    if (scroll_node != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll_node));
+        if (data.found && data.scrollPosition != NULL) {
+            result |= RequireNear(
+                data.scrollPosition->y,
+                -10.0f,
+                0.001f,
+                "next frame should consume committed component offset");
+        }
+    }
+
+    ecs_set(world, scroll, EcsUiScrollState, {.offset_y = -999.0f});
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read settle tree");
+    result |= RunScrollStateFrame(
+        &tree,
+        &theme,
+        &options,
+        &state,
+        (EcsUiPointerState){0},
+        &frame);
+    scroll_node = EcsUiTreeSnapshotFindNodeById(&tree, "FrameScrollState");
+    float expected_clamped = 0.0f;
+    if (scroll_node != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll_node));
+        result |= Require(data.found, "settle scroll data missing");
+        if (data.found) {
+            expected_clamped = ExpectedScrollClamp(
+                data.contentDimensions.height / scale,
+                data.scrollContainerDimensions.height / scale);
+        }
+    }
+    EcsUiFrameSettleScroll(world, 0.0);
+    const EcsUiScrollState *settled = ecs_get(world, scroll, EcsUiScrollState);
+    result |= Require(settled != NULL, "settled scroll state missing");
+    if (settled != NULL) {
+        result |= RequireNear(
+            settled->offset_y,
+            expected_clamped,
+            0.001f,
+            "settle should clamp against reported content");
+        result |= Require(
+            settled->content_h > 0.0f,
+            "settle should write content height");
+    }
+
+    ecs_set(world, scroll, EcsUiScrollState, {.offset_y = -4.0f});
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read accumulation tree");
+    EcsUiFrameInteractionStateInit(&state);
+    result |= RunScrollStateFrame(&tree, &theme, &options, &state, wheel, &frame);
+    result |= Require(frame.scroll_consumed, "accumulated wheel should consume");
+    result |= Require(
+        frame.pending_scroll_count == 1u,
+        "accumulated wheel should produce one pending update");
+    if (frame.pending_scroll_count > 0u) {
+        result |= RequireNear(
+            frame.pending_scrolls[0].offset_y,
+            -4.0f - (10.0f / scale),
+            0.001f,
+            "wheel should accumulate from scaled existing offset");
+    }
+
+    ecs_set(world, scroll, EcsUiScrollState, {.offset_y = -999.0f});
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read wheel clamp tree");
+    EcsUiFrameInteractionStateInit(&state);
+    result |= RunScrollStateFrame(&tree, &theme, &options, &state, wheel, &frame);
+    result |= Require(frame.scroll_consumed, "clamped wheel should consume");
+    result |= Require(
+        frame.pending_scroll_count == 1u,
+        "clamped wheel should produce one pending update");
+    if (frame.pending_scroll_count > 0u) {
+        result |= RequireNear(
+            frame.pending_scrolls[0].offset_y,
+            expected_clamped,
+            0.001f,
+            "wheel write should clamp pending scroll offset");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int BuildScrollSettleTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale,
+    float child_height,
+    bool empty,
+    ecs_entity_t *out_scroll)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set settle scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t scroll = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "SettleScroll",
+                .preferred_width = 100.0f,
+                .preferred_height = 40.0f,
+            },
+        });
+    if (!empty) {
+        (void)EcsUiAddCustom(
+            &builder,
+            (EcsUiCustomDesc){
+                .id = "SettleScrollChild",
+                .kind = "frame.settle",
+                .preferred_width = 80.0f,
+                .preferred_height = child_height,
+            });
+    }
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "scroll settle builder failed");
+    if (out_scroll != NULL) {
+        *out_scroll = scroll;
+    }
+    return result;
+}
+
+static int TestNativeScrollSettle(float scale, float child_height, float expected)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create native settle world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeSettleRoot");
+    ecs_entity_t scroll = 0;
+    result |= BuildScrollSettleTree(
+        world,
+        root,
+        scale,
+        child_height,
+        false,
+        &scroll);
+    ecs_set(world, scroll, EcsUiScrollState, {.offset_y = -999.0f});
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read native settle tree");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
+    result |= RunScrollLayoutFrame(&tree, &theme, &options);
+    EcsUiFrameSettleScroll(world, 0.0);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+
+    const EcsUiScrollState *state = ecs_get(world, scroll, EcsUiScrollState);
+    result |= Require(state != NULL, "native settle state missing");
+    if (state != NULL) {
+        result |= RequireNear(
+            state->offset_y,
+            expected,
+            0.001f,
+            "native settle should clamp scroll offset");
+        result |= RequireNear(
+            state->content_h,
+            child_height,
+            0.001f,
+            "native settle should write content height");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestEmptyScrollSettle(
+    EcsUiFrameInternalBackend backend,
+    float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create empty settle world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "EmptySettleRoot");
+    ecs_entity_t scroll = 0;
+    result |= BuildScrollSettleTree(
+        world,
+        root,
+        scale,
+        0.0f,
+        true,
+        &scroll);
+    ecs_set(
+        world,
+        scroll,
+        EcsUiScrollState,
+        {.offset_y = -25.0f, .content_h = 200.0f});
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "failed to read empty settle tree");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    EcsUiFrameInternalSelectBackend(backend);
+    if (backend == ECS_UI_FRAME_INTERNAL_BACKEND_CLAY) {
+        EcsUiInteractionState state = {0};
+        EcsUiFrameInteractionStateInit(&state);
+        EcsUiInteractionFrame frame = {0};
+        result |= RunScrollStateFrame(
+            &tree,
+            &theme,
+            &options,
+            &state,
+            (EcsUiPointerState){0},
+            &frame);
+    } else {
+        result |= RunScrollLayoutFrame(&tree, &theme, &options);
+    }
+    EcsUiFrameSettleScroll(world, 0.0);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+
+    const EcsUiScrollState *state = ecs_get(world, scroll, EcsUiScrollState);
+    result |= Require(state != NULL, "empty settle state missing");
+    if (state != NULL) {
+        result |= RequireNear(
+            state->offset_y,
+            0.0f,
+            0.001f,
+            "empty settle should clamp offset to zero");
+        result |= RequireNear(
+            state->content_h,
+            0.0f,
+            0.001f,
+            "empty settle should clear content height");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestFrameErrorCases(TestFrameErrors *errors)
 {
     int result = 0;
@@ -1169,6 +1652,16 @@ int main(void)
     result |= TestCapturePointerTranslation();
     result |= TestPointerCaptureRoundTrip(1.0f);
     result |= TestPointerCaptureRoundTrip(2.0f);
+    result |= TestScrollStateOwnership(1.0f);
+    result |= TestScrollStateOwnership(2.0f);
+    result |= TestNativeScrollSettle(1.0f, 90.0f, -50.0f);
+    result |= TestNativeScrollSettle(2.0f, 90.0f, -50.0f);
+    result |= TestNativeScrollSettle(1.0f, 30.0f, 0.0f);
+    result |= TestNativeScrollSettle(2.0f, 30.0f, 0.0f);
+    result |= TestEmptyScrollSettle(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY, 1.0f);
+    result |= TestEmptyScrollSettle(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY, 2.0f);
+    result |= TestEmptyScrollSettle(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 1.0f);
+    result |= TestEmptyScrollSettle(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 2.0f);
     result |= Require(errors.count == 0u, "frame backend emitted errors");
     if (errors.count != 0u) {
         (void)fprintf(

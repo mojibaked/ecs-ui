@@ -15,6 +15,7 @@
 #endif
 
 #include "ecs_ui_frame_internal.h"
+#include "ecs_ui_scroll_state.h"
 #include "ecs_ui_solver.h"
 
 #include <stdio.h>
@@ -40,6 +41,9 @@ typedef struct EcsUiFrameBackend {
     uint32_t solver_scroll_offset_count;
     EcsUiSolverScrollContent *solver_scroll_contents;
     uint32_t solver_scroll_content_count;
+    EcsUiSolverScrollContent native_scroll_contents[ECS_UI_TREE_NODE_MAX];
+    EcsUiScrollUpdate native_scroll_reports[ECS_UI_TREE_NODE_MAX];
+    uint32_t native_scroll_report_count;
 } EcsUiFrameBackend;
 
 static EcsUiFrameBackend g_ecs_ui_frame_backend;
@@ -371,6 +375,14 @@ static void EcsUiFrameCopyPublicFrame(
         "%s",
         frame->resolved_node_id);
     out->resolved_pressable = frame->resolved_pressable;
+    const uint32_t pending_scroll_count =
+        frame->pending_scroll_count < ECS_UI_SCROLL_UPDATE_MAX ?
+            frame->pending_scroll_count :
+            ECS_UI_SCROLL_UPDATE_MAX;
+    for (uint32_t i = 0u; i < pending_scroll_count; i += 1u) {
+        out->pending_scrolls[i] = frame->pending_scrolls[i];
+    }
+    out->pending_scroll_count = pending_scroll_count;
     out->scroll_consumed = frame->scroll_consumed;
     out->truncated = frame->truncated ||
         frame->target_count > ECS_UI_INTERACTION_TARGET_MAX;
@@ -394,6 +406,122 @@ static void EcsUiFrameCopyPublicFrame(
         sizeof(out->capture_missed_release_node_id),
         "%s",
         frame->capture_missed_release_node_id);
+}
+
+static bool EcsUiFrameApplyPendingScrolls(
+    ecs_world_t *world,
+    const EcsUiScrollUpdate *updates,
+    uint32_t count)
+{
+    bool ok = true;
+    for (uint32_t i = 0u; i < count; i += 1u) {
+        ok = EcsUiScrollStateApplyUpdate(world, &updates[i]) && ok;
+    }
+    return ok;
+}
+
+static void EcsUiFrameCopyNativeScrollContents(
+    EcsUiFrameBackend *backend,
+    const EcsUiSolverScrollContent *contents,
+    uint32_t count)
+{
+    if (backend == NULL || backend->solver_scroll_contents == NULL ||
+            contents == NULL) {
+        return;
+    }
+    const uint32_t copy_count =
+        backend->solver_scroll_content_count < count ?
+            backend->solver_scroll_content_count :
+            count;
+    for (uint32_t i = 0u; i < copy_count; i += 1u) {
+        backend->solver_scroll_contents[i] = contents[i];
+    }
+}
+
+static void EcsUiFrameStoreNativeScrollReports(
+    EcsUiFrameBackend *backend,
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiSolverScrollContent *contents,
+    uint32_t count)
+{
+    if (backend == NULL || tree == NULL || contents == NULL) {
+        return;
+    }
+    backend->native_scroll_report_count = 0u;
+    const uint32_t read_count = tree->count < count ? tree->count : count;
+    for (uint32_t i = 0u; i < read_count; i += 1u) {
+        const EcsUiSolverScrollContent *content = &contents[i];
+        if (!content->valid || content->node_index >= tree->count) {
+            continue;
+        }
+        const EcsUiTreeNodeSnapshot *node =
+            &tree->nodes[content->node_index];
+        if (!node->has_scroll_view ||
+                backend->native_scroll_report_count >= ECS_UI_TREE_NODE_MAX) {
+            continue;
+        }
+        const EcsUiScrollState *scroll_state =
+            node->has_scroll_state ? &node->scroll_state : NULL;
+        backend->native_scroll_reports[backend->native_scroll_report_count] =
+            (EcsUiScrollUpdate){
+                .tree = tree->root,
+                .node = node->entity,
+                .node_index = content->node_index,
+                .axes = node->scroll_view.axes,
+                .offset_x = scroll_state != NULL ? scroll_state->offset_x : 0.0f,
+                .offset_y = scroll_state != NULL ? scroll_state->offset_y : 0.0f,
+                .content_w = content->width,
+                .content_h = content->height,
+                .viewport_w = node->layout_width,
+                .viewport_h = node->layout_height,
+            };
+        backend->native_scroll_report_count += 1u;
+    }
+}
+
+static void EcsUiFrameApplyClayScrollReports(
+    ecs_world_t *world,
+    const EcsUiClayInteractionFrame *frame)
+{
+    if (world == NULL || frame == NULL) {
+        return;
+    }
+    for (uint32_t i = 0u; i < frame->target_count; i += 1u) {
+        const EcsUiClayInteractionTarget *target = &frame->targets[i];
+        if (!target->scroll_container || target->node == 0) {
+            continue;
+        }
+        const float scale = target->scale > 0.0f ? target->scale : 1.0f;
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(target->clay_id);
+        if (!data.found) {
+            continue;
+        }
+        Clay_ElementData element_data = Clay_GetElementData(target->clay_id);
+        const float container_width =
+            data.scrollContainerDimensions.width > 0.0f ?
+                data.scrollContainerDimensions.width :
+                (element_data.found ? element_data.boundingBox.width : 0.0f);
+        const float container_height =
+            data.scrollContainerDimensions.height > 0.0f ?
+                data.scrollContainerDimensions.height :
+                (element_data.found ? element_data.boundingBox.height : 0.0f);
+        const EcsUiScrollState *existing =
+            ecs_get(world, target->node, EcsUiScrollState);
+        EcsUiScrollUpdate update = {
+            .tree = target->tree,
+            .node = target->node,
+            .node_index = target->node_index,
+            .axes = target->scroll_axes,
+            .offset_x = existing != NULL ? existing->offset_x : 0.0f,
+            .offset_y = existing != NULL ? existing->offset_y : 0.0f,
+            .content_w = data.contentDimensions.width / scale,
+            .content_h = data.contentDimensions.height / scale,
+            .viewport_w = container_width / scale,
+            .viewport_h = container_height / scale,
+        };
+        (void)EcsUiScrollStateApplyUpdate(world, &update);
+    }
 }
 
 static void EcsUiFramePrimeClayState(EcsUiInteractionFrame *frame)
@@ -540,6 +668,7 @@ const EcsUiDrawList *EcsUiFrameRun(
             "ecs-ui frame run requires a tree and theme");
         return NULL;
     }
+    backend->native_scroll_report_count = 0u;
     if (backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE ||
             backend->selected_backend ==
                 ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE ||
@@ -548,6 +677,14 @@ const EcsUiDrawList *EcsUiFrameRun(
         backend->active_frame = NULL;
         backend->draw_list = (EcsUiDrawList){0};
         char solver_message[256] = {0};
+        const uint32_t native_content_count =
+            tree->count < ECS_UI_TREE_NODE_MAX ?
+                tree->count :
+                ECS_UI_TREE_NODE_MAX;
+        for (uint32_t i = 0u; i < native_content_count; i += 1u) {
+            backend->native_scroll_contents[i] =
+                (EcsUiSolverScrollContent){.node_index = i};
+        }
         if (!EcsUiSolverRun(
                 tree,
                 &(EcsUiSolverRunOptions){
@@ -558,8 +695,8 @@ const EcsUiDrawList *EcsUiFrameRun(
                     .measure_user_data = backend->desc.measure_user_data,
                     .scroll_offsets = backend->solver_scroll_offsets,
                     .scroll_offset_count = backend->solver_scroll_offset_count,
-                    .scroll_contents = backend->solver_scroll_contents,
-                    .scroll_content_count = backend->solver_scroll_content_count,
+                    .scroll_contents = backend->native_scroll_contents,
+                    .scroll_content_count = native_content_count,
                     .force_divergence =
                         backend->selected_backend ==
                             ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE,
@@ -578,6 +715,15 @@ const EcsUiDrawList *EcsUiFrameRun(
                     "native layout solver failed");
             return NULL;
         }
+        EcsUiFrameCopyNativeScrollContents(
+            backend,
+            backend->native_scroll_contents,
+            native_content_count);
+        EcsUiFrameStoreNativeScrollReports(
+            backend,
+            tree,
+            backend->native_scroll_contents,
+            native_content_count);
         (void)theme;
         (void)pointer_or_null;
         (void)frame_or_null;
@@ -627,7 +773,7 @@ const EcsUiDrawList *EcsUiFrameRun(
     return &backend->draw_list;
 }
 
-void EcsUiFrameSettleScroll(double dt)
+void EcsUiFrameSettleScroll(ecs_world_t *world, double dt)
 {
     if (!g_ecs_ui_frame_backend.initialized) {
         return;
@@ -636,6 +782,17 @@ void EcsUiFrameSettleScroll(double dt)
         false,
         (Clay_Vector2){.x = 0.0f, .y = 0.0f},
         (float)dt);
+    (void)EcsUiFrameApplyPendingScrolls(
+        world,
+        g_ecs_ui_frame_backend.clay_frame.pending_scrolls,
+        g_ecs_ui_frame_backend.clay_frame.pending_scroll_count);
+    EcsUiFrameApplyClayScrollReports(
+        world,
+        &g_ecs_ui_frame_backend.clay_frame);
+    (void)EcsUiFrameApplyPendingScrolls(
+        world,
+        g_ecs_ui_frame_backend.native_scroll_reports,
+        g_ecs_ui_frame_backend.native_scroll_report_count);
 }
 
 void EcsUiFrameInteractionStateInit(EcsUiInteractionState *state)
@@ -678,9 +835,21 @@ bool EcsUiFrameApply(
     ecs_world_t *world,
     const EcsUiInteractionFrame *frame)
 {
-    return EcsUiApplyHoverState(
+    bool ok = EcsUiApplyHoverState(
         world,
         frame != NULL ? frame->resolved_node : 0);
+    if (frame != NULL) {
+        ok = EcsUiFrameApplyPendingScrolls(
+            world,
+            frame->pending_scrolls,
+            frame->pending_scroll_count) && ok;
+    }
+    if (frame != NULL && frame == g_ecs_ui_frame_backend.active_frame) {
+        EcsUiFrameApplyClayScrollReports(
+            world,
+            &g_ecs_ui_frame_backend.clay_frame);
+    }
+    return ok;
 }
 
 bool EcsUiFrameTreePointerInside(

@@ -168,9 +168,11 @@ typedef struct EcsUiInteractionFrame {
     uint64_t resolved_payload;
     char resolved_node_id[ECS_UI_ID_MAX];
     bool resolved_pressable;
+    EcsUiScrollUpdate pending_scrolls[ECS_UI_SCROLL_UPDATE_MAX];
+    uint32_t pending_scroll_count;
     /*
-     * True only when direct scroll-container routing mutated retained backend
-     * scroll position. Routed SCROLLED events do not set this.
+     * True only when direct scroll-container routing produced a pending ECS
+     * scroll-state update. Routed SCROLLED events do not set this.
      */
     bool scroll_consumed;
     bool truncated;
@@ -212,7 +214,12 @@ const EcsUiDrawList *EcsUiFrameRun(
     const EcsUiPointerState *pointer_or_null,
     EcsUiInteractionFrame *frame_or_null);
 
-void EcsUiFrameSettleScroll(double dt);
+/*
+ * Advance backend scroll housekeeping and reconcile ECS scroll components from
+ * the most recent frame. `world` is required because EcsUiScrollState is the
+ * only authority for offsets/content dimensions.
+ */
+void EcsUiFrameSettleScroll(ecs_world_t *world, double dt);
 
 void EcsUiFrameInteractionStateInit(EcsUiInteractionState *state);
 void EcsUiFrameCollectEvents(

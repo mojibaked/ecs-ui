@@ -1862,6 +1862,21 @@ static void AddScrollRows(
     }
 }
 
+static const EcsUiScrollUpdate *FindPendingScrollUpdate(
+    const EcsUiClayInteractionFrame *frame,
+    ecs_entity_t node)
+{
+    if (frame == NULL || node == 0) {
+        return NULL;
+    }
+    for (uint32_t i = 0u; i < frame->pending_scroll_count; i += 1u) {
+        if (frame->pending_scrolls[i].node == node) {
+            return &frame->pending_scrolls[i];
+        }
+    }
+    return NULL;
+}
+
 static int TestWheelOverScrollContainerScrollsDirectly(void)
 {
     int result = 0;
@@ -1921,15 +1936,15 @@ static int TestWheelOverScrollContainerScrollsDirectly(void)
     result |= Require(frame.scroll_consumed, "scroll container wheel should consume");
 
     if (scroll != NULL) {
-        Clay_ScrollContainerData data =
-            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
-        result |= Require(data.found, "scroll container data missing");
-        if (data.found && data.scrollPosition != NULL) {
+        const EcsUiScrollUpdate *update =
+            FindPendingScrollUpdate(&frame, scroll->entity);
+        result |= Require(update != NULL, "scroll pending update missing");
+        if (update != NULL) {
             result |= RequireNear(
-                data.scrollPosition->y,
+                update->offset_y,
                 -10.0f,
                 0.001f,
-                "scroll container should move by wheel delta");
+                "scroll container should queue wheel delta");
         }
     }
 
@@ -1946,6 +1961,10 @@ static int RequireScrollSubscribedEventCase(float scale)
     }
 
     ecs_entity_t root = EcsUiRootEntity(world, "SubscribedScrollRoot");
+    ecs_entity_t action = ecs_entity(world, {
+        .name = "SubscribedScrollAction",
+        .sep = "",
+    });
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
     ecs_entity_t target = EcsUiAddCustom(
         &builder,
@@ -1954,6 +1973,8 @@ static int RequireScrollSubscribedEventCase(float scale)
             .kind = "target",
             .preferred_width = 100.0f,
             .preferred_height = 60.0f,
+            .on_click = action,
+            .payload = 77u,
             .scroll_subscribed = true,
         });
     EcsUiBuilderEnd(&builder);
@@ -1993,40 +2014,45 @@ static int RequireScrollSubscribedEventCase(float scale)
         &state,
         &events,
         &frame);
-    result |= RequireEventCount(
-        &events,
-        1u,
-        "subscribed scroll should emit one scrolled event");
-    result |= RequireEvent(
-        &events,
-        0u,
-        ECS_UI_EVENT_SCROLLED,
-        target,
-        "SubscribedScrollTarget");
+    const EcsUiEvent *scrolled = NULL;
+    for (uint32_t i = 0u; i < events.count; i += 1u) {
+        if (events.events[i].type == ECS_UI_EVENT_SCROLLED &&
+                events.events[i].node == target) {
+            scrolled = &events.events[i];
+            break;
+        }
+    }
+    result |= Require(scrolled != NULL, "subscribed scroll event missing");
     result |= Require(
         !frame.scroll_consumed,
         "subscribed scroll should not mark direct scroll mutation");
-    if (events.count > 0u) {
+    if (scrolled != NULL) {
         result |= RequireNear(
-            events.events[0u].x,
+            scrolled->x,
             60.0f / scale,
             0.001f,
             "subscribed scroll x should be logical");
         result |= RequireNear(
-            events.events[0u].y,
+            scrolled->y,
             70.0f / scale,
             0.001f,
             "subscribed scroll y should be logical");
         result |= RequireNear(
-            events.events[0u].scroll_x,
+            scrolled->scroll_x,
             2.0f,
             0.001f,
             "subscribed scroll x delta mismatch");
         result |= RequireNear(
-            events.events[0u].scroll_y,
+            scrolled->scroll_y,
             -3.0f,
             0.001f,
             "subscribed scroll y delta mismatch");
+        result |= Require(
+            scrolled->action == action,
+            "subscribed scroll action mismatch");
+        result |= Require(
+            scrolled->payload == 77u,
+            "subscribed scroll payload mismatch");
     }
 
     ecs_fini(world);
@@ -2180,15 +2206,15 @@ static int TestWheelBothCapabilityPrefersScrollContainer(void)
         "both-capability scroll should prefer container path");
     result |= Require(frame.scroll_consumed, "both-capability scroll should consume");
     if (scroll != NULL) {
-        Clay_ScrollContainerData data =
-            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
-        result |= Require(data.found, "both-capability scroll data missing");
-        if (data.found && data.scrollPosition != NULL) {
+        const EcsUiScrollUpdate *update =
+            FindPendingScrollUpdate(&frame, scroll->entity);
+        result |= Require(update != NULL, "both-capability pending update missing");
+        if (update != NULL) {
             result |= RequireNear(
-                data.scrollPosition->y,
+                update->offset_y,
                 -10.0f,
                 0.001f,
-                "both-capability container should scroll");
+                "both-capability container should queue scroll");
         }
     }
 
@@ -2351,17 +2377,17 @@ static int TestBlockingScrollContainerScrollsItself(void)
         "blocking scroll container should not emit subscriber event");
     result |= Require(
         frame.scroll_consumed,
-        "blocking scroll container should mutate its own scroll");
+        "blocking scroll container should queue its own scroll");
     if (scroll != NULL) {
-        Clay_ScrollContainerData data =
-            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
-        result |= Require(data.found, "blocking scroll data missing");
-        if (data.found && data.scrollPosition != NULL) {
+        const EcsUiScrollUpdate *update =
+            FindPendingScrollUpdate(&frame, scroll->entity);
+        result |= Require(update != NULL, "blocking scroll pending update missing");
+        if (update != NULL) {
             result |= RequireNear(
-                data.scrollPosition->y,
+                update->offset_y,
                 -10.0f,
                 0.001f,
-                "blocking scroll container should scroll itself");
+                "blocking scroll container should queue scroll");
         }
     }
 
@@ -2431,7 +2457,7 @@ static int TestDualCapabilityUnconsumedAxisEmitsScrolled(void)
         "DualAxisScroll");
     result |= Require(
         !frame.scroll_consumed,
-        "unconsumed dual axis should not mutate direct scroll");
+        "unconsumed dual axis should not queue direct scroll");
     if (events.count > 0u) {
         result |= RequireNear(
             events.events[0u].scroll_x,
@@ -3023,6 +3049,64 @@ static int TestRevealOnHoverRowActionsFallThrough(void)
     result |= Require(
         events.count > 1u && events.events[1u].action == row_action,
         "gap press should carry row action");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestApplyInteractionFrameCommitsPendingScroll(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scroll apply world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "ApplyScrollRoot");
+    ecs_entity_t scroll = ecs_entity(world, {
+        .name = "ApplyScrollTarget",
+    });
+    ecs_add_pair(world, scroll, EcsChildOf, root);
+    ecs_set(
+        world,
+        scroll,
+        EcsUiScrollState,
+        {.offset_y = -3.0f, .content_h = 120.0f});
+
+    EcsUiClayInteractionFrame frame = {
+        .pending_scroll_count = 1u,
+        .pending_scrolls = {
+            {
+                .tree = root,
+                .node = scroll,
+                .node_index = 1u,
+                .axes = ECS_UI_SCROLL_AXIS_Y,
+                .offset_y = -160.0f / scale,
+                .content_w = 0.0f,
+                .content_h = 90.0f,
+                .viewport_w = 100.0f,
+                .viewport_h = 40.0f,
+            },
+        },
+    };
+
+    result |= Require(
+        EcsUiClayApplyInteractionFrame(world, &frame),
+        "pending scroll interaction frame should apply");
+    const EcsUiScrollState *state = ecs_get(world, scroll, EcsUiScrollState);
+    result |= Require(state != NULL, "pending scroll state missing");
+    if (state != NULL) {
+        result |= RequireNear(
+            state->offset_y,
+            -50.0f,
+            0.001f,
+            "pending scroll apply should clamp and commit offset");
+        result |= RequireNear(
+            state->content_h,
+            90.0f,
+            0.001f,
+            "pending scroll apply should commit content height");
+    }
 
     ecs_fini(world);
     return result;
@@ -5688,6 +5772,8 @@ int main(void)
     result |= TestIconEmitsCustomCommand();
     result |= TestVisualOpacitySkipsHitTesting();
     result |= TestRevealOnHoverRowActionsFallThrough();
+    result |= TestApplyInteractionFrameCommitsPendingScroll(1.0f);
+    result |= TestApplyInteractionFrameCommitsPendingScroll(2.0f);
     result |= TestVisualOffsetAffectsHitTesting();
     result |= TestActionStackEmitsPointerEvents();
     result |= TestActionPayloadFlowsToPointerEvents();

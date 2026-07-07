@@ -101,9 +101,11 @@ typedef struct EcsUiClayInteractionFrame {
     uint64_t resolved_payload;
     char resolved_node_id[ECS_UI_ID_MAX];
     bool resolved_pressable;
+    EcsUiScrollUpdate pending_scrolls[ECS_UI_SCROLL_UPDATE_MAX];
+    uint32_t pending_scroll_count;
     /*
-     * True only when direct scroll-container routing mutated Clay's retained
-     * scroll position. Routed SCROLLED events do not set this; hosts should
+     * True only when direct scroll-container routing produced a pending ECS
+     * scroll-state update. Routed SCROLLED events do not set this; hosts should
      * still use the event list to schedule follow-up work for subscribers.
      */
     bool scroll_consumed;

@@ -1000,6 +1000,73 @@ static int TestScrollViewSnapshot(void)
             tree.nodes[vertical_index].scroll_view.axes ==
                 ECS_UI_SCROLL_AXIS_BOTH,
         "scroll setter snapshot mismatch");
+    if (vertical_index != ECS_UI_TREE_INVALID_INDEX) {
+        result |= Require(
+            !tree.nodes[vertical_index].has_scroll_state,
+            "scroll state should be absent before component is set");
+    }
+
+    ecs_set(world, vertical, EcsUiScrollState, {
+        .offset_x = -3.25f,
+        .offset_y = -7.5f,
+        .content_w = 120.5f,
+        .content_h = 240.25f,
+    });
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "scroll state tree reread failed");
+    vertical_index = ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (strcmp(tree.nodes[i].id, "VerticalScroll") == 0) {
+            vertical_index = i;
+            break;
+        }
+    }
+    if (vertical_index != ECS_UI_TREE_INVALID_INDEX) {
+        const EcsUiTreeNodeSnapshot *node = &tree.nodes[vertical_index];
+        result |= Require(node->has_scroll_state, "scroll state missing");
+        result |= RequireNear(
+            node->scroll_state.offset_x,
+            -3.25f,
+            0.0001f,
+            "scroll state offset_x mismatch");
+        result |= RequireNear(
+            node->scroll_state.offset_y,
+            -7.5f,
+            0.0001f,
+            "scroll state offset_y mismatch");
+        result |= RequireNear(
+            node->scroll_state.content_w,
+            120.5f,
+            0.0001f,
+            "scroll state content_w mismatch");
+        result |= RequireNear(
+            node->scroll_state.content_h,
+            240.25f,
+            0.0001f,
+            "scroll state content_h mismatch");
+    }
+    result |= Require(
+        EcsUiSetScale(world, root, 2.0f),
+        "scroll state scale set failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "scroll state scale-2 tree reread failed");
+    vertical_index = ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t i = 0u; i < tree.count; i += 1u) {
+        if (strcmp(tree.nodes[i].id, "VerticalScroll") == 0) {
+            vertical_index = i;
+            break;
+        }
+    }
+    if (vertical_index != ECS_UI_TREE_INVALID_INDEX) {
+        const EcsUiTreeNodeSnapshot *node = &tree.nodes[vertical_index];
+        result |= RequireNear(
+            node->scroll_state.offset_y,
+            -7.5f,
+            0.0001f,
+            "scroll state should stay logical at scale 2");
+    }
 
     result |= Require(
         EcsUiClearScrollView(world, vertical),
@@ -1016,7 +1083,8 @@ static int TestScrollViewSnapshot(void)
     }
     result |= Require(
         vertical_index != ECS_UI_TREE_INVALID_INDEX &&
-            !tree.nodes[vertical_index].has_scroll_view,
+            !tree.nodes[vertical_index].has_scroll_view &&
+            !tree.nodes[vertical_index].has_scroll_state,
         "scroll clear snapshot mismatch");
 
     ecs_fini(world);

@@ -333,6 +333,28 @@ typedef struct EcsUiScrollView {
     uint32_t axes;
 } EcsUiScrollView;
 
+typedef struct EcsUiScrollState {
+    float offset_x;
+    float offset_y;
+    float content_w;
+    float content_h;
+} EcsUiScrollState;
+
+#define ECS_UI_SCROLL_UPDATE_MAX 4096u
+
+typedef struct EcsUiScrollUpdate {
+    ecs_entity_t tree;
+    ecs_entity_t node;
+    uint32_t node_index;
+    uint32_t axes;
+    float offset_x;
+    float offset_y;
+    float content_w;
+    float content_h;
+    float viewport_w;
+    float viewport_h;
+} EcsUiScrollUpdate;
+
 typedef struct EcsUiTextFieldView {
     ecs_entity_t value_node;
     uint32_t cursor;
@@ -517,6 +539,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     float layout_height;
     EcsUiHitTest hit_test;
     EcsUiScrollView scroll_view;
+    EcsUiScrollState scroll_state;
     EcsUiTextFieldView text_field_view;
     bool has_box_style;
     bool has_nine_slice_style;
@@ -525,6 +548,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     bool has_placement;
     bool has_layout;
     bool has_scroll_view;
+    bool has_scroll_state;
     bool has_text_field_view;
     bool scroll_subscribed;
     bool hovered;
@@ -597,6 +621,7 @@ extern ECS_COMPONENT_DECLARE(EcsUiVisual);
 extern ECS_COMPONENT_DECLARE(EcsUiPlacement);
 extern ECS_COMPONENT_DECLARE(EcsUiHitTest);
 extern ECS_COMPONENT_DECLARE(EcsUiScrollView);
+extern ECS_COMPONENT_DECLARE(EcsUiScrollState);
 extern ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
 extern ECS_TAG_DECLARE(EcsUiRoot);

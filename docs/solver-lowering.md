@@ -427,9 +427,8 @@ impact), never carry node ids, and are paint-only: the solver ignores them.
 
 A stack with has_scroll_view emits the same container declaration plus
 `clip = {horizontal, vertical, childOffset}` where the flags come from the
-authored scroll axes and childOffset is Clay's retained per-id scroll
-position (physical px, mutated by the wheel handler between frames). Layout
-effects the solver must reproduce:
+authored scroll axes and childOffset is the snapshot scroll-state offset,
+scaled to physical px for Clay. Layout effects the solver must reproduce:
 - No compression on a clipped axis (children keep their sizes on overflow).
 - Off-axis GROW children get their max extended to max(parent inner size,
   inner content size) only when the axis currently being solved is clipped.
@@ -452,19 +451,50 @@ effects the solver must reproduce:
   (EcsUiClayStackContentWidth/Height) used only when Clay reports zero — the
   fallback is input-routing code, not layout, and is NOT part of solver
   parity.
-- Offsets are retained CLAY state, not snapshot state. In this Clay revision,
-  a direct write to `Clay_GetScrollContainerData(id).scrollPosition` is visible
-  through that API but does not by itself guarantee the next bridge
-  `Clay_GetScrollOffset()` declaration sees it; the harness therefore primes
-  Clay through its normal scroll update path and passes the actual
-  `clip.childOffset` observed on the reference frame to the solver as logical
-  run options. That path also means out-of-range requested offsets are clamped
-  before layout by Clay's retained-scroll update; the prototype does not claim
-  an unclamped direct-injection behavior.
-- Native solver run options normalize observed scroll offsets to authored
-  clipped axes before placement. Clay's positioning would add a nonzero
-  off-axis childOffset component if one were present, but ecs-ui's retained
-  scroll mutation path does not produce that off-axis state.
+- Native solver run options normalize scroll offsets to authored clipped axes
+  before placement. Clay's positioning would add a nonzero off-axis childOffset
+  component if one were present, but ecs-ui's scroll-state mutation path does
+  not produce that off-axis state.
+
+### Scroll state ownership (stage 7.0)
+
+Scroll offsets and content dimensions are ECS runtime state, not backend
+retained state. A scrollable entity owns an optional `EcsUiScrollState`
+component:
+
+```
+EcsUiScrollState { float offset_x, offset_y; float content_w, content_h; }
+```
+
+`EcsUiReadTree` copies that component into the logical tree snapshot beside
+`EcsUiScrollView`. Clay lowering scales the snapshot offsets to physical px
+and passes them as `clip.childOffset`; it must not read
+`Clay_GetScrollOffset()` or Clay's retained `scrollPosition` as layout input.
+The native solver consumes the same snapshot offsets, so both backends observe
+one source of truth.
+
+Wheel routing still runs without world access. It clamps the proposed offset
+using the current backend-reported content dimensions and container dimensions,
+then records a pending scroll update on the interaction frame keyed by the
+scroll container entity. It does not mutate Clay's retained `scrollPosition`
+as truth. Routing runs after emit-time global scale is restored, so it scales
+the existing logical snapshot offset with the target's captured tree scale
+before adding physical wheel deltas, then stores the pending update back in
+logical units. `EcsUiFrameApply` has the world and commits those pending
+updates to `EcsUiScrollState` before the next `EcsUiReadTree`.
+
+`EcsUiFrameSettleScroll` clamps the ECS component against the latest reported
+`content_w/content_h` and viewport dimensions from the active backend and
+writes the clamped component back. Valid reports write content dimensions
+unconditionally, including zero-size content, so removed content clears stale
+scroll range and clamps offsets to zero. Clay's `Clay_UpdateScrollContainers`
+remains only inert internal upkeep; each emit synchronizes Clay from the
+snapshot component so retained Clay state cannot become a second authority.
+
+Timing remains one-frame-lagged: a wheel collected from frame N produces a
+pending update, `EcsUiFrameApply` commits it, and frame N+1's snapshot/emit
+consumes the new offset. The frame that collected the wheel does not move
+content in-place.
 
 ### Stage 6 scope
 

@@ -530,14 +530,25 @@ static EcsUiSolverScrollOffset EcsUiSolverScrollOffsetForNode(
     const EcsUiSolverContext *ctx,
     uint32_t index)
 {
-    if (ctx == NULL || ctx->scroll_offsets == NULL) {
+    if (ctx == NULL) {
         return (EcsUiSolverScrollOffset){0};
     }
-    for (uint32_t i = 0u; i < ctx->scroll_offset_count; i += 1u) {
-        const EcsUiSolverScrollOffset *offset = &ctx->scroll_offsets[i];
-        if (offset->node_index == index) {
-            return *offset;
+    if (ctx->scroll_offsets != NULL) {
+        for (uint32_t i = 0u; i < ctx->scroll_offset_count; i += 1u) {
+            const EcsUiSolverScrollOffset *offset = &ctx->scroll_offsets[i];
+            if (offset->node_index == index) {
+                return *offset;
+            }
         }
+    }
+    if (ctx->tree != NULL && index < ctx->tree->count &&
+            ctx->tree->nodes[index].has_scroll_state) {
+        const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[index];
+        return (EcsUiSolverScrollOffset){
+            .node_index = index,
+            .offset_x = node->scroll_state.offset_x,
+            .offset_y = node->scroll_state.offset_y,
+        };
     }
     return (EcsUiSolverScrollOffset){0};
 }

@@ -1,4 +1,5 @@
 #include "ecs_ui/ecs_ui_clay.h"
+#include "ecs_ui_scroll_state.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -731,6 +732,29 @@ static bool EcsUiClayScrollsVertical(const EcsUiTreeNodeSnapshot *node)
 {
     return node != NULL && node->has_scroll_view &&
         (node->scroll_view.axes & ECS_UI_SCROLL_AXIS_Y) != 0u;
+}
+
+static Clay_Vector2 EcsUiClayScrollStateOffset(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL || !node->has_scroll_state) {
+        return (Clay_Vector2){0};
+    }
+    return (Clay_Vector2){
+        .x = EcsUiClayScaled(node->scroll_state.offset_x),
+        .y = EcsUiClayScaled(node->scroll_state.offset_y),
+    };
+}
+
+static void EcsUiClaySyncScrollPosition(
+    Clay_ElementId clay_id,
+    Clay_Vector2 offset)
+{
+    Clay_ScrollContainerData data = Clay_GetScrollContainerData(clay_id);
+    if (data.found && data.scrollPosition != NULL) {
+        data.scrollPosition->x = offset.x;
+        data.scrollPosition->y = offset.y;
+    }
 }
 
 static Clay_ElementDeclaration EcsUiClayScrollContainerDeclaration(
@@ -1870,12 +1894,14 @@ static void EcsUiClayEmitStack(
 
     char clay_id[ECS_UI_ID_MAX * 2u] = {0};
     EcsUiClayElementId(node, NULL, clay_id, sizeof(clay_id));
+    const Clay_ElementId element_id = Clay_GetElementId(EcsUiClayString(clay_id));
     EcsUiClayRegisterNodeTarget(
         frame,
         tree,
         index,
-        Clay_GetElementId(EcsUiClayString(clay_id)));
+        element_id);
     if (node->has_scroll_view) {
+        const Clay_Vector2 child_offset = EcsUiClayScrollStateOffset(node);
         CLAY(
             CLAY_SID(EcsUiClayString(clay_id)),
             EcsUiClayScrollContainerDeclaration(
@@ -1884,7 +1910,7 @@ static void EcsUiClayEmitStack(
                 background,
                 radius,
                 opacity,
-                Clay_GetScrollOffset())) {
+                child_offset)) {
             EcsUiClayEmitChildren(
                 tree,
                 theme,
@@ -1897,6 +1923,7 @@ static void EcsUiClayEmitStack(
                 frame);
             EcsUiClayEmitBevel(node, opacity);
         }
+        EcsUiClaySyncScrollPosition(element_id, child_offset);
     } else {
         CLAY(
             CLAY_SID(EcsUiClayString(clay_id)),
@@ -2936,6 +2963,65 @@ static void EcsUiClayScrollContainerFallbackContentSize(
     }
 }
 
+static Clay_Vector2 EcsUiClayTargetScrollStateOffset(
+    const EcsUiClayInteractionTarget *target)
+{
+    if (target == NULL || target->tree_snapshot == NULL ||
+            target->node_index >= target->tree_snapshot->count) {
+        return (Clay_Vector2){0};
+    }
+    const EcsUiTreeNodeSnapshot *node =
+        &target->tree_snapshot->nodes[target->node_index];
+    if (!node->has_scroll_state) {
+        return (Clay_Vector2){0};
+    }
+    const float scale = target->scale > 0.0f ? target->scale : 1.0f;
+    return (Clay_Vector2){
+        .x = node->scroll_state.offset_x * scale,
+        .y = node->scroll_state.offset_y * scale,
+    };
+}
+
+static void EcsUiClayPushPendingScrollUpdate(
+    EcsUiClayInteractionFrame *frame,
+    const EcsUiClayInteractionTarget *target,
+    float offset_x,
+    float offset_y,
+    float content_width,
+    float content_height,
+    float container_width,
+    float container_height)
+{
+    if (frame == NULL || target == NULL) {
+        return;
+    }
+    const float scale = target->scale > 0.0f ? target->scale : 1.0f;
+    EcsUiScrollUpdate update = {
+        .tree = target->tree,
+        .node = target->node,
+        .node_index = target->node_index,
+        .axes = target->scroll_axes,
+        .offset_x = offset_x / scale,
+        .offset_y = offset_y / scale,
+        .content_w = content_width / scale,
+        .content_h = content_height / scale,
+        .viewport_w = container_width / scale,
+        .viewport_h = container_height / scale,
+    };
+    for (uint32_t i = 0u; i < frame->pending_scroll_count; i += 1u) {
+        if (frame->pending_scrolls[i].node == update.node) {
+            frame->pending_scrolls[i] = update;
+            return;
+        }
+    }
+    if (frame->pending_scroll_count >= ECS_UI_SCROLL_UPDATE_MAX) {
+        frame->truncated = true;
+        return;
+    }
+    frame->pending_scrolls[frame->pending_scroll_count] = update;
+    frame->pending_scroll_count += 1u;
+}
+
 static EcsUiClayScrollContainerWheelResult
 EcsUiClayApplyScrollContainerWheel(
     EcsUiClayInteractionFrame *frame,
@@ -2950,7 +3036,7 @@ EcsUiClayApplyScrollContainerWheel(
 
     Clay_ScrollContainerData data =
         Clay_GetScrollContainerData(target->clay_id);
-    if (!data.found || data.scrollPosition == NULL) {
+    if (!data.found) {
         return result;
     }
     Clay_ElementData element_data = Clay_GetElementData(target->clay_id);
@@ -2991,13 +3077,14 @@ EcsUiClayApplyScrollContainerWheel(
         content_height,
         container_height);
     bool changed = false;
+    Clay_Vector2 next_offset = EcsUiClayTargetScrollStateOffset(target);
     if (can_x) {
         result.consumed_x = true;
         changed |= EcsUiClayApplyScrollAxis(
             pointer.scroll_x,
             content_width,
             container_width,
-            &data.scrollPosition->x);
+            &next_offset.x);
     }
     if (can_y) {
         result.consumed_y = true;
@@ -3005,9 +3092,18 @@ EcsUiClayApplyScrollContainerWheel(
             pointer.scroll_y,
             content_height,
             container_height,
-            &data.scrollPosition->y);
+            &next_offset.y);
     }
     if (changed) {
+        EcsUiClayPushPendingScrollUpdate(
+            frame,
+            target,
+            next_offset.x,
+            next_offset.y,
+            content_width,
+            content_height,
+            container_width,
+            container_height);
         frame->scroll_consumed = true;
     }
     result.mutated = changed;
@@ -3389,9 +3485,17 @@ bool EcsUiClayApplyInteractionFrame(
     ecs_world_t *world,
     const EcsUiClayInteractionFrame *frame)
 {
-    return EcsUiApplyHoverState(
+    bool ok = EcsUiApplyHoverState(
         world,
         frame != NULL ? frame->resolved_node : 0);
+    if (frame != NULL) {
+        for (uint32_t i = 0u; i < frame->pending_scroll_count; i += 1u) {
+            ok = EcsUiScrollStateApplyUpdate(
+                world,
+                &frame->pending_scrolls[i]) && ok;
+        }
+    }
+    return ok;
 }
 
 bool EcsUiClayInteractionFrameTreePointerInside(

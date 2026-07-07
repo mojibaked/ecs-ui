@@ -27,6 +27,7 @@ ECS_COMPONENT_DECLARE(EcsUiVisual);
 ECS_COMPONENT_DECLARE(EcsUiPlacement);
 ECS_COMPONENT_DECLARE(EcsUiHitTest);
 ECS_COMPONENT_DECLARE(EcsUiScrollView);
+ECS_COMPONENT_DECLARE(EcsUiScrollState);
 ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
 
 ECS_TAG_DECLARE(EcsUiRoot);
@@ -846,6 +847,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiPlacement);
     ECS_COMPONENT_DEFINE(world, EcsUiHitTest);
     ECS_COMPONENT_DEFINE(world, EcsUiScrollView);
+    ECS_COMPONENT_DEFINE(world, EcsUiScrollState);
     ECS_COMPONENT_DEFINE(world, EcsUiTextFieldView);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
@@ -1823,6 +1825,7 @@ bool EcsUiClearScrollView(ecs_world_t *world, ecs_entity_t entity)
     }
 
     ecs_remove(world, entity, EcsUiScrollView);
+    ecs_remove(world, entity, EcsUiScrollState);
     return true;
 }
 
@@ -2045,6 +2048,12 @@ static uint32_t EcsUiReadNode(
     if (scroll_view != NULL) {
         snapshot->scroll_view = *scroll_view;
         snapshot->has_scroll_view = true;
+    }
+    const EcsUiScrollState *scroll_state =
+        ecs_get(world, entity, EcsUiScrollState);
+    if (scroll_state != NULL) {
+        snapshot->scroll_state = *scroll_state;
+        snapshot->has_scroll_state = true;
     }
     snapshot->scroll_subscribed = EcsUiScrollSubscribed != 0 &&
         ecs_has_id(world, entity, EcsUiScrollSubscribed);

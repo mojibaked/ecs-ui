@@ -339,7 +339,7 @@ static bool DemoClayPreInputPump(void *user_data)
         &ctx->interaction_frame,
         pointer,
         &ctx->events);
-    EcsUiFrameSettleScroll(GetFrameTime());
+    EcsUiFrameSettleScroll(ctx->ui_world, GetFrameTime());
     DemoClayCollectKeyboardEvents(&ctx->events);
     if (DemoClayRaylibInputChanged(ctx, mouse, scroll) ||
             DemoClayHasNonHoverEvent(&ctx->events)) {

@@ -5178,7 +5178,7 @@ static EcsUiFrameLayoutOptions LayoutOptions(float scale)
     };
 }
 
-static uint32_t PrepareSolverScrollOffsetsFromClay(
+static uint32_t PrepareSolverScrollOffsetsFromSnapshot(
     const EcsUiTreeSnapshot *tree,
     const ParityTreeCase *parity_case,
     float scale,
@@ -5198,27 +5198,24 @@ static uint32_t PrepareSolverScrollOffsetsFromClay(
         if (index == ECS_UI_TREE_INVALID_INDEX) {
             continue;
         }
-        Clay_ScrollContainerData data =
-            Clay_GetScrollContainerData(TestClayNodeElementId(&tree->nodes[index]));
-        if (!data.found) {
-            continue;
-        }
+        (void)scale;
         out[count] = (EcsUiSolverScrollOffset){
             .node_index = index,
-            .offset_x = data.config.childOffset.x / scale,
-            .offset_y = data.config.childOffset.y / scale,
+            .offset_x = tree->nodes[index].scroll_state.offset_x,
+            .offset_y = tree->nodes[index].scroll_state.offset_y,
         };
         count += 1u;
     }
     return count;
 }
 
-static int InjectClayScrollOffsets(
-    const EcsUiTreeSnapshot *tree,
+static int InjectSnapshotScrollOffsets(
+    EcsUiTreeSnapshot *tree,
     const ParityTreeCase *parity_case,
     float scale)
 {
     int result = 0;
+    (void)scale;
     if (tree == NULL || parity_case == NULL) {
         return 0;
     }
@@ -5231,16 +5228,9 @@ static int InjectClayScrollOffsets(
         if (index == ECS_UI_TREE_INVALID_INDEX) {
             continue;
         }
-        Clay_ScrollContainerData data =
-            Clay_GetScrollContainerData(TestClayNodeElementId(&tree->nodes[index]));
-        result |= Require(data.found, "scroll offset container data missing");
-        result |= Require(
-            data.scrollPosition != NULL,
-            "scroll offset position missing");
-        if (data.found && data.scrollPosition != NULL) {
-            data.scrollPosition->x = offset->x * scale;
-            data.scrollPosition->y = offset->y * scale;
-        }
+        tree->nodes[index].scroll_state.offset_x = offset->x;
+        tree->nodes[index].scroll_state.offset_y = offset->y;
+        tree->nodes[index].has_scroll_state = true;
     }
     return result;
 }
@@ -5284,18 +5274,6 @@ static int RequirePrimedScrollOffsets(
             scale,
             offset->id);
         result |= Require(!requested_nonzero || observed_nonzero, message);
-        if (strcmp(offset->id, "BeyondScroll") == 0) {
-            const bool clamped =
-                AbsFloat(observed_x - offset->x) > 0.001f ||
-                AbsFloat(observed_y - offset->y) > 0.001f;
-            (void)snprintf(
-                message,
-                sizeof(message),
-                "%s scale %.1f: BeyondScroll did not clamp requested offset",
-                parity_case->name,
-                scale);
-            result |= Require(clamped, message);
-        }
     }
     return result;
 }
@@ -5367,6 +5345,78 @@ static void ClearClayScrollState(void)
     Clay_UpdateScrollContainers(false, (Clay_Vector2){0}, 0.0f);
 }
 
+static int TestNativeScrollSnapshotFallback(void)
+{
+    int result = 0;
+    const float scale = 2.0f;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create native scroll fallback world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeScrollFallbackRoot");
+    result |= Require(root != 0, "failed to create native scroll fallback root");
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "failed to set native scroll fallback scale");
+    result |= BuildScrollOffsetsInjected(world, root);
+
+    EcsUiTreeSnapshot seed = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &seed),
+        "failed to read native scroll fallback seed");
+    const EcsUiTreeNodeSnapshot *scroll =
+        EcsUiTreeSnapshotFindNodeById(&seed, "OffsetScroll");
+    result |= Require(scroll != NULL, "native scroll fallback node missing");
+    if (scroll != NULL) {
+        ecs_set(
+            world,
+            scroll->entity,
+            EcsUiScrollState,
+            {.offset_y = -8.25f});
+    }
+
+    EcsUiTreeSnapshot clay_tree = {0};
+    EcsUiTreeSnapshot native_tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &clay_tree),
+        "failed to read clay native fallback tree");
+    result |= Require(
+        EcsUiReadTree(world, root, &native_tree),
+        "failed to read native fallback tree");
+
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = LayoutOptions(scale);
+    EcsUiFrameBackendSetSurfaceSize(
+        options.physical_bounds.x + options.physical_bounds.width + 40.0f,
+        options.physical_bounds.y + options.physical_bounds.height + 40.0f);
+    EcsUiFrameInternalSetNativeScrollOffsets(NULL, 0u);
+    ClearClayScrollState();
+    result |= RunFrameWithBackend(
+        &clay_tree,
+        &theme,
+        &options,
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        "clay native scroll fallback frame failed");
+    result |= RunFrameWithBackend(
+        &native_tree,
+        &theme,
+        &options,
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        "native scroll fallback frame failed");
+    result |= RequireNoLayoutDiff(
+        &clay_tree,
+        &native_tree,
+        "native_scroll_snapshot_fallback",
+        scale);
+
+    EcsUiFrameInternalSetNativeScrollOffsets(NULL, 0u);
+    ClearClayScrollState();
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
 static int RunParityCase(const ParityTreeCase *parity_case, float scale)
 {
     int result = 0;
@@ -5408,6 +5458,11 @@ static int RunParityCase(const ParityTreeCase *parity_case, float scale)
         options.physical_bounds.x + options.physical_bounds.width + 40.0f,
         options.physical_bounds.y + options.physical_bounds.height + 40.0f);
     ClearClayScrollState();
+    if (parity_case->scroll_offset_count > 0u) {
+        result |= InjectSnapshotScrollOffsets(&clay_tree, parity_case, scale);
+        result |= InjectSnapshotScrollOffsets(&native_tree, parity_case, scale);
+        result |= InjectSnapshotScrollOffsets(&diverge_tree, parity_case, scale);
+    }
 
     result |= RunFrameWithBackend(
         &clay_tree,
@@ -5416,18 +5471,10 @@ static int RunParityCase(const ParityTreeCase *parity_case, float scale)
         ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
         "clay parity frame failed");
     if (parity_case->scroll_offset_count > 0u) {
-        result |= InjectClayScrollOffsets(&clay_tree, parity_case, scale);
-        Clay_UpdateScrollContainers(false, (Clay_Vector2){0}, 0.0f);
-        result |= RunFrameWithBackend(
-            &clay_tree,
-            &theme,
-            &options,
-            ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-            "clay scrolled parity frame failed");
         result |= RequirePrimedScrollOffsets(&clay_tree, parity_case, scale);
     }
     EcsUiSolverScrollOffset solver_offsets[ECS_UI_TREE_NODE_MAX] = {0};
-    const uint32_t solver_offset_count = PrepareSolverScrollOffsetsFromClay(
+    const uint32_t solver_offset_count = PrepareSolverScrollOffsetsFromSnapshot(
         &clay_tree,
         parity_case,
         scale,
@@ -5959,6 +6006,7 @@ int main(void)
         }
     }
     result |= TestDeepDivergenceProof();
+    result |= TestNativeScrollSnapshotFallback();
 
     EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     EcsUiFrameBackendShutdown();
