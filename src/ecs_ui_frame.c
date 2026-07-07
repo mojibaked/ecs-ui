@@ -15,6 +15,7 @@
 #endif
 
 #include "ecs_ui_frame_internal.h"
+#include "ecs_ui_solver.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,12 +31,24 @@ typedef struct EcsUiFrameBackend {
     size_t arena_size;
     EcsUiFrameBackendDesc desc;
     EcsUiDrawList draw_list;
+    EcsUiSolverArena solver_arena;
     EcsUiClayInteractionState clay_state;
     EcsUiClayInteractionFrame clay_frame;
     EcsUiInteractionFrame *active_frame;
+    EcsUiFrameInternalBackend selected_backend;
 } EcsUiFrameBackend;
 
 static EcsUiFrameBackend g_ecs_ui_frame_backend;
+
+void EcsUiFrameInternalSelectBackend(EcsUiFrameInternalBackend backend)
+{
+    g_ecs_ui_frame_backend.selected_backend = backend;
+}
+
+EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void)
+{
+    return g_ecs_ui_frame_backend.selected_backend;
+}
 
 static void EcsUiFrameReportError(
     const EcsUiFrameBackendDesc *desc,
@@ -407,9 +420,11 @@ bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
     backend->arena_size = (size_t)clay_memory_size;
     backend->desc = *desc;
     backend->draw_list = (EcsUiDrawList){0};
+    backend->solver_arena = (EcsUiSolverArena){0};
     backend->clay_state = (EcsUiClayInteractionState){0};
     backend->clay_frame = (EcsUiClayInteractionFrame){0};
     backend->active_frame = NULL;
+    backend->selected_backend = ECS_UI_FRAME_INTERNAL_BACKEND_CLAY;
 
     const float surface_width =
         desc->surface_width > 0.0f ? desc->surface_width : 1.0f;
@@ -453,6 +468,7 @@ void EcsUiFrameBackendShutdown(void)
     if (!backend->initialized) {
         return;
     }
+    EcsUiSolverArenaRelease(&backend->solver_arena);
     free(backend->arena_memory);
     *backend = (EcsUiFrameBackend){0};
 }
@@ -501,6 +517,41 @@ const EcsUiDrawList *EcsUiFrameRun(
             ECS_UI_FRAME_ERROR_INVALID_ARGUMENT,
             "ecs-ui frame run requires a tree and theme");
         return NULL;
+    }
+    if (backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE ||
+            backend->selected_backend ==
+                ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE ||
+            backend->selected_backend ==
+                ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE) {
+        backend->active_frame = NULL;
+        backend->draw_list = (EcsUiDrawList){0};
+        char solver_message[256] = {0};
+        if (!EcsUiSolverRun(
+                tree,
+                &(EcsUiSolverRunOptions){
+                    .layout = options,
+                    .force_divergence =
+                        backend->selected_backend ==
+                            ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE,
+                    .force_deep_divergence =
+                        backend->selected_backend ==
+                            ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE,
+                    .error_message = solver_message,
+                    .error_message_size = sizeof(solver_message),
+                },
+                &backend->solver_arena)) {
+            EcsUiFrameReportError(
+                &backend->desc,
+                ECS_UI_FRAME_ERROR_INTERNAL,
+                solver_message[0] != '\0' ?
+                    solver_message :
+                    "native layout solver failed");
+            return NULL;
+        }
+        (void)theme;
+        (void)pointer_or_null;
+        (void)frame_or_null;
+        return &backend->draw_list;
     }
 
     EcsUiClayLayoutOptions clay_options =

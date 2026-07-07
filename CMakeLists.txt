@@ -125,7 +125,8 @@ if(ECS_UI_BUILD_CLAY_ADAPTER)
         ecs_ui_enable_warnings(ecs_ui_clay)
 
         add_library(ecs_ui_frame STATIC
-            src/ecs_ui_frame.c)
+            src/ecs_ui_frame.c
+            src/ecs_ui_solver.c)
         add_library(ecs_ui::frame ALIAS ecs_ui_frame)
         target_link_libraries(ecs_ui_frame
             PUBLIC ecs_ui
@@ -334,5 +335,14 @@ if(ECS_UI_BUILD_TESTS)
         add_test(
             NAME ecs_ui_frame_containment
             COMMAND ecs_ui_frame_containment)
+
+        add_executable(ecs_ui_solver_parity
+            tests/ecs_ui_solver_parity.c)
+        target_link_libraries(ecs_ui_solver_parity
+            PRIVATE ecs_ui_frame ecs_ui_clay)
+        ecs_ui_enable_warnings(ecs_ui_solver_parity)
+        add_test(
+            NAME ecs_ui_solver_parity
+            COMMAND ecs_ui_solver_parity)
     endif()
 endif()
