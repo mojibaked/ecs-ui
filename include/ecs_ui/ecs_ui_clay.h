@@ -14,7 +14,10 @@ extern "C" {
 /*
  * Clay bridge inputs are physical pixels. `bounds` positions the tree's physical
  * root box in window coordinates; emitted EcsUiEvent pointer coordinates are
- * converted back to window-origin logical units with the tree scale.
+ * converted back to window-origin logical units with the tree scale. Placement
+ * point anchors are authored in tree-root logical units; for a full-window root
+ * this is the same as event coordinates, while bounded emits require callers to
+ * subtract `bounds.xy / tree->scale` from window-logical event coordinates.
  */
 typedef struct EcsUiClayLayoutOptions {
     Clay_BoundingBox bounds;

@@ -5,6 +5,10 @@
 
 static int16_t g_ecs_ui_clay_z_index_base;
 static float g_ecs_ui_clay_scale = 1.0f;
+static float g_ecs_ui_clay_root_x;
+static float g_ecs_ui_clay_root_y;
+static float g_ecs_ui_clay_root_width;
+static float g_ecs_ui_clay_root_height;
 
 #define ECS_UI_CLAY_ICON_SIZE 16.0f
 
@@ -116,6 +120,57 @@ static float EcsUiClayLogicalPointerValue(float physical, float scale)
 static float EcsUiClayScaled(float value)
 {
     return value * EcsUiClayScale();
+}
+
+static bool EcsUiPlacementIsPointAnchored(const EcsUiPlacement *placement)
+{
+    return placement != NULL && placement->mode == ECS_UI_PLACEMENT_POINT;
+}
+
+static float EcsUiClayResolvePointAnchorAxis(
+    float point,
+    float size,
+    float root_size)
+{
+    float resolved = point;
+    if (size > 0.0f && root_size > 0.0f && resolved + size > root_size) {
+        resolved = point - size;
+    }
+    if (resolved < 0.0f) {
+        resolved = 0.0f;
+    }
+    if (root_size > 0.0f && size > 0.0f && size <= root_size &&
+            resolved + size > root_size) {
+        resolved = root_size - size;
+    }
+    return resolved;
+}
+
+static Clay_Vector2 EcsUiClayPointAnchorOffset(
+    const EcsUiPlacement *placement,
+    const EcsUiVisual *visual)
+{
+    const float scale = EcsUiClayScale();
+    const float width = placement != NULL ? placement->width : 0.0f;
+    const float height = placement != NULL ? placement->height : 0.0f;
+    const float point_x =
+        (placement != NULL ? placement->point_x : 0.0f) +
+        (visual != NULL ? visual->offset_x : 0.0f);
+    const float point_y =
+        (placement != NULL ? placement->point_y : 0.0f) +
+        (visual != NULL ? visual->offset_y : 0.0f);
+    const float x = EcsUiClayResolvePointAnchorAxis(
+        point_x,
+        width,
+        g_ecs_ui_clay_root_width);
+    const float y = EcsUiClayResolvePointAnchorAxis(
+        point_y,
+        height,
+        g_ecs_ui_clay_root_height);
+    return (Clay_Vector2){
+        .x = g_ecs_ui_clay_root_x + (x * scale),
+        .y = g_ecs_ui_clay_root_y + (y * scale),
+    };
 }
 
 static float EcsUiClayClamp01(float value)
@@ -1760,25 +1815,34 @@ static void EcsUiClayEmitZStack(
                     continue;
                 }
                 const EcsUiPlacement *placement = &child_node->placement;
-                const float offset_x = EcsUiClayScaled(
-                    child_node->visual.offset_x +
-                    (placed ? placement->offset_x : 0.0f));
-                const float offset_y = EcsUiClayScaled(
-                    child_node->visual.offset_y +
-                    (placed ? placement->offset_y : 0.0f));
-                const Clay_FloatingAttachPoints attach_points = placed ?
-                    (Clay_FloatingAttachPoints){
-                        .element = EcsUiClayAttachPoint(
-                            placement->child_x,
-                            placement->child_y),
-                        .parent = EcsUiClayAttachPoint(
-                            placement->parent_x,
-                            placement->parent_y),
-                    } :
-                    (Clay_FloatingAttachPoints){
-                        .element = CLAY_ATTACH_POINT_LEFT_TOP,
-                        .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                const bool point_anchored =
+                    placed && EcsUiPlacementIsPointAnchored(placement);
+                const Clay_Vector2 offset = point_anchored ?
+                    EcsUiClayPointAnchorOffset(
+                        placement,
+                        &child_node->visual) :
+                    (Clay_Vector2){
+                        .x = EcsUiClayScaled(
+                            child_node->visual.offset_x +
+                            (placed ? placement->offset_x : 0.0f)),
+                        .y = EcsUiClayScaled(
+                            child_node->visual.offset_y +
+                            (placed ? placement->offset_y : 0.0f)),
                     };
+                const Clay_FloatingAttachPoints attach_points =
+                    placed && !point_anchored ?
+                        (Clay_FloatingAttachPoints){
+                            .element = EcsUiClayAttachPoint(
+                                placement->child_x,
+                                placement->child_y),
+                            .parent = EcsUiClayAttachPoint(
+                                placement->parent_x,
+                                placement->parent_y),
+                        } :
+                        (Clay_FloatingAttachPoints){
+                            .element = CLAY_ATTACH_POINT_LEFT_TOP,
+                            .parent = CLAY_ATTACH_POINT_LEFT_TOP,
+                        };
                 const bool placed_text =
                     placed && child_node->kind == ECS_UI_NODE_TEXT;
                 const EcsUiTextLayout child_text_layout =
@@ -1816,17 +1880,16 @@ static void EcsUiClayEmitZStack(
                         },
                     },
                     .floating = {
-                        .offset = {
-                            .x = offset_x,
-                            .y = offset_y,
-                        },
+                        .offset = offset,
                         .zIndex = EcsUiClayZIndex(z_index),
                         .attachPoints = attach_points,
                         .pointerCaptureMode = EcsUiClayNodeCapturesSelf(
                             child_node) ?
                                 CLAY_POINTER_CAPTURE_MODE_CAPTURE :
                                 CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
-                        .attachTo = CLAY_ATTACH_TO_PARENT,
+                        .attachTo = point_anchored ?
+                            CLAY_ATTACH_TO_ROOT :
+                            CLAY_ATTACH_TO_PARENT,
                     },
                 }) {
                     if (placed_text) {
@@ -2251,7 +2314,19 @@ void EcsUiClayEmitTreeEx(
         return;
     }
     const float previous_scale = g_ecs_ui_clay_scale;
+    const float previous_root_x = g_ecs_ui_clay_root_x;
+    const float previous_root_y = g_ecs_ui_clay_root_y;
+    const float previous_root_width = g_ecs_ui_clay_root_width;
+    const float previous_root_height = g_ecs_ui_clay_root_height;
     g_ecs_ui_clay_scale = tree->scale > 0.0f ? tree->scale : 1.0f;
+    g_ecs_ui_clay_root_x = options != NULL ? options->bounds.x : 0.0f;
+    g_ecs_ui_clay_root_y = options != NULL ? options->bounds.y : 0.0f;
+    g_ecs_ui_clay_root_width = options != NULL ?
+        options->bounds.width / EcsUiClayScale() :
+        tree->nodes[0].stack.preferred_width;
+    g_ecs_ui_clay_root_height = options != NULL ?
+        options->bounds.height / EcsUiClayScale() :
+        tree->nodes[0].stack.preferred_height;
     if (options == NULL) {
         EcsUiClayEmitNode(
             tree,
@@ -2264,6 +2339,10 @@ void EcsUiClayEmitTreeEx(
             1.0f,
             frame);
         g_ecs_ui_clay_scale = previous_scale;
+        g_ecs_ui_clay_root_x = previous_root_x;
+        g_ecs_ui_clay_root_y = previous_root_y;
+        g_ecs_ui_clay_root_width = previous_root_width;
+        g_ecs_ui_clay_root_height = previous_root_height;
         return;
     }
 
@@ -2309,6 +2388,10 @@ void EcsUiClayEmitTreeEx(
         g_ecs_ui_clay_z_index_base = previous_z_index_base;
     }
     g_ecs_ui_clay_scale = previous_scale;
+    g_ecs_ui_clay_root_x = previous_root_x;
+    g_ecs_ui_clay_root_y = previous_root_y;
+    g_ecs_ui_clay_root_width = previous_root_width;
+    g_ecs_ui_clay_root_height = previous_root_height;
 }
 
 static void EcsUiClayClearSnapshotLayout(EcsUiTreeSnapshot *tree)

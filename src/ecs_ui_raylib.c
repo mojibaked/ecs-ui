@@ -928,6 +928,31 @@ static float EcsUiRaylibAlignedPosition(
     }
 }
 
+static bool EcsUiRaylibPlacementIsPointAnchored(
+    const EcsUiPlacement *placement)
+{
+    return placement != NULL && placement->mode == ECS_UI_PLACEMENT_POINT;
+}
+
+static float EcsUiRaylibResolvePointAnchorAxis(
+    float point,
+    float size,
+    float root_size)
+{
+    float resolved = point;
+    if (size > 0.0f && root_size > 0.0f && resolved + size > root_size) {
+        resolved = point - size;
+    }
+    if (resolved < 0.0f) {
+        resolved = 0.0f;
+    }
+    if (root_size > 0.0f && size > 0.0f && size <= root_size &&
+        resolved + size > root_size) {
+        resolved = root_size - size;
+    }
+    return resolved;
+}
+
 static EcsUiTextLayout EcsUiRaylibDefaultTextLayout(void)
 {
     return (EcsUiTextLayout){
@@ -1029,6 +1054,7 @@ static Vector2 EcsUiRaylibNaturalNodeSize(
 static Rectangle EcsUiRaylibPlacedChildBounds(
     const EcsUiTreeSnapshot *tree,
     uint32_t child,
+    Rectangle root_bounds,
     Rectangle bounds)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[child];
@@ -1042,6 +1068,27 @@ static Rectangle EcsUiRaylibPlacedChildBounds(
         placement->width > 0.0f ? placement->width : natural.x;
     const float height =
         placement->height > 0.0f ? placement->height : natural.y;
+    if (EcsUiRaylibPlacementIsPointAnchored(placement)) {
+        const float scale = EcsUiRaylibScaleForTree(tree);
+        const float root_width = root_bounds.width / scale;
+        const float root_height = root_bounds.height / scale;
+        const float edge_width = placement->width > 0.0f ? width : 0.0f;
+        const float edge_height = placement->height > 0.0f ? height : 0.0f;
+        const float x = EcsUiRaylibResolvePointAnchorAxis(
+            placement->point_x + node->visual.offset_x,
+            edge_width,
+            root_width);
+        const float y = EcsUiRaylibResolvePointAnchorAxis(
+            placement->point_y + node->visual.offset_y,
+            edge_height,
+            root_height);
+        return (Rectangle){
+            .x = root_bounds.x + (x * scale),
+            .y = root_bounds.y + (y * scale),
+            .width = EcsUiRaylibClampPositive(width * scale),
+            .height = EcsUiRaylibClampPositive(height * scale),
+        };
+    }
     const float parent_x = EcsUiRaylibAlignedPosition(
         bounds.x,
         bounds.width,
@@ -1431,7 +1478,7 @@ static void EcsUiRaylibDrawNode(
         uint32_t child = node->first_child;
         while (child != ECS_UI_TREE_INVALID_INDEX) {
             Rectangle child_bounds =
-                EcsUiRaylibPlacedChildBounds(tree, child, inner);
+                EcsUiRaylibPlacedChildBounds(tree, child, root_bounds, inner);
             EcsUiRaylibDrawNode(
                 tree,
                 theme,
@@ -1643,6 +1690,7 @@ typedef struct EcsUiRaylibHit {
 static bool EcsUiRaylibHitNode(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     Vector2 point,
     EcsUiRaylibHit *hit);
@@ -1724,6 +1772,7 @@ static bool EcsUiRaylibHitSelf(
 static bool EcsUiRaylibHitChildrenVertical(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     Vector2 point,
     EcsUiRaylibHit *hit)
@@ -1745,7 +1794,13 @@ static bool EcsUiRaylibHitChildrenVertical(
             .width = bounds.width,
             .height = preferred_height < remaining ? preferred_height : remaining,
         };
-        if (EcsUiRaylibHitNode(tree, child, child_bounds, point, hit)) {
+        if (EcsUiRaylibHitNode(
+                tree,
+                child,
+                root_bounds,
+                child_bounds,
+                point,
+                hit)) {
             return true;
         }
         y += child_bounds.height + gap;
@@ -1757,6 +1812,7 @@ static bool EcsUiRaylibHitChildrenVertical(
 static bool EcsUiRaylibHitChildrenHorizontal(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     Vector2 point,
     EcsUiRaylibHit *hit)
@@ -1798,7 +1854,13 @@ static bool EcsUiRaylibHitChildrenHorizontal(
             .width = child_width,
             .height = bounds.height,
         };
-        if (EcsUiRaylibHitNode(tree, child, child_bounds, point, hit)) {
+        if (EcsUiRaylibHitNode(
+                tree,
+                child,
+                root_bounds,
+                child_bounds,
+                point,
+                hit)) {
             return true;
         }
         x += child_width + gap;
@@ -1810,6 +1872,7 @@ static bool EcsUiRaylibHitChildrenHorizontal(
 static bool EcsUiRaylibHitChildrenZStack(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     Vector2 point,
     EcsUiRaylibHit *hit)
@@ -1827,10 +1890,11 @@ static bool EcsUiRaylibHitChildrenZStack(
     for (uint32_t i = child_count; i > 0u; i -= 1u) {
         const uint32_t child_index = children[i - 1u];
         Rectangle child_bounds =
-            EcsUiRaylibPlacedChildBounds(tree, child_index, bounds);
+            EcsUiRaylibPlacedChildBounds(tree, child_index, root_bounds, bounds);
         if (EcsUiRaylibHitNode(
                 tree,
                 child_index,
+                root_bounds,
                 child_bounds,
                 point,
                 hit)) {
@@ -1843,6 +1907,7 @@ static bool EcsUiRaylibHitChildrenZStack(
 static bool EcsUiRaylibHitNode(
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
+    Rectangle root_bounds,
     Rectangle bounds,
     Vector2 point,
     EcsUiRaylibHit *hit)
@@ -1860,6 +1925,7 @@ static bool EcsUiRaylibHitNode(
         if (EcsUiRaylibHitChildrenVertical(
             tree,
             index,
+            root_bounds,
             EcsUiRaylibInsetStack(node_bounds, node),
             point,
             hit)) {
@@ -1870,6 +1936,7 @@ static bool EcsUiRaylibHitNode(
         if (EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
+            root_bounds,
             EcsUiRaylibInsetStack(node_bounds, node),
             point,
             hit)) {
@@ -1878,7 +1945,13 @@ static bool EcsUiRaylibHitNode(
         return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
     case ECS_UI_NODE_ZSTACK: {
         Rectangle inner = EcsUiRaylibInsetStack(node_bounds, node);
-        if (EcsUiRaylibHitChildrenZStack(tree, index, inner, point, hit)) {
+        if (EcsUiRaylibHitChildrenZStack(
+                tree,
+                index,
+                root_bounds,
+                inner,
+                point,
+                hit)) {
             return true;
         }
         return EcsUiRaylibHitSelf(node, index, node_bounds, point, hit);
@@ -1887,6 +1960,7 @@ static bool EcsUiRaylibHitNode(
         if (EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
+            root_bounds,
             EcsUiRaylibInset(
                 node_bounds,
                 EcsUiRaylibBoxPadding(node, 12.0f)),
@@ -1899,6 +1973,7 @@ static bool EcsUiRaylibHitNode(
         if (EcsUiRaylibHitChildrenHorizontal(
             tree,
             index,
+            root_bounds,
             EcsUiRaylibInset(node_bounds, 12.0f),
             point,
             hit)) {
@@ -2196,7 +2271,7 @@ static void EcsUiRaylibCollectPointerEvents(
     }
 
     EcsUiRaylibHit hit = {0};
-    EcsUiRaylibHitNode(tree, 0u, bounds, point, &hit);
+    EcsUiRaylibHitNode(tree, 0u, bounds, bounds, point, &hit);
     if (!hit.found || hit.index >= tree->count) {
         return;
     }

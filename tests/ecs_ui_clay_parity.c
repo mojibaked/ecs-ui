@@ -1180,6 +1180,324 @@ static int TestLayoutEnrichmentUsesLogicalRootRelativeRects(void)
     return result;
 }
 
+typedef struct PointAnchorCase {
+    const char *name;
+    float root_width;
+    float root_height;
+    float child_width;
+    float child_height;
+    float point_x;
+    float point_y;
+    float expected_x;
+    float expected_y;
+    float origin_x;
+    float origin_y;
+    bool nested;
+} PointAnchorCase;
+
+static int RequirePointAnchorCase(
+    float scale,
+    const PointAnchorCase *anchor_case)
+{
+    int result = 0;
+    if (anchor_case == NULL) {
+        return Require(false, "missing point anchor case");
+    }
+
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create point anchor world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PointAnchorRoot");
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "point anchor scale setup failed");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t child = 0;
+    if (anchor_case->nested) {
+        (void)EcsUiBeginVStack(
+            &builder,
+            (EcsUiStackDesc){
+                .id = "PointOuter",
+                .preferred_width = anchor_case->root_width,
+                .preferred_height = anchor_case->root_height,
+            });
+        (void)EcsUiAddCustom(
+            &builder,
+            (EcsUiCustomDesc){
+                .id = "PointTopSpacer",
+                .kind = "spacer",
+                .preferred_width = anchor_case->root_width,
+                .preferred_height = 18.0f,
+            });
+        (void)EcsUiBeginHStack(
+            &builder,
+            (EcsUiStackDesc){
+                .id = "PointRow",
+                .preferred_width = anchor_case->root_width,
+                .preferred_height = anchor_case->root_height - 18.0f,
+            });
+        (void)EcsUiAddCustom(
+            &builder,
+            (EcsUiCustomDesc){
+                .id = "PointSideSpacer",
+                .kind = "spacer",
+                .preferred_width = 24.0f,
+                .preferred_height = anchor_case->root_height - 18.0f,
+            });
+        (void)EcsUiBeginZStack(
+            &builder,
+            (EcsUiStackDesc){
+                .id = "PointHost",
+                .preferred_width = anchor_case->root_width - 24.0f,
+                .preferred_height = anchor_case->root_height - 18.0f,
+            });
+    } else {
+        (void)EcsUiBeginZStack(
+            &builder,
+            (EcsUiStackDesc){
+                .id = "PointHost",
+                .preferred_width = anchor_case->root_width,
+                .preferred_height = anchor_case->root_height,
+            });
+    }
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointBackground",
+            .kind = "background",
+            .preferred_width = anchor_case->root_width,
+            .preferred_height = anchor_case->root_height,
+        });
+    child = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointChild",
+            .kind = "menu",
+            .preferred_width = anchor_case->child_width,
+            .preferred_height = anchor_case->child_height,
+        });
+    EcsUiEnd(&builder);
+    if (anchor_case->nested) {
+        EcsUiEnd(&builder);
+        EcsUiEnd(&builder);
+    }
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "point anchor builder failed");
+
+    ecs_set(world, child, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .width = anchor_case->child_width,
+        .height = anchor_case->child_height,
+        .point_x = anchor_case->point_x,
+        .point_y = anchor_case->point_y,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "point anchor tree read failed");
+    ResetClayErrors();
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions options = {
+        .bounds = {
+            .x = anchor_case->origin_x,
+            .y = anchor_case->origin_y,
+            .width = anchor_case->root_width * scale,
+            .height = anchor_case->root_height * scale,
+        },
+    };
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .width = options.bounds.x + options.bounds.width + 40.0f,
+        .height = options.bounds.y + options.bounds.height + 40.0f,
+    });
+    Clay_BeginLayout();
+    EcsUiClayEmitTreeEx(&tree, &theme, &options, NULL);
+    Clay_RenderCommandArray commands = Clay_EndLayout();
+    uint32_t enriched_count =
+        EcsUiClayEnrichSnapshotLayout(&tree, &options);
+    result |= Require(
+        enriched_count == tree.count,
+        "point anchor enrichment should fill every emitted node");
+
+    Clay_Vector2 origin = {
+        .x = options.bounds.x,
+        .y = options.bounds.y,
+    };
+    result |= RequireEnrichedLayoutMatchesCustomCommand(
+        &tree,
+        &commands,
+        "PointChild",
+        scale,
+        origin,
+        "point anchor enriched layout mismatch");
+    const EcsUiTreeNodeSnapshot *node =
+        EcsUiTreeSnapshotFindNodeById(&tree, "PointChild");
+    Clay_RenderCommand *command = FindCustomCommand(&commands, "PointChild");
+    result |= Require(node != NULL, "point anchor child missing");
+    result |= Require(command != NULL, "point anchor command missing");
+    if (node != NULL && command != NULL) {
+        result |= RequireNear(
+            node->layout_x,
+            anchor_case->expected_x,
+            0.001f,
+            "point anchor logical x mismatch");
+        result |= RequireNear(
+            node->layout_y,
+            anchor_case->expected_y,
+            0.001f,
+            "point anchor logical y mismatch");
+        result |= RequireNear(
+            node->layout_width,
+            anchor_case->child_width,
+            0.001f,
+            "point anchor logical width mismatch");
+        result |= RequireNear(
+            node->layout_height,
+            anchor_case->child_height,
+            0.001f,
+            "point anchor logical height mismatch");
+        result |= RequireNear(
+            command->boundingBox.x,
+            anchor_case->origin_x + (anchor_case->expected_x * scale),
+            0.001f,
+            "point anchor Clay x mismatch");
+        result |= RequireNear(
+            command->boundingBox.y,
+            anchor_case->origin_y + (anchor_case->expected_y * scale),
+            0.001f,
+            "point anchor Clay y mismatch");
+        result |= Require(
+            node->layout_x >= -0.001f &&
+                node->layout_y >= -0.001f &&
+                node->layout_x + node->layout_width <=
+                    anchor_case->root_width + 0.001f &&
+                node->layout_y + node->layout_height <=
+                    anchor_case->root_height + 0.001f,
+            "point anchor rect should stay inside the logical root");
+    }
+    if (anchor_case->nested && node != NULL) {
+        result |= RequireNear(
+            node->layout_x,
+            anchor_case->point_x,
+            0.001f,
+            "nested point anchor should be tree-root relative on x");
+        result |= RequireNear(
+            node->layout_y,
+            anchor_case->point_y,
+            0.001f,
+            "nested point anchor should be tree-root relative on y");
+    }
+    result |= Require(
+        g_clay_errors.count == 0u,
+        "point anchor placement should not emit Clay errors");
+    if (result != 0) {
+        (void)fprintf(stderr, "point anchor case failed: %s scale=%f\n",
+            anchor_case->name,
+            scale);
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestPointAnchorPlacementFlipsAndClamps(void)
+{
+    const PointAnchorCase cases[] = {
+        {
+            .name = "middle",
+            .root_width = 120.0f,
+            .root_height = 90.0f,
+            .child_width = 30.0f,
+            .child_height = 20.0f,
+            .point_x = 40.0f,
+            .point_y = 30.0f,
+            .expected_x = 40.0f,
+            .expected_y = 30.0f,
+        },
+        {
+            .name = "right edge flips",
+            .root_width = 120.0f,
+            .root_height = 90.0f,
+            .child_width = 30.0f,
+            .child_height = 20.0f,
+            .point_x = 112.0f,
+            .point_y = 30.0f,
+            .expected_x = 82.0f,
+            .expected_y = 30.0f,
+        },
+        {
+            .name = "bottom edge flips",
+            .root_width = 120.0f,
+            .root_height = 90.0f,
+            .child_width = 30.0f,
+            .child_height = 20.0f,
+            .point_x = 40.0f,
+            .point_y = 86.0f,
+            .expected_x = 40.0f,
+            .expected_y = 66.0f,
+        },
+        {
+            .name = "left edge clamps",
+            .root_width = 120.0f,
+            .root_height = 90.0f,
+            .child_width = 30.0f,
+            .child_height = 20.0f,
+            .point_x = -6.0f,
+            .point_y = 30.0f,
+            .expected_x = 0.0f,
+            .expected_y = 30.0f,
+        },
+        {
+            .name = "top edge clamps",
+            .root_width = 120.0f,
+            .root_height = 90.0f,
+            .child_width = 30.0f,
+            .child_height = 20.0f,
+            .point_x = 40.0f,
+            .point_y = -7.0f,
+            .expected_x = 40.0f,
+            .expected_y = 0.0f,
+        },
+        {
+            .name = "nonzero physical origin",
+            .root_width = 120.0f,
+            .root_height = 90.0f,
+            .child_width = 30.0f,
+            .child_height = 20.0f,
+            .point_x = 112.0f,
+            .point_y = 86.0f,
+            .expected_x = 82.0f,
+            .expected_y = 66.0f,
+            .origin_x = 17.0f,
+            .origin_y = 29.0f,
+        },
+        {
+            .name = "nested zstack",
+            .root_width = 180.0f,
+            .root_height = 120.0f,
+            .child_width = 32.0f,
+            .child_height = 22.0f,
+            .point_x = 120.0f,
+            .point_y = 70.0f,
+            .expected_x = 120.0f,
+            .expected_y = 70.0f,
+            .nested = true,
+        },
+    };
+
+    int result = 0;
+    const size_t case_count = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0u; i < case_count; i += 1u) {
+        result |= RequirePointAnchorCase(1.0f, &cases[i]);
+        result |= RequirePointAnchorCase(2.0f, &cases[i]);
+    }
+    return result;
+}
+
 static int TestScaledPointerEventsAreLogical(void)
 {
     int result = 0;
@@ -4586,6 +4904,7 @@ int main(void)
 
     result |= TestRootScaleAffectsClayLayoutOnly();
     result |= TestLayoutEnrichmentUsesLogicalRootRelativeRects();
+    result |= TestPointAnchorPlacementFlipsAndClamps();
     result |= TestScaledPointerEventsAreLogical();
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestScrollViewEmitsScissorCommands();

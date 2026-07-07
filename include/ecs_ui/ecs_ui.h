@@ -284,8 +284,33 @@ typedef struct EcsUiVisual {
     float highlight;
 } EcsUiVisual;
 
-/* Placement offsets and sizes are logical, relative to the parent layout box. */
+typedef enum EcsUiPlacementMode {
+    /*
+     * Existing behavior: parent_x/y pick an anchor on the parent layout box,
+     * child_x/y pick an anchor on the child, and offset_x/y are logical units
+     * relative to that parent anchor.
+     */
+    ECS_UI_PLACEMENT_PARENT = 0,
+    /*
+     * Floating-child behavior for cursor menus/popovers. point_x/y are logical
+     * units relative to the tree root, not the immediate parent. The child's
+     * top-left corner is placed at that point, then flipped left/up or clamped
+     * so its explicit width/height fit within the tree-root bounds. Consumers
+     * with window-origin logical event coordinates can pass them directly only
+     * when the tree root covers the window; for bounded emits, subtract the
+     * root's logical origin before storing point_x/y. Point-anchored children
+     * must declare width and height; when either is absent, bridges place the
+     * top-left at point_x/y and skip edge flipping for the unknown axis.
+     */
+    ECS_UI_PLACEMENT_POINT = 1,
+} EcsUiPlacementMode;
+
+/*
+ * Placement values are logical units. Parent mode is relative to the parent
+ * layout box; point mode is relative to the tree root as documented above.
+ */
 typedef struct EcsUiPlacement {
+    EcsUiPlacementMode mode;
     EcsUiAlign parent_x;
     EcsUiAlign parent_y;
     EcsUiAlign child_x;
@@ -294,6 +319,8 @@ typedef struct EcsUiPlacement {
     float offset_y;
     float width;
     float height;
+    float point_x;
+    float point_y;
 } EcsUiPlacement;
 
 typedef struct EcsUiHitTest {
