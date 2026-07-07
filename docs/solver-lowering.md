@@ -36,9 +36,9 @@ current Stage 1 rules are:
   are 16 by 16.
 
 Unstaged features must fail loudly instead of producing plausible rects. The
-native solver reports unsupported root horizontal-axis layout as stage 4, text
-as stage 5, and ZStack/floating/scroll as stage 6 through the frame backend
-error callback, and returns no draw list for that run.
+native solver reports unsupported text as stage 5 and ZStack/floating/scroll as
+stage 6 through the frame backend error callback, and returns no draw list for
+that run.
 
 The Stage 2 grow subset is deliberately narrower than Clay's full grow/shrink
 algorithm. It covers positive free space on the parent's layout axis with
@@ -142,7 +142,63 @@ In scope: explicit FIT on stack axes (two-pass: bottom-up content +
 minDimensions, top-down distribute/clamp), FIT-in-GROW trees (requiring the
 water-fill grow upgrade above), deep FIT chains, along-axis compression with
 min floors, off-axis clamping, custom-FIT-as-AUTO. Root FIT behaves like any
-stack FIT (content-sized below the viewport). Still failing loudly: root
-horizontal-axis layout (stage 4), text (stage 5), ZStack and floating
-(stage 6), scroll/clip (stage 6). Child alignment remains stage 4 scope and is
-not exercised by Stage 3 goldens.
+stack FIT (content-sized below the viewport). Stage 3 still left root
+horizontal-axis layout and child alignment to Stage 4, and text (stage 5),
+ZStack/floating/scroll (stage 6) continued to fail loudly.
+
+## Stage 4: child alignment and layout direction
+
+### What the bridge emits
+
+- Layout direction comes from `node->stack.axis` in `EcsUiClayEmitStack`, for
+  EVERY stack including the root: `ECS_UI_AXIS_HORIZONTAL` maps to
+  `CLAY_LEFT_TO_RIGHT`, everything else (VERTICAL and DEPTH alike) to
+  `CLAY_TOP_TO_BOTTOM`. Stage 4 removes the stage-3 loud failure for
+  horizontal-axis roots and derives the solver's direction from `stack.axis`
+  for root/VStack/HStack uniformly (the builder couples kind and axis for
+  non-root stacks, so only the root can actually vary). ZStack still fails
+  loudly (stage 6). Known latent asymmetry, unreachable today: the solver's
+  preferred-height walk dispatches sum-vs-max on `stack.axis` while the
+  bridge walk dispatches on node KIND, so a horizontal-axis ROOT would sum
+  children's heights in the bridge walk but take the max in the solver's —
+  the walk is only ever invoked on non-root stacks, where kind and axis
+  coincide. Revisit if a later stage walks the root.
+- Stacks (root included) emit authored alignment:
+  `childAlignment.x = align_x` (START→LEFT, CENTER→CENTER, END→RIGHT) and
+  `childAlignment.y = align_y` (START→TOP, CENTER→CENTER, END→BOTTOM).
+- Buttons hardcode `childAlignment = {CENTER, CENTER}`.
+- Pressables hardcode `childAlignment.y = CENTER` and leave x at LEFT.
+- Text-field synthetic elements and ZStack child wrappers also carry
+  alignment, but those subtrees stay behind the stage 5/6 loud failures.
+
+### Clay's positioning algorithm (final layout pass)
+
+Positioning happens AFTER all sizing, top-down, using final (post-grow,
+post-compression) child sizes; alignment never changes a size. Per parent:
+
+- Main-axis alignment is computed ONCE per parent:
+  `extra = parent_size - padding_both - (sum final child sizes + gaps)`,
+  then LEFT/TOP keeps 0, CENTER adds `extra / 2`, RIGHT/BOTTOM adds `extra`.
+  ASYMMETRIC OVERFLOW QUIRK, pinned as-is: on the horizontal main axis
+  (LEFT_TO_RIGHT parents) negative `extra` IS applied — a CENTER/RIGHT row
+  whose content overflows shifts left by half/all of the deficit. On the
+  vertical main axis (TOP_TO_BOTTOM parents) `extra` is clamped to >= 0
+  BEFORE it is applied — an overflowing CENTER/BOTTOM column never shifts up.
+- Off-axis alignment is computed PER CHILD: the off-axis cursor resets to the
+  leading padding, then `white = parent_size - padding_both - child_size`
+  adds 0 / half / all for START/CENTER/END. `white` is NOT clamped: a child
+  held above the parent's inner size by its minDimensions floor (stage 3
+  off-axis clamp) gets a NEGATIVE offset — it overhangs up/left.
+- Children advance along the main axis by `final child size + gap`; padding
+  and gap here are the truncated physical-U16 values (matching placement
+  arithmetic already pinned in stage 1, not the untruncated preferred walk).
+
+### Stage 4 scope
+
+In scope: authored align_x/align_y on root/VStack/HStack, button
+CENTER/CENTER, pressable y-CENTER, both main-axis and off-axis semantics
+including the overflow quirks above, alignment interacting with GROW leftover
+space (grow consumes free space first; alignment moves only what remains) and
+FIT children inside larger boxes, and stack.axis-derived direction (removing
+the root-horizontal loud failure). Out of scope, still failing loudly: text
+(stage 5), ZStack/floating/scroll (stage 6).

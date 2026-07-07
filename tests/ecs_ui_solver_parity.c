@@ -556,43 +556,6 @@ static int BuildUnsupportedZStack(
     return Require(EcsUiBuilderOk(&builder), "unsupported zstack builder failed");
 }
 
-static int BuildUnsupportedRootHorizontal(
-    ecs_world_t *world,
-    ecs_entity_t root)
-{
-    ecs_set(
-        world,
-        root,
-        EcsUiStack,
-        {
-            .axis = ECS_UI_AXIS_HORIZONTAL,
-            .gap = 3.25f,
-            .padding = 2.25f,
-        });
-
-    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
-    (void)EcsUiAddCustom(
-        &builder,
-        (EcsUiCustomDesc){
-            .id = "UnsupportedRootHorizontalA",
-            .kind = "parity.unsupported",
-            .preferred_width = 20.5f,
-            .preferred_height = 10.5f,
-        });
-    (void)EcsUiAddCustom(
-        &builder,
-        (EcsUiCustomDesc){
-            .id = "UnsupportedRootHorizontalB",
-            .kind = "parity.unsupported",
-            .preferred_width = 22.5f,
-            .preferred_height = 12.5f,
-        });
-    EcsUiBuilderEnd(&builder);
-    return Require(
-        EcsUiBuilderOk(&builder),
-        "unsupported root horizontal builder failed");
-}
-
 static int BuildFitStackSizing(
     ecs_world_t *world,
     ecs_entity_t root)
@@ -1325,6 +1288,574 @@ static int BuildLargeArenaGrowth(
     return Require(EcsUiBuilderOk(&builder), "large arena builder failed");
 }
 
+static void AddAlignCustom(
+    EcsUiBuilder *builder,
+    const char *id,
+    float width,
+    float height)
+{
+    (void)EcsUiAddCustom(
+        builder,
+        (EcsUiCustomDesc){
+            .id = id,
+            .kind = "parity.align",
+            .preferred_width = width,
+            .preferred_height = height,
+        });
+}
+
+static int BuildVStackAlignmentMatrix(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    static const EcsUiAlign aligns[] = {
+        ECS_UI_ALIGN_START,
+        ECS_UI_ALIGN_CENTER,
+        ECS_UI_ALIGN_END,
+    };
+
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 2.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    for (uint32_t y = 0u; y < 3u; y += 1u) {
+        for (uint32_t x = 0u; x < 3u; x += 1u) {
+            char id[ECS_UI_ID_MAX] = {0};
+            char child_a[ECS_UI_ID_MAX] = {0};
+            char child_b[ECS_UI_ID_MAX] = {0};
+            (void)snprintf(
+                id,
+                sizeof(id),
+                "VAlign%u%u",
+                (unsigned int)x,
+                (unsigned int)y);
+            (void)snprintf(
+                child_a,
+                sizeof(child_a),
+                "VAlign%u%uA",
+                (unsigned int)x,
+                (unsigned int)y);
+            (void)snprintf(
+                child_b,
+                sizeof(child_b),
+                "VAlign%u%uB",
+                (unsigned int)x,
+                (unsigned int)y);
+            (void)EcsUiBeginVStack(
+                &builder,
+                (EcsUiStackDesc){
+                    .id = id,
+                    .gap = 3.25f,
+                    .padding = 2.25f,
+                    .preferred_width = 92.5f,
+                    .preferred_height = 76.5f,
+                    .align_x = aligns[x],
+                    .align_y = aligns[y],
+                });
+            AddAlignCustom(&builder, child_a, 20.5f, 10.5f);
+            AddAlignCustom(&builder, child_b, 24.5f, 12.5f);
+            EcsUiEnd(&builder);
+        }
+    }
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "vstack alignment builder failed");
+}
+
+static int BuildHStackAlignmentMatrix(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    static const EcsUiAlign aligns[] = {
+        ECS_UI_ALIGN_START,
+        ECS_UI_ALIGN_CENTER,
+        ECS_UI_ALIGN_END,
+    };
+
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 2.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    for (uint32_t y = 0u; y < 3u; y += 1u) {
+        for (uint32_t x = 0u; x < 3u; x += 1u) {
+            char id[ECS_UI_ID_MAX] = {0};
+            char child_a[ECS_UI_ID_MAX] = {0};
+            char child_b[ECS_UI_ID_MAX] = {0};
+            (void)snprintf(
+                id,
+                sizeof(id),
+                "HAlign%u%u",
+                (unsigned int)x,
+                (unsigned int)y);
+            (void)snprintf(
+                child_a,
+                sizeof(child_a),
+                "HAlign%u%uA",
+                (unsigned int)x,
+                (unsigned int)y);
+            (void)snprintf(
+                child_b,
+                sizeof(child_b),
+                "HAlign%u%uB",
+                (unsigned int)x,
+                (unsigned int)y);
+            (void)EcsUiBeginHStack(
+                &builder,
+                (EcsUiStackDesc){
+                    .id = id,
+                    .gap = 3.25f,
+                    .padding = 2.25f,
+                    .preferred_width = 94.5f,
+                    .preferred_height = 72.5f,
+                    .align_x = aligns[x],
+                    .align_y = aligns[y],
+                });
+            AddAlignCustom(&builder, child_a, 20.5f, 10.5f);
+            AddAlignCustom(&builder, child_b, 24.5f, 12.5f);
+            EcsUiEnd(&builder);
+        }
+    }
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "hstack alignment builder failed");
+}
+
+static int BuildCenterOddFractionalAlignment(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OddCenterRow",
+            .padding = 2.25f,
+            .preferred_width = 101.5f,
+            .preferred_height = 37.5f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    AddAlignCustom(&builder, "OddCenterRowChild", 20.5f, 11.5f);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OddCenterColumn",
+            .padding = 2.25f,
+            .preferred_width = 79.5f,
+            .preferred_height = 100.5f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    AddAlignCustom(&builder, "OddCenterColumnChild", 21.5f, 19.5f);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "odd center builder failed");
+}
+
+static int BuildAlignmentWithGrowSiblings(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "GrowAlignRow",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 168.5f,
+            .preferred_height = 44.5f,
+            .align_x = ECS_UI_ALIGN_END,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    AddAlignCustom(&builder, "GrowAlignRowFixed", 20.5f, 10.5f);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "GrowAlignRowGrow",
+            .kind = "parity.align",
+            .preferred_height = 12.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "GrowAlignColumn",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 74.5f,
+            .preferred_height = 136.5f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_END,
+        });
+    AddAlignCustom(&builder, "GrowAlignColumnFixed", 18.5f, 12.5f);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "GrowAlignColumnGrow",
+            .kind = "parity.align",
+            .preferred_width = 16.5f,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "grow alignment builder failed");
+}
+
+static int BuildFitAlignmentInterplay(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FixedBoxForFitChild",
+            .padding = 2.25f,
+            .preferred_width = 92.5f,
+            .preferred_height = 70.5f,
+            .align_x = ECS_UI_ALIGN_END,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FitChildInFixedBox",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    AddAlignCustom(&builder, "FitChildInFixedBoxLeaf", 20.5f, 11.5f);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TightFitParent",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+            .align_x = ECS_UI_ALIGN_END,
+            .align_y = ECS_UI_ALIGN_END,
+        });
+    AddAlignCustom(&builder, "TightFitA", 18.5f, 9.5f);
+    AddAlignCustom(&builder, "TightFitB", 16.5f, 12.5f);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "fit alignment builder failed");
+}
+
+static int BuildMainAxisOverflowAlignment(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OverflowCenterRow",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 52.5f,
+            .preferred_height = 34.5f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+        });
+    AddAlignCustom(&builder, "OverflowCenterRowA", 40.5f, 10.5f);
+    AddAlignCustom(&builder, "OverflowCenterRowB", 32.5f, 11.5f);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OverflowEndRow",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 52.5f,
+            .preferred_height = 34.5f,
+            .align_x = ECS_UI_ALIGN_END,
+        });
+    AddAlignCustom(&builder, "OverflowEndRowA", 40.5f, 10.5f);
+    AddAlignCustom(&builder, "OverflowEndRowB", 32.5f, 11.5f);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OverflowCenterColumn",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 80.5f,
+            .preferred_height = 42.5f,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    AddAlignCustom(&builder, "OverflowCenterColumnA", 20.5f, 30.5f);
+    AddAlignCustom(&builder, "OverflowCenterColumnB", 22.5f, 24.5f);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OverflowEndColumn",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 80.5f,
+            .preferred_height = 42.5f,
+            .align_y = ECS_UI_ALIGN_END,
+        });
+    AddAlignCustom(&builder, "OverflowEndColumnA", 20.5f, 30.5f);
+    AddAlignCustom(&builder, "OverflowEndColumnB", 22.5f, 24.5f);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "overflow alignment builder failed");
+}
+
+static int BuildOffAxisNegativeWhitespaceAlignment(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeXCenter",
+            .padding = 2.25f,
+            .preferred_width = 62.5f,
+            .preferred_height = 50.5f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeXCenterChild",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+        });
+    AddAlignCustom(&builder, "NegativeXCenterContent", 90.5f, 12.5f);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeXEnd",
+            .padding = 2.25f,
+            .preferred_width = 62.5f,
+            .preferred_height = 50.5f,
+            .align_x = ECS_UI_ALIGN_END,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeXEndChild",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+        });
+    AddAlignCustom(&builder, "NegativeXEndContent", 90.5f, 12.5f);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeYCenter",
+            .padding = 2.25f,
+            .preferred_width = 110.5f,
+            .preferred_height = 40.5f,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeYCenterChild",
+            .padding = 2.25f,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    AddAlignCustom(&builder, "NegativeYCenterContent", 20.5f, 60.5f);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeYEnd",
+            .padding = 2.25f,
+            .preferred_width = 110.5f,
+            .preferred_height = 40.5f,
+            .align_y = ECS_UI_ALIGN_END,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NegativeYEndChild",
+            .padding = 2.25f,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    AddAlignCustom(&builder, "NegativeYEndContent", 20.5f, 60.5f);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "negative whitespace alignment builder failed");
+}
+
+static int BuildButtonPressableIconAlignment(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = "CenteredButtonIcon",
+            .preferred_width = 82.5f,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "CenteredButtonIconGlyph",
+            .name = "button-icon",
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "CenteredPressableIcon",
+            .preferred_height = 50.5f,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "CenteredPressableIconGlyph",
+            .name = "pressable-icon",
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "button pressable icon builder failed");
+}
+
+static int BuildHorizontalRootAlignmentGrow(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_HORIZONTAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .align_x = ECS_UI_ALIGN_END,
+            .align_y = ECS_UI_ALIGN_CENTER,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    AddAlignCustom(&builder, "HorizontalRootFixed", 28.5f, 14.5f);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "HorizontalRootGrow",
+            .kind = "parity.align",
+            .preferred_height = 20.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "horizontal root builder failed");
+}
+
+static int BuildDepthRootMapsVertical(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_DEPTH,
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .align_x = ECS_UI_ALIGN_CENTER,
+            .align_y = ECS_UI_ALIGN_END,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    AddAlignCustom(&builder, "DepthRootA", 24.5f, 12.5f);
+    AddAlignCustom(&builder, "DepthRootB", 18.5f, 10.5f);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "depth root builder failed");
+}
+
 static int BuildVerticalGrowDistribution(
     ecs_world_t *world,
     ecs_entity_t root)
@@ -1679,11 +2210,6 @@ static int TestUnsupportedStageFailures(TestFrameErrors *errors)
         "unsupported_zstack",
         BuildUnsupportedZStack,
         "unsupported node kind 4 -- stage 6");
-    result |= RunUnsupportedCase(
-        errors,
-        "unsupported_root_horizontal",
-        BuildUnsupportedRootHorizontal,
-        "unsupported root horizontal axis -- stage 4");
     return result;
 }
 
@@ -1786,6 +2312,46 @@ int main(void)
         {
             .name = "large_arena_growth",
             .build = BuildLargeArenaGrowth,
+        },
+        {
+            .name = "vstack_alignment_matrix",
+            .build = BuildVStackAlignmentMatrix,
+        },
+        {
+            .name = "hstack_alignment_matrix",
+            .build = BuildHStackAlignmentMatrix,
+        },
+        {
+            .name = "center_odd_fractional_alignment",
+            .build = BuildCenterOddFractionalAlignment,
+        },
+        {
+            .name = "alignment_with_grow_siblings",
+            .build = BuildAlignmentWithGrowSiblings,
+        },
+        {
+            .name = "fit_alignment_interplay",
+            .build = BuildFitAlignmentInterplay,
+        },
+        {
+            .name = "main_axis_overflow_alignment",
+            .build = BuildMainAxisOverflowAlignment,
+        },
+        {
+            .name = "off_axis_negative_whitespace_alignment",
+            .build = BuildOffAxisNegativeWhitespaceAlignment,
+        },
+        {
+            .name = "button_pressable_icon_alignment",
+            .build = BuildButtonPressableIconAlignment,
+        },
+        {
+            .name = "horizontal_root_alignment_grow",
+            .build = BuildHorizontalRootAlignmentGrow,
+        },
+        {
+            .name = "depth_root_maps_vertical",
+            .build = BuildDepthRootMapsVertical,
         },
         {
             .name = "vertical_grow_distribution",

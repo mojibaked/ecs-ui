@@ -307,13 +307,6 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
     for (uint32_t i = 0u; i < ctx->tree->count; i += 1u) {
         const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[i];
         char message[128] = {0};
-        if (node->kind == ECS_UI_NODE_ROOT &&
-                node->stack.axis == ECS_UI_AXIS_HORIZONTAL) {
-            EcsUiSolverSetError(
-                ctx,
-                "unsupported root horizontal axis -- stage 4");
-            return false;
-        }
         if (node->kind == ECS_UI_NODE_TEXT) {
             (void)snprintf(
                 message,
@@ -377,10 +370,14 @@ typedef struct EcsUiSolverMetrics {
 
 static bool EcsUiSolverLayoutHorizontal(const EcsUiTreeNodeSnapshot *node)
 {
-    return node != NULL &&
-        (node->kind == ECS_UI_NODE_HSTACK ||
-         node->kind == ECS_UI_NODE_BUTTON ||
-         node->kind == ECS_UI_NODE_PRESSABLE);
+    if (node == NULL) {
+        return false;
+    }
+    if (EcsUiSolverNodeIsStack(node)) {
+        return node->stack.axis == ECS_UI_AXIS_HORIZONTAL;
+    }
+    return node->kind == ECS_UI_NODE_BUTTON ||
+        node->kind == ECS_UI_NODE_PRESSABLE;
 }
 
 static float EcsUiSolverRawPaddingTop(const EcsUiTreeNodeSnapshot *node)
@@ -427,7 +424,17 @@ static float EcsUiSolverPreferredWalkHeight(
         return EcsUiSolverCustomHeight(node);
     case ECS_UI_NODE_TEXT:
         return 0.0f;
-    case ECS_UI_NODE_HSTACK: {
+    case ECS_UI_NODE_ROOT:
+    case ECS_UI_NODE_VSTACK:
+    case ECS_UI_NODE_HSTACK:
+    case ECS_UI_NODE_ZSTACK:
+        break;
+    case ECS_UI_NODE_NONE:
+    default:
+        return 0.0f;
+    }
+
+    if (EcsUiSolverLayoutHorizontal(node)) {
         float height = 0.0f;
         for (uint32_t child = node->first_child; child != ECS_UI_TREE_INVALID_INDEX;
              child = tree->nodes[child].next_sibling) {
@@ -438,10 +445,7 @@ static float EcsUiSolverPreferredWalkHeight(
         return EcsUiSolverRawPaddingTop(node) +
             EcsUiSolverRawPaddingBottom(node) +
             height;
-    }
-    case ECS_UI_NODE_ROOT:
-    case ECS_UI_NODE_VSTACK:
-    case ECS_UI_NODE_ZSTACK: {
+    } else {
         float height =
             EcsUiSolverRawPaddingTop(node) +
             EcsUiSolverRawPaddingBottom(node);
@@ -455,10 +459,6 @@ static float EcsUiSolverPreferredWalkHeight(
             child_count += 1u;
         }
         return height;
-    }
-    case ECS_UI_NODE_NONE:
-    default:
-        return 0.0f;
     }
 }
 
@@ -911,6 +911,92 @@ static void EcsUiSolverSolveAxisTopDown(
     }
 }
 
+static EcsUiAlign EcsUiSolverAlignX(const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL) {
+        return ECS_UI_ALIGN_START;
+    }
+    if (node->kind == ECS_UI_NODE_BUTTON) {
+        return ECS_UI_ALIGN_CENTER;
+    }
+    if (node->kind == ECS_UI_NODE_PRESSABLE) {
+        return ECS_UI_ALIGN_START;
+    }
+    if (EcsUiSolverNodeIsStack(node)) {
+        return node->stack.align_x;
+    }
+    return ECS_UI_ALIGN_START;
+}
+
+static EcsUiAlign EcsUiSolverAlignY(const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL) {
+        return ECS_UI_ALIGN_START;
+    }
+    if (node->kind == ECS_UI_NODE_BUTTON ||
+            node->kind == ECS_UI_NODE_PRESSABLE) {
+        return ECS_UI_ALIGN_CENTER;
+    }
+    if (EcsUiSolverNodeIsStack(node)) {
+        return node->stack.align_y;
+    }
+    return ECS_UI_ALIGN_START;
+}
+
+static float EcsUiSolverAlignmentOffset(EcsUiAlign align, float extra)
+{
+    switch (align) {
+    case ECS_UI_ALIGN_CENTER:
+        return extra * 0.5f;
+    case ECS_UI_ALIGN_END:
+        return extra;
+    case ECS_UI_ALIGN_START:
+    default:
+        return 0.0f;
+    }
+}
+
+static float EcsUiSolverMainAxisOffset(
+    const EcsUiTreeNodeSnapshot *node,
+    bool horizontal,
+    float extra)
+{
+    const EcsUiAlign align = horizontal ?
+        EcsUiSolverAlignX(node) :
+        EcsUiSolverAlignY(node);
+    float offset = EcsUiSolverAlignmentOffset(align, extra);
+    if (!horizontal && offset < 0.0f) {
+        offset = 0.0f;
+    }
+    return offset;
+}
+
+static float EcsUiSolverChildrenMainSize(
+    EcsUiSolverContext *ctx,
+    uint32_t index,
+    bool horizontal)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const float gap = EcsUiSolverGap(tree, node);
+    float size = 0.0f;
+    uint32_t visible_child_count = 0u;
+    for (uint32_t child = node->first_child;
+         child != ECS_UI_TREE_INVALID_INDEX;
+         child = tree->nodes[child].next_sibling) {
+        EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+        if (!child_metrics->visible) {
+            continue;
+        }
+        if (visible_child_count > 0u) {
+            size += gap;
+        }
+        size += horizontal ? child_metrics->width : child_metrics->height;
+        visible_child_count += 1u;
+    }
+    return size;
+}
+
 static void EcsUiSolverPlaceNode(
     EcsUiSolverContext *ctx,
     uint32_t index,
@@ -933,12 +1019,23 @@ static void EcsUiSolverPlaceNode(
         return;
     }
 
-    const float content_x = rect.x + EcsUiSolverPaddingLeft(tree, node);
-    const float content_y = rect.y + EcsUiSolverPaddingTop(tree, node);
+    const float padding_left = EcsUiSolverPaddingLeft(tree, node);
+    const float padding_top = EcsUiSolverPaddingTop(tree, node);
+    const float padding_right = EcsUiSolverPaddingRight(tree, node);
+    const float padding_bottom = EcsUiSolverPaddingBottom(tree, node);
+    const float content_x = rect.x + padding_left;
+    const float content_y = rect.y + padding_top;
     const bool horizontal = EcsUiSolverLayoutHorizontal(node);
     const float gap = EcsUiSolverGap(tree, node);
-    float cursor_x = content_x;
-    float cursor_y = content_y;
+    const float main_children_size =
+        EcsUiSolverChildrenMainSize(ctx, index, horizontal);
+    const float main_inner_size = horizontal ?
+        rect.width - padding_left - padding_right :
+        rect.height - padding_top - padding_bottom;
+    const float main_offset =
+        EcsUiSolverMainAxisOffset(node, horizontal, main_inner_size - main_children_size);
+    float cursor_x = content_x + (horizontal ? main_offset : 0.0f);
+    float cursor_y = content_y + (!horizontal ? main_offset : 0.0f);
     uint32_t child_count = 0u;
     for (uint32_t child = node->first_child;
          child != ECS_UI_TREE_INVALID_INDEX;
@@ -954,9 +1051,15 @@ static void EcsUiSolverPlaceNode(
                 cursor_y += gap;
             }
         }
+        const float child_offset_x = EcsUiSolverAlignmentOffset(
+            EcsUiSolverAlignX(node),
+            rect.width - padding_left - padding_right - child_metrics->width);
+        const float child_offset_y = EcsUiSolverAlignmentOffset(
+            EcsUiSolverAlignY(node),
+            rect.height - padding_top - padding_bottom - child_metrics->height);
         EcsUiSolverRect child_rect = {
-            .x = cursor_x,
-            .y = cursor_y,
+            .x = horizontal ? cursor_x : content_x + child_offset_x,
+            .y = horizontal ? content_y + child_offset_y : cursor_y,
             .width = child_metrics->width,
             .height = child_metrics->height,
         };
