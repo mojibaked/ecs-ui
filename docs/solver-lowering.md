@@ -202,3 +202,99 @@ space (grow consumes free space first; alignment moves only what remains) and
 FIT children inside larger boxes, and stack.axis-derived direction (removing
 the root-horizontal loud failure). Out of scope, still failing loudly: text
 (stage 5), ZStack/floating/scroll (stage 6).
+
+## Stage 5: text (WRAP_NONE)
+
+### Bridge lowering for TEXT nodes
+
+A TEXT node lowers to a WRAPPER container carrying the node's id — the
+wrapper is the ONLY rect the scoreboard sees for the node — with:
+width `GROW(0)`; height `FIXED(scaled(resolved_size + 8))` (untruncated,
+via `EcsUiClayFixed`); `childAlignment.x` LEFT, `.y` from the authored text
+layout's `align_y`, defaulting to CENTER (`EcsUiClayDefaultTextLayout`:
+align_x START, align_y CENTER). Inside sits one Clay text element
+(`CLAY_TEXT`) with `wrapMode = CLAY_TEXT_WRAP_NONE`, `lineHeight` 0,
+`letterSpacing` 0, `textAlignment` from the text layout's `align_x` (render
+only, never affects rects), and
+`fontSize = U16(scaled(resolved_size))` — physical, truncated. The inner
+text element has an auto-generated Clay id (never a node id), so it is
+INVISIBLE to rect parity; it matters only through the sizes it feeds the
+wrapper.
+
+Resolved size: with an inherited text style whose per-role size field is
+positive, that styled size; otherwise role defaults — TITLE 28,
+BUTTON/LABEL/BODY 18, CAPTION 13. Text style INHERITS down the tree: each
+node with `has_text_style` replaces the style for its subtree
+(`EcsUiClayEmitNodeContent`), so a TEXT node's font size can come from any
+ancestor. The solver must reproduce this inheritance walk.
+
+### Clay's measured-text model
+
+Clay never measures whole strings: `Clay__MeasureTextCached` splits on
+spaces and newlines and calls the user measure callback PER WORD (plus one
+call for a single space to get `spaceWidth`). Per line, width accumulates
+word widths with `spaceWidth` added for each interior space; the element's
+unwrapped width is the max line width minus `letterSpacing` (0 for us);
+unwrapped height is the MAX single-word measured height (NOT lines x
+height); `minWidth` is the LONGEST WORD's width. The text element enters
+layout with `dimensions = {unwrapped width, unwrapped height}` and
+`minDimensions = {minWidth, height}`. All in physical pixels; the callback
+receives the truncated physical fontSize.
+
+Under WRAP_NONE the text element is NEVER in the resizable buffer (only
+WRAP_WORDS text is): it is skipped by grow, compression, AND the off-axis
+clamp — it keeps its measured size unconditionally. Clay's wrap stage still
+runs (it does not check wrapMode): text without newlines whose width fits
+its own element takes a single-line fast path; text WITH embedded newlines
+is split into per-line boxes and the text ELEMENT's height becomes
+`line_height * line_count`, propagated to ancestors through a post-wrap
+height DFS clamped by each ancestor's sizing min/max. The TEXT wrapper's
+FIXED height is that clamp, so newline-driven height NEVER escapes the
+wrapper — rect parity above the wrapper is unaffected, and the overflow of
+the inner element within its wrapper is invisible to the scoreboard. The
+solver therefore models text as single-box measured dims and does not need
+line boxes.
+
+### What text feeds the surrounding layout
+
+- The wrapper's GROW width enters the top-down pass at CONTENT size = the
+  text element's measured width (stage-3 rule: GROW starts at content), so
+  measured text width propagates into FIT ancestors' content sizes.
+- The wrapper's `minDimensions.width` = the text `minWidth` (longest word):
+  with text present, `min < size` becomes REACHABLE and stage 3's
+  compression loop finally has shrinking headroom. Stage 5 MUST add
+  compression goldens (wrapper squeezed between full content width and
+  longest-word floor, multi-child largest-first sequences, at-min children
+  staying in the divisor per the Clay-faithful loop). Stage 5 can make
+  at-min buffer membership load-bearing, but has not produced a distinct
+  rect endpoint for Clay's order-dependent `widthToAdd` scan: WRAP_NONE text
+  is the only supported node kind with `min < size`, while non-text resizable
+  siblings still start at their min floor. A later stage that introduces more
+  `min < size` resizable kinds must add an order-sensitive golden.
+- Root viewport interaction changes once text makes `min < size` reachable.
+  Clay sizes the ecs root as a child of its fixed viewport root container
+  (`LEFT_TO_RIGHT`). Root width is along that container axis: GROW fills the
+  viewport when content is smaller, and both GROW and FIT compress overflowing
+  content to `max(root_min_width, viewport_width)`. Root height is off-axis:
+  GROW becomes `max(root_min_height, viewport_height)`, while FIT becomes
+  `max(root_min_height, min(content_height, viewport_height))`.
+- The hand-rolled preferred walk is asymmetric for TEXT, pinned as-is:
+  `EcsUiClayPreferredHeight` returns `scaled(size + 8)` for TEXT, but
+  `EcsUiClayPreferredWidth` returns 0 — an AUTO-height stack sees text height,
+  but the walk never sees text width. Unlike actual TEXT wrapper emission, the
+  preferred walk does NOT carry inherited ancestor text style; it only uses the
+  TEXT node's snapshot-local `text_style` / `has_text_style`. The solver walk
+  must match that bridge quirk (its TEXT height currently returns 0 and must
+  change).
+
+### Stage 5 scope
+
+In scope: TEXT nodes (wrapper semantics above), measure-callback plumbing
+into the solver (same per-word model, physical px, same truncated fontSize),
+text style inheritance, wrapper y-alignment within parents (stage 4 machinery
+reused), text-driven FIT content and compression floors. Out of scope, still
+failing loudly: pressables with a text-field view (their synthetic
+value/caret/selection elements are stage 6 — once TEXT stops failing loudly
+this needs its OWN explicit guard), ZStack/floating/scroll (stage 6).
+Newline-in-text line boxes need no solver support (see above) but a golden
+should prove wrapper-rect parity for newline text.

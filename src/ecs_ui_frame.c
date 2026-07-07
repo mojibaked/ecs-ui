@@ -530,6 +530,8 @@ const EcsUiDrawList *EcsUiFrameRun(
                 tree,
                 &(EcsUiSolverRunOptions){
                     .layout = options,
+                    .measure_text = backend->desc.measure_text,
+                    .measure_user_data = backend->desc.measure_user_data,
                     .force_divergence =
                         backend->selected_backend ==
                             ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE,

@@ -25,6 +25,8 @@ typedef struct EcsUiSolverContext {
     EcsUiSolverLayout *layouts;
     struct EcsUiSolverMetrics *metrics;
     uint32_t *scratch_indices;
+    EcsUiMeasureTextFn measure_text;
+    void *measure_user_data;
     char *error_message;
     size_t error_message_size;
     bool failed;
@@ -225,6 +227,85 @@ static float EcsUiSolverCustomHeight(const EcsUiTreeNodeSnapshot *node)
         96.0f;
 }
 
+static float EcsUiSolverRoleTextSize(EcsUiTextRole role)
+{
+    switch (role) {
+    case ECS_UI_TEXT_TITLE:
+        return 28.0f;
+    case ECS_UI_TEXT_BUTTON:
+    case ECS_UI_TEXT_LABEL:
+        return 18.0f;
+    case ECS_UI_TEXT_CAPTION:
+        return 13.0f;
+    case ECS_UI_TEXT_BODY:
+    default:
+        return 18.0f;
+    }
+}
+
+static float EcsUiSolverTextStyleSize(
+    EcsUiTextRole role,
+    EcsUiTextStyle text_style)
+{
+    switch (role) {
+    case ECS_UI_TEXT_TITLE:
+        return text_style.title_size;
+    case ECS_UI_TEXT_LABEL:
+        return text_style.label_size;
+    case ECS_UI_TEXT_BUTTON:
+        return text_style.button_size;
+    case ECS_UI_TEXT_CAPTION:
+        return text_style.caption_size;
+    case ECS_UI_TEXT_BODY:
+    default:
+        return text_style.body_size;
+    }
+}
+
+static float EcsUiSolverTextSize(
+    EcsUiTextRole role,
+    EcsUiTextStyle text_style,
+    bool has_text_style)
+{
+    const float styled_size =
+        has_text_style ? EcsUiSolverTextStyleSize(role, text_style) : 0.0f;
+    return styled_size > 0.0f ? styled_size : EcsUiSolverRoleTextSize(role);
+}
+
+static float EcsUiSolverInheritedTextSize(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (tree == NULL || index >= tree->count) {
+        return EcsUiSolverRoleTextSize(ECS_UI_TEXT_BODY);
+    }
+
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    EcsUiTextStyle text_style = {0};
+    bool has_text_style = false;
+    uint32_t current = index;
+    while (current != ECS_UI_TREE_INVALID_INDEX && current < tree->count) {
+        const EcsUiTreeNodeSnapshot *candidate = &tree->nodes[current];
+        if (candidate->has_text_style) {
+            text_style = candidate->text_style;
+            has_text_style = true;
+            break;
+        }
+        current = candidate->parent_index;
+    }
+    return EcsUiSolverTextSize(node->text.role, text_style, has_text_style);
+}
+
+static float EcsUiSolverLocalTextSize(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL ?
+        EcsUiSolverTextSize(
+            node->text.role,
+            node->text_style,
+            node->has_text_style) :
+        EcsUiSolverRoleTextSize(ECS_UI_TEXT_BODY);
+}
+
 static void EcsUiSolverArenaReset(EcsUiSolverArena *arena)
 {
     if (arena != NULL) {
@@ -307,11 +388,11 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
     for (uint32_t i = 0u; i < ctx->tree->count; i += 1u) {
         const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[i];
         char message[128] = {0};
-        if (node->kind == ECS_UI_NODE_TEXT) {
+        if (node->kind == ECS_UI_NODE_PRESSABLE && node->has_text_field_view) {
             (void)snprintf(
                 message,
                 sizeof(message),
-                "unsupported node kind %d -- stage 5",
+                "unsupported text-field view on node kind %d -- stage 6",
                 (int)node->kind);
             EcsUiSolverSetError(ctx, message);
             return false;
@@ -411,6 +492,8 @@ static float EcsUiSolverPreferredWalkHeight(
     }
 
     switch (node->kind) {
+    case ECS_UI_NODE_TEXT:
+        return EcsUiSolverLocalTextSize(node) + 8.0f;
     case ECS_UI_NODE_ICON:
         return ECS_UI_SOLVER_ICON_SIZE;
     case ECS_UI_NODE_BUTTON:
@@ -422,8 +505,6 @@ static float EcsUiSolverPreferredWalkHeight(
             return 0.0f;
         }
         return EcsUiSolverCustomHeight(node);
-    case ECS_UI_NODE_TEXT:
-        return 0.0f;
     case ECS_UI_NODE_ROOT:
     case ECS_UI_NODE_VSTACK:
     case ECS_UI_NODE_HSTACK:
@@ -514,6 +595,9 @@ static EcsUiSolverSizing EcsUiSolverWidthSizing(
     if (node->kind == ECS_UI_NODE_PRESSABLE) {
         return EcsUiSolverGrowSizing();
     }
+    if (node->kind == ECS_UI_NODE_TEXT) {
+        return EcsUiSolverGrowSizing();
+    }
     if (node->kind == ECS_UI_NODE_ICON) {
         return EcsUiSolverFixedSizing(ECS_UI_SOLVER_ICON_SIZE);
     }
@@ -561,6 +645,10 @@ static EcsUiSolverSizing EcsUiSolverHeightSizing(
     if (node->kind == ECS_UI_NODE_PRESSABLE) {
         return EcsUiSolverFixedSizing(EcsUiSolverPressableHeight(node));
     }
+    if (node->kind == ECS_UI_NODE_TEXT) {
+        return EcsUiSolverFixedSizing(
+            EcsUiSolverInheritedTextSize(tree, index) + 8.0f);
+    }
     return EcsUiSolverFixedSizing(0.0f);
 }
 
@@ -601,6 +689,111 @@ static bool EcsUiSolverAxisResizable(
         ECS_UI_SOLVER_SIZE_FIXED;
 }
 
+typedef struct EcsUiSolverTextMeasure {
+    float width;
+    float height;
+    float min_width;
+} EcsUiSolverTextMeasure;
+
+static EcsUiSize EcsUiSolverMeasureTextSlice(
+    EcsUiSolverContext *ctx,
+    const char *text,
+    int32_t length,
+    uint16_t font_size)
+{
+    if (ctx == NULL || ctx->measure_text == NULL) {
+        return (EcsUiSize){0};
+    }
+
+    const EcsUiTextMeasureSpec spec = {
+        .font_id = 0u,
+        .font_size = (float)font_size,
+        .letter_spacing = 0.0f,
+        .line_height = 0.0f,
+    };
+    return ctx->measure_text(
+        text,
+        length,
+        &spec,
+        ctx->measure_user_data);
+}
+
+static EcsUiSolverTextMeasure EcsUiSolverMeasureText(
+    EcsUiSolverContext *ctx,
+    uint32_t index)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    EcsUiSolverTextMeasure measured = {0};
+    if (ctx->measure_text == NULL) {
+        EcsUiSolverSetError(
+            ctx,
+            "native layout solver text measure callback missing");
+        return measured;
+    }
+
+    const float scale = EcsUiSolverScale(tree);
+    const uint16_t font_size =
+        EcsUiSolverU16(EcsUiSolverInheritedTextSize(tree, index) * scale);
+    const char *text = node->text.text;
+    const int32_t text_length = (int32_t)strlen(text);
+    const float space_width =
+        EcsUiSolverMeasureTextSlice(ctx, " ", 1, font_size).width;
+
+    int32_t start = 0;
+    int32_t end = 0;
+    float line_width = 0.0f;
+    float measured_width = 0.0f;
+    float measured_height = 0.0f;
+    float min_width = 0.0f;
+    while (end < text_length) {
+        const char current = text[end];
+        if (current == ' ' || current == '\n') {
+            const int32_t word_length = end - start;
+            EcsUiSize dimensions = {0};
+            if (word_length > 0) {
+                dimensions = EcsUiSolverMeasureTextSlice(
+                    ctx,
+                    &text[start],
+                    word_length,
+                    font_size);
+            }
+            min_width = EcsUiSolverMaxFloat(min_width, dimensions.width);
+            measured_height =
+                EcsUiSolverMaxFloat(measured_height, dimensions.height);
+            if (current == ' ') {
+                dimensions.width += space_width;
+                line_width += dimensions.width;
+            } else {
+                line_width += dimensions.width;
+                measured_width =
+                    EcsUiSolverMaxFloat(measured_width, line_width);
+                line_width = 0.0f;
+            }
+            start = end + 1;
+        }
+        end += 1;
+    }
+
+    if (end - start > 0) {
+        const EcsUiSize dimensions = EcsUiSolverMeasureTextSlice(
+            ctx,
+            &text[start],
+            end - start,
+            font_size);
+        line_width += dimensions.width;
+        measured_height =
+            EcsUiSolverMaxFloat(measured_height, dimensions.height);
+        min_width = EcsUiSolverMaxFloat(min_width, dimensions.width);
+    }
+
+    measured_width = EcsUiSolverMaxFloat(line_width, measured_width);
+    measured.width = measured_width / scale;
+    measured.height = measured_height / scale;
+    measured.min_width = min_width / scale;
+    return measured;
+}
+
 static void EcsUiSolverComputeBottomUp(
     EcsUiSolverContext *ctx,
     uint32_t index,
@@ -634,11 +827,20 @@ static void EcsUiSolverComputeBottomUp(
     float min_height = 0.0f;
     uint32_t visible_child_count = 0u;
 
-    if (container) {
+    if (node->kind == ECS_UI_NODE_TEXT) {
+        const EcsUiSolverTextMeasure text = EcsUiSolverMeasureText(ctx, index);
+        width = text.width;
+        height = text.height;
+        min_width = text.min_width;
+        min_height = text.height;
+    } else if (container) {
         for (uint32_t child = node->first_child;
              child != ECS_UI_TREE_INVALID_INDEX;
              child = tree->nodes[child].next_sibling) {
             EcsUiSolverComputeBottomUp(ctx, child, node_opacity);
+            if (ctx->failed) {
+                return;
+            }
             EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
             if (!child_metrics->visible) {
                 continue;
@@ -779,11 +981,20 @@ static void EcsUiSolverCompressResizable(
     const float epsilon = EcsUiSolverPhysicalEpsilon(tree);
     uint32_t active_count =
         EcsUiSolverCollectAxisChildren(ctx, parent, x_axis, false);
+    uint32_t iteration_limit =
+        active_count > 0u ? (active_count * active_count * 8u) + 8u : 0u;
 
     /* Stage 3 min dimensions equal content for supported node kinds, so this
      * path usually cannot shrink yet. Keep the loop shaped like Clay so text
      * and scroll stages inherit the same compression/dropout behavior. */
     while (free_space < -epsilon && active_count > 0u) {
+        if (iteration_limit == 0u) {
+            EcsUiSolverSetError(
+                ctx,
+                "native layout solver compression iteration limit exceeded");
+            return;
+        }
+        iteration_limit -= 1u;
         float largest = 0.0f;
         float second_largest = 0.0f;
         float amount = free_space;
@@ -878,6 +1089,9 @@ static void EcsUiSolverSolveAxisTopDown(
             EcsUiSolverWaterFillGrow(ctx, index, x_axis, free_space);
         } else if (free_space < 0.0f) {
             EcsUiSolverCompressResizable(ctx, index, x_axis, free_space);
+            if (ctx->failed) {
+                return;
+            }
         }
     } else {
         const float max_size = parent_size - parent_padding;
@@ -908,6 +1122,38 @@ static void EcsUiSolverSolveAxisTopDown(
          child != ECS_UI_TREE_INVALID_INDEX;
          child = tree->nodes[child].next_sibling) {
         EcsUiSolverSolveAxisTopDown(ctx, child, x_axis);
+        if (ctx->failed) {
+            return;
+        }
+    }
+}
+
+static void EcsUiSolverApplyRootContainer(
+    EcsUiSolverContext *ctx,
+    const EcsUiFrameLayoutOptions *layout)
+{
+    if (ctx == NULL || ctx->tree == NULL || ctx->tree->count == 0u ||
+            !ctx->metrics[0].visible) {
+        return;
+    }
+
+    EcsUiSolverMetrics *root = &ctx->metrics[0];
+    const float viewport_width = EcsUiSolverLogicalRootWidth(ctx->tree, layout);
+    const float viewport_height = EcsUiSolverLogicalRootHeight(ctx->tree, layout);
+
+    if (root->width_sizing.kind == ECS_UI_SOLVER_SIZE_GROW) {
+        root->width = EcsUiSolverMaxFloat(root->min_width, viewport_width);
+    } else if (root->width_sizing.kind == ECS_UI_SOLVER_SIZE_FIT &&
+            root->width > viewport_width) {
+        root->width = EcsUiSolverMaxFloat(root->min_width, viewport_width);
+    }
+
+    if (root->height_sizing.kind == ECS_UI_SOLVER_SIZE_GROW) {
+        root->height = EcsUiSolverMaxFloat(root->min_height, viewport_height);
+    } else if (root->height_sizing.kind == ECS_UI_SOLVER_SIZE_FIT) {
+        root->height = EcsUiSolverMaxFloat(
+            root->min_height,
+            EcsUiSolverMinFloat(root->height, viewport_height));
     }
 }
 
@@ -1160,6 +1406,9 @@ bool EcsUiSolverRun(
     EcsUiSolverContext ctx = {
         .tree = tree,
         .arena = arena,
+        .measure_text = options != NULL ? options->measure_text : NULL,
+        .measure_user_data =
+            options != NULL ? options->measure_user_data : NULL,
         .error_message = options != NULL ? options->error_message : NULL,
         .error_message_size =
             options != NULL ? options->error_message_size : 0u,
@@ -1202,20 +1451,18 @@ bool EcsUiSolverRun(
         options != NULL ? options->layout : NULL;
     EcsUiSolverClearSnapshotLayout(tree);
     EcsUiSolverComputeBottomUp(&ctx, 0u, 1.0f);
-    if (ctx.metrics[0].visible) {
-        if (ctx.metrics[0].width_sizing.kind == ECS_UI_SOLVER_SIZE_GROW) {
-            ctx.metrics[0].width = EcsUiSolverMaxFloat(
-                ctx.metrics[0].width,
-                EcsUiSolverLogicalRootWidth(tree, layout));
-        }
-        if (ctx.metrics[0].height_sizing.kind == ECS_UI_SOLVER_SIZE_GROW) {
-            ctx.metrics[0].height = EcsUiSolverMaxFloat(
-                ctx.metrics[0].height,
-                EcsUiSolverLogicalRootHeight(tree, layout));
-        }
+    if (ctx.failed) {
+        return false;
     }
+    EcsUiSolverApplyRootContainer(&ctx, layout);
     EcsUiSolverSolveAxisTopDown(&ctx, 0u, true);
+    if (ctx.failed) {
+        return false;
+    }
     EcsUiSolverSolveAxisTopDown(&ctx, 0u, false);
+    if (ctx.failed) {
+        return false;
+    }
     EcsUiSolverPlaceNode(
         &ctx,
         0u,

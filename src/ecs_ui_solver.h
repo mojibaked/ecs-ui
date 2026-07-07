@@ -14,6 +14,8 @@ typedef struct EcsUiSolverArena {
 
 typedef struct EcsUiSolverRunOptions {
     const EcsUiFrameLayoutOptions *layout;
+    EcsUiMeasureTextFn measure_text;
+    void *measure_user_data;
     bool force_divergence;
     bool force_deep_divergence;
     char *error_message;

@@ -77,7 +77,7 @@ static EcsUiSize TestMeasureText(
     const float font_size =
         spec != NULL && spec->font_size > 0.0f ? spec->font_size : 16.0f;
     return (EcsUiSize){
-        .width = (float)safe_length * font_size * 0.5f,
+        .width = (float)safe_length * font_size * 0.5f + 3.0f,
         .height = font_size + 4.0f,
     };
 }
@@ -516,19 +516,35 @@ static int BuildRootPreferredBelowViewport(
     return Require(EcsUiBuilderOk(&builder), "root preferred builder failed");
 }
 
-static int BuildUnsupportedText(
+static int BuildUnsupportedTextFieldView(
     ecs_world_t *world,
     ecs_entity_t root)
 {
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
-    (void)EcsUiAddText(
+    ecs_entity_t pressable = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "UnsupportedTextField",
+        });
+    ecs_entity_t value = EcsUiAddText(
         &builder,
         (EcsUiTextDesc){
-            .id = "UnsupportedText",
-            .text = "stage 5",
+            .id = "UnsupportedTextFieldValue",
+            .text = "field value",
         });
+    EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
-    return Require(EcsUiBuilderOk(&builder), "unsupported text builder failed");
+    ecs_set(
+        world,
+        pressable,
+        EcsUiTextFieldView,
+        {
+            .value_node = value,
+            .focused = true,
+        });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "unsupported text field builder failed");
 }
 
 static int BuildUnsupportedZStack(
@@ -1856,6 +1872,737 @@ static int BuildDepthRootMapsVertical(
     return Require(EcsUiBuilderOk(&builder), "depth root builder failed");
 }
 
+static int BuildTextVStackBasic(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextBasicColumn",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 180.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextSingleWord",
+            .text = "single",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextMultiWord",
+            .text = "two words here",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "text basic builder failed");
+}
+
+static int BuildTextFitWidthChain(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFitOuter",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFitMiddle",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFitMeasuredWords",
+            .text = "alpha beta gamma",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextFitSidecar",
+            .kind = "parity.text.fit",
+            .preferred_width = 11.5f,
+            .preferred_height = 9.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "text fit builder failed");
+}
+
+static int BuildTextFractionalFontSize(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FractionalFontFitOuter",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FractionalFontFitInner",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    ecs_entity_t text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "FractionalFontText",
+            .text = "fractional type",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "FractionalFontSidecar",
+            .kind = "parity.text.fractional",
+            .preferred_width = 8.5f,
+            .preferred_height = 8.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        text,
+        EcsUiTextStyle,
+        {
+            .body_size = 13.3f,
+        });
+    return Require(EcsUiBuilderOk(&builder), "fractional text builder failed");
+}
+
+static int BuildTextStyleInheritanceRoles(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t styled = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "StyledTextAncestor",
+            .gap = 2.25f,
+            .padding = 2.25f,
+            .preferred_width = 210.5f,
+            .preferred_height = 74.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "InheritedBodyText",
+            .text = "inherited body size",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DefaultTitleText",
+            .text = "title",
+            .role = ECS_UI_TEXT_TITLE,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DefaultBodyText",
+            .text = "body",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DefaultLabelText",
+            .text = "label",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DefaultButtonText",
+            .text = "button",
+            .role = ECS_UI_TEXT_BUTTON,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DefaultCaptionText",
+            .text = "caption",
+            .role = ECS_UI_TEXT_CAPTION,
+        });
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        styled,
+        EcsUiTextStyle,
+        {
+            .body_size = 22.5f,
+        });
+    return Require(EcsUiBuilderOk(&builder), "text style builder failed");
+}
+
+static int BuildTextLayoutAlignY(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextLayoutBox",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 190.5f,
+            .preferred_height = 92.5f,
+        });
+    ecs_entity_t start = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextAlignYStart",
+            .text = "top aligned inner text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    ecs_entity_t end = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextAlignYEnd",
+            .text = "bottom aligned inner text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        start,
+        EcsUiTextLayout,
+        {
+            .align_y = ECS_UI_ALIGN_START,
+        });
+    ecs_set(
+        world,
+        end,
+        EcsUiTextLayout,
+        {
+            .align_y = ECS_UI_ALIGN_END,
+        });
+    return Require(EcsUiBuilderOk(&builder), "text layout builder failed");
+}
+
+static int BuildTextCompressionDropout(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextCompressDropoutRow",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 220.5f,
+            .preferred_height = 48.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextCompressLong",
+            .text = "longestword aa aa aa",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextCompressMedium",
+            .text = "mediumword bb",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    /*
+     * This FIT stack starts at its minDimensions floor. Keeping it in Clay's
+     * resizable buffer changes the free/active_count STEP SIZE before any
+     * dropout, but in Stage 5 scope that is endpoint-invariant (at-min
+     * children absorb nothing, and compression conserves total shrinkage
+     * among the movable children), so this golden does NOT pin buffer
+     * membership or divisor semantics. Likewise an order-independent
+     * widthToAdd recompute has not produced a distinct endpoint because
+     * every non-text resizable sibling already starts at its min floor;
+     * later stages with additional min<size node kinds should add a
+     * dedicated order-sensitive golden.
+     */
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextCompressAtMinStack",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextCompressAtMinLeaf",
+            .kind = "parity.text.compress",
+            .preferred_width = 36.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextCompressFitStack",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextCompressFitLeaf",
+            .kind = "parity.text.compress",
+            .preferred_width = 21.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "text compression builder failed");
+}
+
+static int BuildTextCompressionBetween(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextCompressBetweenRow",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 245.5f,
+            .preferred_height = 48.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextCompressBetweenLargest",
+            .text = "largestword aa aa",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextCompressBetweenSecond",
+            .text = "secondword bb",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "text between builder failed");
+}
+
+static int BuildTextVerticalCompressionFixedHeight(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextVerticalCompressColumn",
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .preferred_width = 180.5f,
+            .preferred_height = 42.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextVerticalCompressA",
+            .text = "fixed height one",
+            .role = ECS_UI_TEXT_TITLE,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextVerticalCompressB",
+            .text = "fixed height two",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "text vertical builder failed");
+}
+
+static int BuildTextNewlineWrapper(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "NewlineText",
+            .text = "line one\nline two",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "newline text builder failed");
+}
+
+static int BuildButtonTextInterplay(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = "TextButton",
+            .preferred_width = 132.5f,
+            .preferred_height = 50.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextButtonLabel",
+            .text = "button words",
+            .role = ECS_UI_TEXT_BUTTON,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "button text builder failed");
+}
+
+static int BuildRootGrowTextOverflowViewport(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "RootGrowWideTitle",
+            .text = "wide words that exceed viewport width easily",
+            .role = ECS_UI_TEXT_TITLE,
+        });
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "root grow text builder failed");
+}
+
+static int BuildRootFitTextOverflowViewport(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "RootFitWideTitle",
+            .text = "wide words that exceed viewport width easily",
+            .role = ECS_UI_TEXT_TITLE,
+        });
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "root fit text builder failed");
+}
+
+static int BuildRootFitTextNoOverflow(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "RootFitShortText",
+            .text = "short",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "root fit short text builder failed");
+}
+
+static int BuildTextPreferredWalkLocalStyle(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t styled = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PreferredWalkStyledAncestor",
+            .padding = 2.25f,
+            .preferred_width = 160.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PreferredWalkInheritedText",
+            .text = "inherits only when emitted",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        styled,
+        EcsUiTextStyle,
+        {
+            .body_size = 34.5f,
+        });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "preferred walk local style builder failed");
+}
+
+static int BuildTextMeasurementEdgeCases(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextConsecutiveSpacesRow",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextConsecutiveSpaces",
+            .text = "alpha  beta   gamma",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextLeadingTrailingSpacesRow",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextLeadingTrailingSpaces",
+            .text = "  padded text  ",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextSingleSpaceRow",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextSingleSpace",
+            .text = " ",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextEmptyRow",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextEmpty",
+            .text = "",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "text edge builder failed");
+}
+
 static int BuildVerticalGrowDistribution(
     ecs_world_t *world,
     ecs_entity_t root)
@@ -2202,9 +2949,9 @@ static int TestUnsupportedStageFailures(TestFrameErrors *errors)
     int result = 0;
     result |= RunUnsupportedCase(
         errors,
-        "unsupported_text",
-        BuildUnsupportedText,
-        "unsupported node kind 6 -- stage 5");
+        "unsupported_text_field_view",
+        BuildUnsupportedTextFieldView,
+        "unsupported text-field view on node kind 9 -- stage 6");
     result |= RunUnsupportedCase(
         errors,
         "unsupported_zstack",
@@ -2352,6 +3099,66 @@ int main(void)
         {
             .name = "depth_root_maps_vertical",
             .build = BuildDepthRootMapsVertical,
+        },
+        {
+            .name = "text_vstack_basic",
+            .build = BuildTextVStackBasic,
+        },
+        {
+            .name = "text_fit_width_chain",
+            .build = BuildTextFitWidthChain,
+        },
+        {
+            .name = "text_fractional_font_size",
+            .build = BuildTextFractionalFontSize,
+        },
+        {
+            .name = "text_style_inheritance_roles",
+            .build = BuildTextStyleInheritanceRoles,
+        },
+        {
+            .name = "text_layout_align_y",
+            .build = BuildTextLayoutAlignY,
+        },
+        {
+            .name = "text_compression_dropout",
+            .build = BuildTextCompressionDropout,
+        },
+        {
+            .name = "text_compression_between",
+            .build = BuildTextCompressionBetween,
+        },
+        {
+            .name = "text_vertical_compression_fixed_height",
+            .build = BuildTextVerticalCompressionFixedHeight,
+        },
+        {
+            .name = "text_newline_wrapper",
+            .build = BuildTextNewlineWrapper,
+        },
+        {
+            .name = "button_text_interplay",
+            .build = BuildButtonTextInterplay,
+        },
+        {
+            .name = "root_grow_text_overflow_viewport",
+            .build = BuildRootGrowTextOverflowViewport,
+        },
+        {
+            .name = "root_fit_text_overflow_viewport",
+            .build = BuildRootFitTextOverflowViewport,
+        },
+        {
+            .name = "root_fit_text_no_overflow",
+            .build = BuildRootFitTextNoOverflow,
+        },
+        {
+            .name = "text_preferred_walk_local_style",
+            .build = BuildTextPreferredWalkLocalStyle,
+        },
+        {
+            .name = "text_measurement_edge_cases",
+            .build = BuildTextMeasurementEdgeCases,
         },
         {
             .name = "vertical_grow_distribution",
