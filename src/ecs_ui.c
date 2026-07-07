@@ -36,6 +36,7 @@ ECS_TAG_DECLARE(EcsUiUsesStyle);
 ECS_TAG_DECLARE(EcsUiHovered);
 ECS_TAG_DECLARE(EcsUiHoverWithin);
 ECS_TAG_DECLARE(EcsUiRevealedByHover);
+ECS_TAG_DECLARE(EcsUiScrollSubscribed);
 ECS_TAG_DECLARE(EcsUiThemeTag);
 ECS_TAG_DECLARE(EcsUiActiveTheme);
 ECS_TAG_DECLARE(EcsUiThemeStyle);
@@ -193,6 +194,7 @@ static void EcsUiClearKindComponents(ecs_world_t *world, ecs_entity_t entity)
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiBoxStyle));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiNineSliceStyle));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiScrollView));
+    (void)EcsUiRemoveIdIfPresent(world, entity, EcsUiScrollSubscribed);
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiButton));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiPressable));
     (void)EcsUiRemoveIdIfPresent(world, entity, ecs_id(EcsUiText));
@@ -711,6 +713,23 @@ static bool EcsUiSetStyleTokenForNode(
     return true;
 }
 
+static bool EcsUiSetScrollSubscribedForNode(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    bool subscribed)
+{
+    if (world == NULL || entity == 0 || EcsUiScrollSubscribed == 0) {
+        return false;
+    }
+    if (subscribed) {
+        if (!ecs_has_id(world, entity, EcsUiScrollSubscribed)) {
+            ecs_add_id(world, entity, EcsUiScrollSubscribed);
+        }
+        return true;
+    }
+    return EcsUiRemoveIdIfPresent(world, entity, EcsUiScrollSubscribed);
+}
+
 static ecs_entity_t EcsUiBeginStack(
     EcsUiBuilder *builder,
     EcsUiStackDesc desc,
@@ -782,6 +801,12 @@ static ecs_entity_t EcsUiBeginStack(
             entity,
             ecs_id(EcsUiNineSliceStyle));
     }
+    if (!EcsUiSetScrollSubscribedForNode(
+            builder->world,
+            entity,
+            desc.scroll_subscribed)) {
+        builder->failed = true;
+    }
     EcsUiPushParent(builder, entity);
     return entity;
 }
@@ -830,6 +855,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_TAG_DEFINE(world, EcsUiHovered);
     ECS_TAG_DEFINE(world, EcsUiHoverWithin);
     ECS_TAG_DEFINE(world, EcsUiRevealedByHover);
+    ECS_TAG_DEFINE(world, EcsUiScrollSubscribed);
     ECS_TAG_DEFINE(world, EcsUiThemeTag);
     ECS_TAG_DEFINE(world, EcsUiActiveTheme);
     ECS_TAG_DEFINE(world, EcsUiThemeStyle);
@@ -1703,6 +1729,12 @@ ecs_entity_t EcsUiBeginButton(EcsUiBuilder *builder, EcsUiButtonDesc desc)
             desc.style_token)) {
         builder->failed = true;
     }
+    if (!EcsUiSetScrollSubscribedForNode(
+            builder->world,
+            entity,
+            desc.scroll_subscribed)) {
+        builder->failed = true;
+    }
     EcsUiPushParent(builder, entity);
     return entity;
 }
@@ -1743,6 +1775,12 @@ ecs_entity_t EcsUiBeginPressable(
             builder->world,
             entity,
             desc.style_token)) {
+        builder->failed = true;
+    }
+    if (!EcsUiSetScrollSubscribedForNode(
+            builder->world,
+            entity,
+            desc.scroll_subscribed)) {
         builder->failed = true;
     }
     EcsUiPushParent(builder, entity);
@@ -1871,6 +1909,12 @@ ecs_entity_t EcsUiAddCustom(EcsUiBuilder *builder, EcsUiCustomDesc desc)
         desc.on_click,
         desc.payload,
         false);
+    if (!EcsUiSetScrollSubscribedForNode(
+            builder->world,
+            entity,
+            desc.scroll_subscribed)) {
+        builder->failed = true;
+    }
     return entity;
 }
 
@@ -2002,6 +2046,8 @@ static uint32_t EcsUiReadNode(
         snapshot->scroll_view = *scroll_view;
         snapshot->has_scroll_view = true;
     }
+    snapshot->scroll_subscribed = EcsUiScrollSubscribed != 0 &&
+        ecs_has_id(world, entity, EcsUiScrollSubscribed);
 
     const EcsUiTextFieldView *text_field_view =
         ecs_get(world, entity, EcsUiTextFieldView);

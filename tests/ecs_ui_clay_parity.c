@@ -549,6 +549,30 @@ static void CollectTreeFrameEvents(
     }
 }
 
+static Clay_String TestClayString(const char *text)
+{
+    return (Clay_String){
+        .isStaticallyAllocated = false,
+        .length = text != NULL ? (int32_t)strlen(text) : 0,
+        .chars = text != NULL ? text : "",
+    };
+}
+
+static Clay_ElementId TestClayNodeElementId(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    char id[ECS_UI_ID_MAX * 2u] = {0};
+    const char *authored_id =
+        node != NULL && node->id[0] != '\0' ? node->id : "Node";
+    (void)snprintf(
+        id,
+        sizeof(id),
+        "%s_%llu",
+        authored_id,
+        (unsigned long long)(node != NULL ? node->entity : 0));
+    return Clay_GetElementId(TestClayString(id));
+}
+
 static ecs_world_t *CreateWorld(void)
 {
     ecs_world_t *world = ecs_init();
@@ -1819,6 +1843,612 @@ static int TestScrollViewEmitsScissorCommands(void)
     return result;
 }
 
+static void AddScrollRows(
+    EcsUiBuilder *builder,
+    const char *prefix,
+    int count)
+{
+    for (int i = 0; i < count; i += 1) {
+        char id[ECS_UI_ID_MAX];
+        (void)snprintf(id, sizeof(id), "%s%d", prefix, i);
+        (void)EcsUiAddCustom(
+            builder,
+            (EcsUiCustomDesc){
+                .id = id,
+                .kind = "scroll-row",
+                .preferred_width = 120.0f,
+                .preferred_height = 20.0f,
+            });
+    }
+}
+
+static int TestWheelOverScrollContainerScrollsDirectly(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scroll routing world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "WheelScrollRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "WheelScroll",
+                .preferred_width = 120.0f,
+                .preferred_height = 40.0f,
+            },
+        });
+    AddScrollRows(&builder, "WheelScrollRow", 12);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "wheel scroll builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "wheel scroll read failed");
+    const EcsUiTreeNodeSnapshot *scroll = FindTreeNode(&tree, "WheelScroll");
+    result |= Require(scroll != NULL, "wheel scroll node missing");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){0},
+        &options,
+        &state,
+        &events,
+        NULL);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 10.0f,
+            .y = 10.0f,
+            .scroll_y = -1.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "scroll container wheel should not emit a widget event");
+    result |= Require(frame.scroll_consumed, "scroll container wheel should consume");
+
+    if (scroll != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
+        result |= Require(data.found, "scroll container data missing");
+        if (data.found && data.scrollPosition != NULL) {
+            result |= RequireNear(
+                data.scrollPosition->y,
+                -10.0f,
+                0.001f,
+                "scroll container should move by wheel delta");
+        }
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int RequireScrollSubscribedEventCase(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create subscribed scroll world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "SubscribedScrollRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "SubscribedScrollTarget",
+            .kind = "target",
+            .preferred_width = 100.0f,
+            .preferred_height = 60.0f,
+            .scroll_subscribed = true,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "subscribed scroll builder failed");
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "subscribed scroll set scale failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &tree),
+        "subscribed scroll read failed");
+    const EcsUiTreeNodeSnapshot *snapshot =
+        FindTreeNode(&tree, "SubscribedScrollTarget");
+    result |= Require(
+        snapshot != NULL && snapshot->scroll_subscribed,
+        "subscribed scroll snapshot missing flag");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = {
+        .bounds = {20.0f, 30.0f, 240.0f, 120.0f},
+    };
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 60.0f,
+            .y = 70.0f,
+            .scroll_x = 2.0f,
+            .scroll_y = -3.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "subscribed scroll should emit one scrolled event");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_SCROLLED,
+        target,
+        "SubscribedScrollTarget");
+    result |= Require(
+        !frame.scroll_consumed,
+        "subscribed scroll should not mark direct scroll mutation");
+    if (events.count > 0u) {
+        result |= RequireNear(
+            events.events[0u].x,
+            60.0f / scale,
+            0.001f,
+            "subscribed scroll x should be logical");
+        result |= RequireNear(
+            events.events[0u].y,
+            70.0f / scale,
+            0.001f,
+            "subscribed scroll y should be logical");
+        result |= RequireNear(
+            events.events[0u].scroll_x,
+            2.0f,
+            0.001f,
+            "subscribed scroll x delta mismatch");
+        result |= RequireNear(
+            events.events[0u].scroll_y,
+            -3.0f,
+            0.001f,
+            "subscribed scroll y delta mismatch");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestWheelOverScrollSubscribedNodeEmitsScrolled(void)
+{
+    int result = 0;
+    result |= RequireScrollSubscribedEventCase(1.0f);
+    result |= RequireScrollSubscribedEventCase(2.0f);
+    return result;
+}
+
+static int TestWheelCaptureScrimBlocksBehind(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create scroll scrim world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "ScrollScrimRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ScrollScrimStack",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ScrollScrimBehind",
+            .kind = "behind",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+            .scroll_subscribed = true,
+        });
+    ecs_entity_t scrim = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ScrollScrim",
+            .kind = "scrim",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "scroll scrim builder failed");
+    ecs_set(
+        world,
+        scrim,
+        EcsUiHitTest,
+        {.mode = ECS_UI_HIT_TEST_CAPTURE});
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "scroll scrim read failed");
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){0},
+        &options,
+        &state,
+        &events,
+        NULL);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .scroll_y = -1.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "capture scrim should block subscribed scroll behind");
+    result |= Require(!frame.scroll_consumed, "capture scrim should drop wheel");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestWheelBothCapabilityPrefersScrollContainer(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create both-capability world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "WheelBothRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "WheelBothScroll",
+                .preferred_width = 120.0f,
+                .preferred_height = 40.0f,
+                .scroll_subscribed = true,
+            },
+        });
+    AddScrollRows(&builder, "WheelBothRow", 12);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "both-capability builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "both-capability read failed");
+    const EcsUiTreeNodeSnapshot *scroll = FindTreeNode(&tree, "WheelBothScroll");
+    result |= Require(
+        scroll != NULL && scroll->scroll_subscribed,
+        "both-capability scroll snapshot missing flag");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){0},
+        &options,
+        &state,
+        &events,
+        NULL);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 10.0f,
+            .y = 10.0f,
+            .scroll_y = -1.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "both-capability scroll should prefer container path");
+    result |= Require(frame.scroll_consumed, "both-capability scroll should consume");
+    if (scroll != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
+        result |= Require(data.found, "both-capability scroll data missing");
+        if (data.found && data.scrollPosition != NULL) {
+            result |= RequireNear(
+                data.scrollPosition->y,
+                -10.0f,
+                0.001f,
+                "both-capability container should scroll");
+        }
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestHorizontalWheelOverVerticalContainerDrops(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create horizontal drop world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "WheelHorizontalDropRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "WheelHorizontalDropStack",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "WheelHorizontalDropBehind",
+            .kind = "behind",
+            .preferred_width = 160.0f,
+            .preferred_height = 80.0f,
+            .scroll_subscribed = true,
+        });
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "WheelHorizontalDropScroll",
+                .preferred_width = 160.0f,
+                .preferred_height = 40.0f,
+            },
+        });
+    AddScrollRows(&builder, "WheelHorizontalDropRow", 12);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "horizontal drop builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "horizontal drop read failed");
+    const EcsUiTreeNodeSnapshot *scroll =
+        FindTreeNode(&tree, "WheelHorizontalDropScroll");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 10.0f,
+            .y = 10.0f,
+            .scroll_x = 1.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "horizontal wheel over vertical container should not fall through");
+    result |= Require(
+        !frame.scroll_consumed,
+        "horizontal wheel over vertical-only container should drop");
+    if (scroll != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
+        result |= Require(data.found, "horizontal drop scroll data missing");
+        if (data.found && data.scrollPosition != NULL) {
+            result |= RequireNear(
+                data.scrollPosition->x,
+                0.0f,
+                0.001f,
+                "vertical container x scroll should remain unchanged");
+            result |= RequireNear(
+                data.scrollPosition->y,
+                0.0f,
+                0.001f,
+                "vertical container y scroll should remain unchanged");
+        }
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestBlockingScrollContainerScrollsItself(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create blocking scroll world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "BlockingScrollRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t scroll_entity = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "BlockingScroll",
+                .preferred_width = 120.0f,
+                .preferred_height = 40.0f,
+            },
+        });
+    AddScrollRows(&builder, "BlockingScrollRow", 12);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "blocking scroll builder failed");
+    ecs_set(
+        world,
+        scroll_entity,
+        EcsUiHitTest,
+        {.mode = ECS_UI_HIT_TEST_CAPTURE});
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "blocking scroll read failed");
+    const EcsUiTreeNodeSnapshot *scroll = FindTreeNode(&tree, "BlockingScroll");
+
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){0},
+        &options,
+        &state,
+        &events,
+        NULL);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 10.0f,
+            .y = 10.0f,
+            .scroll_y = -1.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        0u,
+        "blocking scroll container should not emit subscriber event");
+    result |= Require(
+        frame.scroll_consumed,
+        "blocking scroll container should mutate its own scroll");
+    if (scroll != NULL) {
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(TestClayNodeElementId(scroll));
+        result |= Require(data.found, "blocking scroll data missing");
+        if (data.found && data.scrollPosition != NULL) {
+            result |= RequireNear(
+                data.scrollPosition->y,
+                -10.0f,
+                0.001f,
+                "blocking scroll container should scroll itself");
+        }
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestDualCapabilityUnconsumedAxisEmitsScrolled(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create dual-axis world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "DualAxisRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t scroll_entity = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "DualAxisScroll",
+                .preferred_width = 120.0f,
+                .preferred_height = 40.0f,
+                .scroll_subscribed = true,
+            },
+        });
+    AddScrollRows(&builder, "DualAxisRow", 12);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "dual-axis builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "dual-axis read failed");
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionFrame frame = {0};
+    EcsUiClayLayoutOptions options = LayoutOptions(320.0f, 220.0f);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){0},
+        &options,
+        &state,
+        &events,
+        NULL);
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 10.0f,
+            .y = 10.0f,
+            .scroll_x = 1.0f,
+        },
+        &options,
+        &state,
+        &events,
+        &frame);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "dual-capability unconsumed axis should emit scrolled");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_SCROLLED,
+        scroll_entity,
+        "DualAxisScroll");
+    result |= Require(
+        !frame.scroll_consumed,
+        "unconsumed dual axis should not mutate direct scroll");
+    if (events.count > 0u) {
+        result |= RequireNear(
+            events.events[0u].scroll_x,
+            1.0f,
+            0.001f,
+            "dual-capability scroll_x mismatch");
+        result |= RequireNear(
+            events.events[0u].scroll_y,
+            0.0f,
+            0.001f,
+            "dual-capability scroll_y should drop consumed axes only");
+    }
+
+    ecs_fini(world);
+    return result;
+}
+
 static int TestTextStyleInheritanceEmitsClayForegroundColor(void)
 {
     int result = 0;
@@ -2975,6 +3605,145 @@ static int TestPointerCaptureLifecycle(void)
     result |= RequireEvent(&events, 0u, ECS_UI_EVENT_DRAG_ENDED, target, "DragTarget");
     result |= RequireEvent(&events, 1u, ECS_UI_EVENT_CLICKED, target, "DragTarget");
     result |= Require(!state.capture.active, "missed release should clear pointer capture");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestMiddlePointerCaptureTargetsPressedNode(void)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create middle capture world");
+    }
+
+    ecs_entity_t left_action = CreateAction(world, "MiddleLeftAction");
+    ecs_entity_t right_action = CreateAction(world, "MiddleRightAction");
+    ecs_entity_t root = EcsUiRootEntity(world, "MiddleCaptureRoot");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "MiddleCaptureRow",
+            .preferred_width = 200.0f,
+            .preferred_height = 80.0f,
+        });
+    ecs_entity_t left = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "MiddleLeft",
+            .kind = "target",
+            .preferred_width = 100.0f,
+            .preferred_height = 80.0f,
+            .on_click = left_action,
+        });
+    ecs_entity_t right = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "MiddleRight",
+            .kind = "target",
+            .preferred_width = 100.0f,
+            .preferred_height = 80.0f,
+            .on_click = right_action,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "middle capture builder failed");
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "middle capture read failed");
+    EcsUiClayLayoutOptions options = LayoutOptions(200.0f, 100.0f);
+    EcsUiEventList events = {0};
+    EcsUiClayInteractionState state = {0};
+    EcsUiClayInteractionStateInit(&state);
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 20.0f,
+            .y = 20.0f,
+            .time = 20.0,
+            .middle_down = true,
+            .middle_pressed = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        2u,
+        "middle press should emit hover and drag started");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_HOVERED,
+        left,
+        "MiddleLeft");
+    result |= RequireEvent(
+        &events,
+        1u,
+        ECS_UI_EVENT_DRAG_STARTED,
+        left,
+        "MiddleLeft");
+    result |= Require(
+        events.count > 1u &&
+            events.events[1u].button == ECS_UI_POINTER_BUTTON_MIDDLE,
+        "middle drag started should carry middle button");
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 140.0f,
+            .y = 20.0f,
+            .time = 20.1,
+            .middle_down = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "middle drag should stay captured");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_DRAGGED,
+        left,
+        "MiddleLeft");
+    if (events.count > 0u && events.events[0u].node == right) {
+        result |= Require(false, "middle drag should not retarget under pointer");
+    }
+    result |= Require(
+        events.count > 0u &&
+            events.events[0u].button == ECS_UI_POINTER_BUTTON_MIDDLE,
+        "middle dragged should carry middle button");
+
+    CollectTreeFrameEvents(
+        &tree,
+        (EcsUiClayPointerState){
+            .x = 140.0f,
+            .y = 20.0f,
+            .time = 20.2,
+            .middle_released = true,
+        },
+        &options,
+        &state,
+        &events,
+        NULL);
+    result |= RequireEventCount(
+        &events,
+        1u,
+        "middle release should end drag without click");
+    result |= RequireEvent(
+        &events,
+        0u,
+        ECS_UI_EVENT_DRAG_ENDED,
+        left,
+        "MiddleLeft");
 
     ecs_fini(world);
     return result;
@@ -4908,6 +5677,13 @@ int main(void)
     result |= TestScaledPointerEventsAreLogical();
     result |= TestDuplicateAuthoredIdsDoNotCollide();
     result |= TestScrollViewEmitsScissorCommands();
+    result |= TestWheelOverScrollContainerScrollsDirectly();
+    result |= TestWheelOverScrollSubscribedNodeEmitsScrolled();
+    result |= TestWheelCaptureScrimBlocksBehind();
+    result |= TestWheelBothCapabilityPrefersScrollContainer();
+    result |= TestHorizontalWheelOverVerticalContainerDrops();
+    result |= TestBlockingScrollContainerScrollsItself();
+    result |= TestDualCapabilityUnconsumedAxisEmitsScrolled();
     result |= TestTextStyleInheritanceEmitsClayForegroundColor();
     result |= TestIconEmitsCustomCommand();
     result |= TestVisualOpacitySkipsHitTesting();
@@ -4917,6 +5693,7 @@ int main(void)
     result |= TestActionPayloadFlowsToPointerEvents();
     result |= TestInteractiveStackEmitsSecondaryPress();
     result |= TestPointerCaptureLifecycle();
+    result |= TestMiddlePointerCaptureTargetsPressedNode();
     result |= TestPointerCaptureMissingTargetFallsThrough();
     result |= TestOverlappingRetainedTreesRouteTopmost();
     result |= TestLayoutOptionsCapturePointerBlocksEarlierTree();

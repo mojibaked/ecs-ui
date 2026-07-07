@@ -910,6 +910,150 @@ static float EcsUiClayPreferredHeight(
     }
 }
 
+static float EcsUiClayPreferredWidth(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const float padding_left = EcsUiClayStackPaddingLeft(node);
+    const float padding_right = EcsUiClayStackPaddingRight(node);
+    const float gap = EcsUiClayClampPositive(node->stack.gap);
+
+    if (EcsUiClayNodeIsStack(node) &&
+        node->stack.width_sizing == ECS_UI_SIZE_AUTO &&
+        node->stack.preferred_width > 0.0f) {
+        return EcsUiClayScaled(node->stack.preferred_width);
+    }
+
+    switch (node->kind) {
+    case ECS_UI_NODE_ICON:
+        return EcsUiClayScaled(ECS_UI_CLAY_ICON_SIZE);
+    case ECS_UI_NODE_BUTTON:
+        return node->button.preferred_width > 0.0f ?
+            EcsUiClayScaled(node->button.preferred_width) :
+            0.0f;
+    case ECS_UI_NODE_CUSTOM:
+        if (node->custom.width_sizing == ECS_UI_SIZE_GROW) {
+            return 0.0f;
+        }
+        return node->custom.preferred_width > 0.0f ?
+            EcsUiClayScaled(node->custom.preferred_width) :
+            0.0f;
+    case ECS_UI_NODE_HSTACK: {
+        float width = EcsUiClayScaled(padding_left + padding_right);
+        uint32_t child_count = 0u;
+        uint32_t child = node->first_child;
+        while (child != ECS_UI_TREE_INVALID_INDEX) {
+            if (child_count > 0u) {
+                width += EcsUiClayScaled(gap);
+            }
+            width += EcsUiClayPreferredWidth(tree, child);
+            child_count += 1u;
+            child = tree->nodes[child].next_sibling;
+        }
+        return width;
+    }
+    case ECS_UI_NODE_ROOT:
+    case ECS_UI_NODE_VSTACK:
+    case ECS_UI_NODE_ZSTACK: {
+        float width = EcsUiClayScaled(padding_left + padding_right);
+        uint32_t child = node->first_child;
+        while (child != ECS_UI_TREE_INVALID_INDEX) {
+            width = EcsUiClayMaxFloat(
+                width,
+                EcsUiClayScaled(padding_left + padding_right) +
+                    EcsUiClayPreferredWidth(tree, child));
+            child = tree->nodes[child].next_sibling;
+        }
+        return width;
+    }
+    case ECS_UI_NODE_TEXT:
+    case ECS_UI_NODE_PRESSABLE:
+    case ECS_UI_NODE_NONE:
+    default:
+        return 0.0f;
+    }
+}
+
+static float EcsUiClayStackContentWidth(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const float padding_left = EcsUiClayStackPaddingLeft(node);
+    const float padding_right = EcsUiClayStackPaddingRight(node);
+    const float gap = EcsUiClayClampPositive(node->stack.gap);
+    float width = EcsUiClayScaled(padding_left + padding_right);
+    uint32_t child_count = 0u;
+    uint32_t child = node->first_child;
+    if (node->stack.axis == ECS_UI_AXIS_HORIZONTAL) {
+        while (child != ECS_UI_TREE_INVALID_INDEX) {
+            if (child_count > 0u) {
+                width += EcsUiClayScaled(gap);
+            }
+            width += EcsUiClayPreferredWidth(tree, child);
+            child_count += 1u;
+            child = tree->nodes[child].next_sibling;
+        }
+        return width;
+    }
+
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        width = EcsUiClayMaxFloat(
+            width,
+            EcsUiClayScaled(padding_left + padding_right) +
+                EcsUiClayPreferredWidth(tree, child));
+        child = tree->nodes[child].next_sibling;
+    }
+    return width;
+}
+
+static float EcsUiClayStackContentHeight(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const float padding_top = EcsUiClayStackPaddingTop(node);
+    const float padding_bottom = EcsUiClayStackPaddingBottom(node);
+    const float padding_left = EcsUiClayStackPaddingLeft(node);
+    const float padding_right = EcsUiClayStackPaddingRight(node);
+    const float gap = EcsUiClayClampPositive(node->stack.gap);
+    const float content_width =
+        EcsUiClayMaxFloat(node->stack.preferred_width, 0.0f);
+    const float available_width = EcsUiClayMaxFloat(
+        content_width - padding_left - padding_right,
+        0.0f);
+    float height = EcsUiClayScaled(padding_top + padding_bottom);
+    uint32_t child_count = 0u;
+    uint32_t child = node->first_child;
+    if (node->stack.axis == ECS_UI_AXIS_HORIZONTAL) {
+        while (child != ECS_UI_TREE_INVALID_INDEX) {
+            height = EcsUiClayMaxFloat(
+                height,
+                EcsUiClayScaled(padding_top + padding_bottom) +
+                    EcsUiClayPreferredHeight(
+                        tree,
+                        child,
+                        EcsUiClayScaled(content_width)));
+            child = tree->nodes[child].next_sibling;
+        }
+        return height;
+    }
+
+    while (child != ECS_UI_TREE_INVALID_INDEX) {
+        if (child_count > 0u && node->stack.axis != ECS_UI_AXIS_DEPTH) {
+            height += EcsUiClayScaled(gap);
+        }
+        height += EcsUiClayPreferredHeight(
+            tree,
+            child,
+            EcsUiClayScaled(available_width));
+        child_count += 1u;
+        child = tree->nodes[child].next_sibling;
+    }
+    return height;
+}
+
 static Clay_Padding EcsUiClayStackPadding(
     const EcsUiTreeNodeSnapshot *node)
 {
@@ -1496,7 +1640,10 @@ static void EcsUiClayRegisterTarget(
     Clay_ElementId wrapper_id,
     bool area,
     bool pressable,
-    bool blocking)
+    bool blocking,
+    bool scroll_container,
+    bool scroll_subscribed,
+    uint32_t scroll_axes)
 {
     if (frame == NULL || tree == NULL || index >= tree->count ||
         EcsUiClayElementIdIsZero(clay_id)) {
@@ -1518,6 +1665,7 @@ static void EcsUiClayRegisterTarget(
         .node = node->entity,
         .action = node->on_click,
         .payload = node->payload,
+        .tree_snapshot = tree,
         .node_index = index,
         .emit_order = frame->target_count,
         .depth = node->depth,
@@ -1525,6 +1673,9 @@ static void EcsUiClayRegisterTarget(
         .area = area,
         .pressable = pressable,
         .blocking = blocking,
+        .scroll_container = scroll_container,
+        .scroll_subscribed = scroll_subscribed,
+        .scroll_axes = scroll_axes,
         .disabled = EcsUiClayNodeIsDisabledTarget(node),
     };
     (void)snprintf(target->node_id, sizeof(target->node_id), "%s", node->id);
@@ -1543,7 +1694,12 @@ static void EcsUiClayRegisterNodeTarget(
     const bool area = index == 0u;
     const bool pressable = EcsUiClayNodeIsPressableTarget(node);
     const bool blocking = EcsUiClayNodeIsBlockingTarget(node);
-    if (!area && !pressable && !blocking) {
+    const bool scroll_container = node->has_scroll_view;
+    const bool scroll_subscribed = node->scroll_subscribed;
+    const uint32_t scroll_axes =
+        node->has_scroll_view ? node->scroll_view.axes : ECS_UI_SCROLL_AXIS_NONE;
+    if (!area && !pressable && !blocking && !scroll_container &&
+        !scroll_subscribed) {
         return;
     }
     EcsUiClayRegisterTarget(
@@ -1554,7 +1710,10 @@ static void EcsUiClayRegisterNodeTarget(
         (Clay_ElementId){0},
         area,
         pressable,
-        blocking);
+        blocking,
+        scroll_container,
+        scroll_subscribed,
+        scroll_axes);
 }
 
 static void EcsUiClayRegisterWrapperBlocker(
@@ -1578,7 +1737,10 @@ static void EcsUiClayRegisterWrapperBlocker(
         wrapper_id,
         false,
         false,
-        true);
+        true,
+        false,
+        false,
+        ECS_UI_SCROLL_AXIS_NONE);
 }
 
 static Clay_Color EcsUiClayBevelTopLeftColor(
@@ -2553,7 +2715,27 @@ static bool EcsUiClayTargetHasHigherPriority(
     return candidate->depth > current->depth;
 }
 
-static EcsUiClayInteractionTarget *EcsUiClayResolveTarget(
+static bool EcsUiClayTargetPressEligible(
+    const EcsUiClayInteractionTarget *target)
+{
+    return target != NULL &&
+        target->inside &&
+        !target->disabled &&
+        (target->pressable || target->blocking);
+}
+
+static bool EcsUiClayTargetWheelEligible(
+    const EcsUiClayInteractionTarget *target)
+{
+    return target != NULL &&
+        target->inside &&
+        !target->disabled &&
+        (target->blocking ||
+         target->scroll_container ||
+         target->scroll_subscribed);
+}
+
+static EcsUiClayInteractionTarget *EcsUiClayResolvePressTarget(
     EcsUiClayInteractionFrame *frame)
 {
     if (frame == NULL) {
@@ -2563,8 +2745,27 @@ static EcsUiClayInteractionTarget *EcsUiClayResolveTarget(
     EcsUiClayInteractionTarget *resolved = NULL;
     for (uint32_t i = 0u; i < frame->target_count; i += 1u) {
         EcsUiClayInteractionTarget *target = &frame->targets[i];
-        if (!target->inside || target->disabled ||
-            (!target->pressable && !target->blocking)) {
+        if (!EcsUiClayTargetPressEligible(target)) {
+            continue;
+        }
+        if (EcsUiClayTargetHasHigherPriority(target, resolved)) {
+            resolved = target;
+        }
+    }
+    return resolved;
+}
+
+static EcsUiClayInteractionTarget *EcsUiClayResolveWheelTarget(
+    EcsUiClayInteractionFrame *frame)
+{
+    if (frame == NULL) {
+        return NULL;
+    }
+
+    EcsUiClayInteractionTarget *resolved = NULL;
+    for (uint32_t i = 0u; i < frame->target_count; i += 1u) {
+        EcsUiClayInteractionTarget *target = &frame->targets[i];
+        if (!EcsUiClayTargetWheelEligible(target)) {
             continue;
         }
         if (EcsUiClayTargetHasHigherPriority(target, resolved)) {
@@ -2647,6 +2848,253 @@ static void EcsUiClayPushPointerEvent(
         ECS_UI_POINTER_BUTTON_PRIMARY);
 }
 
+static bool EcsUiClayPointerHasScroll(EcsUiClayPointerState pointer)
+{
+    return pointer.scroll_x != 0.0f || pointer.scroll_y != 0.0f;
+}
+
+static float EcsUiClayClampFloat(float value, float min_value, float max_value)
+{
+    if (value < min_value) {
+        return min_value;
+    }
+    if (value > max_value) {
+        return max_value;
+    }
+    return value;
+}
+
+static bool EcsUiClayScrollAxisCanConsume(
+    float delta,
+    bool enabled,
+    float content_size,
+    float container_size)
+{
+    return delta != 0.0f &&
+        enabled &&
+        content_size > container_size;
+}
+
+static bool EcsUiClayApplyScrollAxis(
+    float delta,
+    float content_size,
+    float container_size,
+    float *value)
+{
+    if (value == NULL || delta == 0.0f ||
+        content_size <= container_size) {
+        return false;
+    }
+
+    const float old_value = *value;
+    const float max_scroll =
+        EcsUiClayMaxFloat(content_size - container_size, 0.0f);
+    const float next_value = EcsUiClayClampFloat(
+        old_value + (delta * 10.0f),
+        -max_scroll,
+        0.0f);
+    if (next_value == old_value) {
+        return false;
+    }
+
+    *value = next_value;
+    return true;
+}
+
+typedef struct EcsUiClayScrollContainerWheelResult {
+    bool consumed_x;
+    bool consumed_y;
+    bool mutated;
+} EcsUiClayScrollContainerWheelResult;
+
+static void EcsUiClayScrollContainerFallbackContentSize(
+    const EcsUiClayInteractionTarget *target,
+    float *out_width,
+    float *out_height)
+{
+    if (out_width != NULL) {
+        *out_width = 0.0f;
+    }
+    if (out_height != NULL) {
+        *out_height = 0.0f;
+    }
+    if (target == NULL || target->tree_snapshot == NULL ||
+        target->node_index >= target->tree_snapshot->count) {
+        return;
+    }
+    /* This duplicates a small subset of Clay sizing quirks only for the
+     * first-frame path where Clay has not retained content dimensions yet. */
+    if (out_width != NULL) {
+        *out_width = EcsUiClayStackContentWidth(
+            target->tree_snapshot,
+            target->node_index);
+    }
+    if (out_height != NULL) {
+        *out_height = EcsUiClayStackContentHeight(
+            target->tree_snapshot,
+            target->node_index);
+    }
+}
+
+static EcsUiClayScrollContainerWheelResult
+EcsUiClayApplyScrollContainerWheel(
+    EcsUiClayInteractionFrame *frame,
+    const EcsUiClayInteractionTarget *target,
+    EcsUiClayPointerState pointer)
+{
+    EcsUiClayScrollContainerWheelResult result = {0};
+    if (frame == NULL || target == NULL || !target->scroll_container ||
+        !EcsUiClayPointerHasScroll(pointer)) {
+        return result;
+    }
+
+    Clay_ScrollContainerData data =
+        Clay_GetScrollContainerData(target->clay_id);
+    if (!data.found || data.scrollPosition == NULL) {
+        return result;
+    }
+    Clay_ElementData element_data = Clay_GetElementData(target->clay_id);
+    const float container_width =
+        data.scrollContainerDimensions.width > 0.0f ?
+            data.scrollContainerDimensions.width :
+            (element_data.found ? element_data.boundingBox.width : 0.0f);
+    const float container_height =
+        data.scrollContainerDimensions.height > 0.0f ?
+            data.scrollContainerDimensions.height :
+            (element_data.found ? element_data.boundingBox.height : 0.0f);
+    float fallback_content_width = 0.0f;
+    float fallback_content_height = 0.0f;
+    if (data.contentDimensions.width <= 0.0f ||
+        data.contentDimensions.height <= 0.0f) {
+        EcsUiClayScrollContainerFallbackContentSize(
+            target,
+            &fallback_content_width,
+            &fallback_content_height);
+    }
+    const float content_width = data.contentDimensions.width > 0.0f ?
+        data.contentDimensions.width :
+        fallback_content_width;
+    const float content_height = data.contentDimensions.height > 0.0f ?
+        data.contentDimensions.height :
+        fallback_content_height;
+
+    const bool can_x = EcsUiClayScrollAxisCanConsume(
+        pointer.scroll_x,
+        data.config.horizontal &&
+            (target->scroll_axes & ECS_UI_SCROLL_AXIS_X) != 0u,
+        content_width,
+        container_width);
+    const bool can_y = EcsUiClayScrollAxisCanConsume(
+        pointer.scroll_y,
+        data.config.vertical &&
+            (target->scroll_axes & ECS_UI_SCROLL_AXIS_Y) != 0u,
+        content_height,
+        container_height);
+    bool changed = false;
+    if (can_x) {
+        result.consumed_x = true;
+        changed |= EcsUiClayApplyScrollAxis(
+            pointer.scroll_x,
+            content_width,
+            container_width,
+            &data.scrollPosition->x);
+    }
+    if (can_y) {
+        result.consumed_y = true;
+        changed |= EcsUiClayApplyScrollAxis(
+            pointer.scroll_y,
+            content_height,
+            container_height,
+            &data.scrollPosition->y);
+    }
+    if (changed) {
+        frame->scroll_consumed = true;
+    }
+    result.mutated = changed;
+    return result;
+}
+
+static void EcsUiClayPushScrollEvent(
+    EcsUiEventList *events,
+    const EcsUiClayInteractionTarget *target,
+    EcsUiClayPointerState pointer,
+    float scroll_x,
+    float scroll_y)
+{
+    if (events == NULL || target == NULL ||
+        (scroll_x == 0.0f && scroll_y == 0.0f)) {
+        return;
+    }
+
+    EcsUiEvent event = {
+        .type = ECS_UI_EVENT_SCROLLED,
+        .tree = target->tree,
+        .node = target->node,
+        .action = target->action,
+        .payload = target->payload,
+        .x = EcsUiClayLogicalPointerValue(pointer.x, target->scale),
+        .y = EcsUiClayLogicalPointerValue(pointer.y, target->scale),
+        .start_x = EcsUiClayLogicalPointerValue(pointer.x, target->scale),
+        .start_y = EcsUiClayLogicalPointerValue(pointer.y, target->scale),
+        .scroll_x = scroll_x,
+        .scroll_y = scroll_y,
+    };
+    (void)snprintf(event.node_id, sizeof(event.node_id), "%s", target->node_id);
+    (void)EcsUiEventListPush(events, &event);
+}
+
+static void EcsUiClayRouteWheel(
+    EcsUiClayInteractionFrame *frame,
+    EcsUiClayPointerState pointer,
+    EcsUiEventList *events)
+{
+    if (frame == NULL || events == NULL ||
+        !EcsUiClayPointerHasScroll(pointer)) {
+        return;
+    }
+
+    EcsUiClayInteractionTarget *target =
+        EcsUiClayResolveWheelTarget(frame);
+    if (target == NULL) {
+        return;
+    }
+    float subscribed_scroll_x = pointer.scroll_x;
+    float subscribed_scroll_y = pointer.scroll_y;
+    if (target->scroll_container) {
+        EcsUiClayScrollContainerWheelResult result =
+            EcsUiClayApplyScrollContainerWheel(frame, target, pointer);
+        if (result.consumed_x) {
+            subscribed_scroll_x = 0.0f;
+        }
+        if (result.consumed_y) {
+            subscribed_scroll_y = 0.0f;
+        }
+        if (target->scroll_subscribed) {
+            /* The subscriber is the same node, not a target behind the
+             * container, so it receives axes the container cannot consume. */
+            EcsUiClayPushScrollEvent(
+                events,
+                target,
+                pointer,
+                subscribed_scroll_x,
+                subscribed_scroll_y);
+        }
+        return;
+    }
+    if (target->scroll_subscribed) {
+        EcsUiClayPushScrollEvent(
+            events,
+            target,
+            pointer,
+            subscribed_scroll_x,
+            subscribed_scroll_y);
+        return;
+    }
+    if (target->blocking) {
+        return;
+    }
+}
+
 static void EcsUiClayStartPointerCapture(
     EcsUiClayInteractionState *state,
     const EcsUiClayInteractionTarget *target,
@@ -2719,18 +3167,26 @@ static bool EcsUiClayPointerDownForButton(
     EcsUiClayPointerState pointer,
     EcsUiPointerButton button)
 {
-    return button == ECS_UI_POINTER_BUTTON_SECONDARY ?
-        pointer.secondary_down :
-        pointer.down;
+    if (button == ECS_UI_POINTER_BUTTON_SECONDARY) {
+        return pointer.secondary_down;
+    }
+    if (button == ECS_UI_POINTER_BUTTON_MIDDLE) {
+        return pointer.middle_down;
+    }
+    return pointer.down;
 }
 
 static bool EcsUiClayPointerReleasedForButton(
     EcsUiClayPointerState pointer,
     EcsUiPointerButton button)
 {
-    return button == ECS_UI_POINTER_BUTTON_SECONDARY ?
-        pointer.secondary_released :
-        pointer.released;
+    if (button == ECS_UI_POINTER_BUTTON_SECONDARY) {
+        return pointer.secondary_released;
+    }
+    if (button == ECS_UI_POINTER_BUTTON_MIDDLE) {
+        return pointer.middle_released;
+    }
+    return pointer.released;
 }
 
 static void EcsUiClayMarkPointerInsideTargets(
@@ -2787,7 +3243,8 @@ void EcsUiClayCollectFrameEvents(
     }
 
     EcsUiClayMarkPointerInsideTargets(frame);
-    EcsUiClayInteractionTarget *resolved = EcsUiClayResolveTarget(frame);
+    EcsUiClayInteractionTarget *resolved =
+        EcsUiClayResolvePressTarget(frame);
     frame->resolved_tree = resolved != NULL ? resolved->tree : 0;
     frame->resolved_node = resolved != NULL ? resolved->node : 0;
     frame->resolved_action = resolved != NULL ? resolved->action : 0;
@@ -2800,6 +3257,8 @@ void EcsUiClayCollectFrameEvents(
             "%s",
             resolved->node_id);
     }
+
+    EcsUiClayRouteWheel(frame, pointer, events);
 
     EcsUiClayPointerCapture *capture = &frame->state->capture;
     if (capture->active) {
@@ -2863,7 +3322,8 @@ void EcsUiClayCollectFrameEvents(
                     capture,
                     ECS_UI_EVENT_DRAG_ENDED,
                     pointer);
-                if (!did_drag && click_eligible) {
+                if (!did_drag && click_eligible &&
+                    capture->button != ECS_UI_POINTER_BUTTON_MIDDLE) {
                     EcsUiClayPushCapturedPointerEvent(
                         events,
                         capture,
@@ -2881,7 +3341,18 @@ void EcsUiClayCollectFrameEvents(
     }
 
     EcsUiClayPushPointerEvent(events, resolved, ECS_UI_EVENT_HOVERED, pointer);
-    if (pointer.secondary_pressed) {
+    if (pointer.middle_pressed) {
+        EcsUiClayStartPointerCapture(
+            frame->state,
+            resolved,
+            pointer,
+            ECS_UI_POINTER_BUTTON_MIDDLE);
+        EcsUiClayPushCapturedPointerEvent(
+            events,
+            &frame->state->capture,
+            ECS_UI_EVENT_DRAG_STARTED,
+            pointer);
+    } else if (pointer.secondary_pressed) {
         EcsUiClayPushPointerEventWithAction(
             events,
             resolved,

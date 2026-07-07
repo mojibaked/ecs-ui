@@ -316,6 +316,7 @@ static bool DemoClayPreInputPump(void *user_data)
     }
 
     Vector2 mouse = GetMousePosition();
+    Vector2 scroll = GetMouseWheelMoveV();
     EcsUiClayPointerState pointer = {
         .x = mouse.x,
         .y = mouse.y,
@@ -326,15 +327,12 @@ static bool DemoClayPreInputPump(void *user_data)
         .secondary_down = IsMouseButtonDown(MOUSE_BUTTON_RIGHT),
         .secondary_pressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT),
         .secondary_released = IsMouseButtonReleased(MOUSE_BUTTON_RIGHT),
+        .middle_down = IsMouseButtonDown(MOUSE_BUTTON_MIDDLE),
+        .middle_pressed = IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE),
+        .middle_released = IsMouseButtonReleased(MOUSE_BUTTON_MIDDLE),
+        .scroll_x = scroll.x,
+        .scroll_y = scroll.y,
     };
-    Vector2 scroll = GetMouseWheelMoveV();
-    Clay_UpdateScrollContainers(
-        true,
-        (Clay_Vector2){
-            .x = scroll.x,
-            .y = scroll.y,
-        },
-        GetFrameTime());
 
     if (ctx->root != 0) {
         (void)EcsUiReadTree(ctx->ui_world, ctx->root, &ctx->tree);
@@ -357,6 +355,10 @@ static bool DemoClayPreInputPump(void *user_data)
         &ctx->interaction_frame,
         pointer,
         &ctx->events);
+    Clay_UpdateScrollContainers(
+        false,
+        (Clay_Vector2){.x = 0.0f, .y = 0.0f},
+        GetFrameTime());
     DemoClayCollectKeyboardEvents(&ctx->events);
     if (DemoClayRaylibInputChanged(ctx, mouse, scroll) ||
             DemoClayHasNonHoverEvent(&ctx->events)) {

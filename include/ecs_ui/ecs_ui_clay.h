@@ -37,6 +37,11 @@ typedef struct EcsUiClayPointerState {
     bool secondary_down;
     bool secondary_pressed;
     bool secondary_released;
+    bool middle_down;
+    bool middle_pressed;
+    bool middle_released;
+    float scroll_x;
+    float scroll_y;
 } EcsUiClayPointerState;
 
 typedef struct EcsUiClayInteractionTarget {
@@ -46,6 +51,7 @@ typedef struct EcsUiClayInteractionTarget {
     ecs_entity_t node;
     ecs_entity_t action;
     uint64_t payload;
+    const EcsUiTreeSnapshot *tree_snapshot;
     char node_id[ECS_UI_ID_MAX];
     uint32_t node_index;
     uint32_t emit_order;
@@ -54,6 +60,9 @@ typedef struct EcsUiClayInteractionTarget {
     bool area;
     bool pressable;
     bool blocking;
+    bool scroll_container;
+    bool scroll_subscribed;
+    uint32_t scroll_axes;
     bool disabled;
     bool inside;
 } EcsUiClayInteractionTarget;
@@ -92,6 +101,12 @@ typedef struct EcsUiClayInteractionFrame {
     uint64_t resolved_payload;
     char resolved_node_id[ECS_UI_ID_MAX];
     bool resolved_pressable;
+    /*
+     * True only when direct scroll-container routing mutated Clay's retained
+     * scroll position. Routed SCROLLED events do not set this; hosts should
+     * still use the event list to schedule follow-up work for subscribers.
+     */
+    bool scroll_consumed;
     bool truncated;
     bool capture_missing_target;
     ecs_entity_t capture_missing_node;

@@ -96,11 +96,13 @@ typedef enum EcsUiEventType {
     ECS_UI_EVENT_TEXT_CUT = 22,
     ECS_UI_EVENT_TEXT_PASTE = 23,
     ECS_UI_EVENT_SECONDARY_PRESSED = 24,
+    ECS_UI_EVENT_SCROLLED = 25,
 } EcsUiEventType;
 
 typedef enum EcsUiPointerButton {
     ECS_UI_POINTER_BUTTON_PRIMARY = 0,
     ECS_UI_POINTER_BUTTON_SECONDARY = 1,
+    ECS_UI_POINTER_BUTTON_MIDDLE = 2,
 } EcsUiPointerButton;
 
 typedef enum EcsUiHitTestMode {
@@ -360,6 +362,7 @@ typedef struct EcsUiStackDesc {
     ecs_entity_t style_token;
     const EcsUiBoxStyle *style;
     const EcsUiNineSliceStyle *nine_slice_style;
+    bool scroll_subscribed;
 } EcsUiStackDesc;
 
 typedef struct EcsUiScrollViewDesc {
@@ -378,6 +381,7 @@ typedef struct EcsUiButtonDesc {
     ecs_entity_t style_token;
     float preferred_width;
     float preferred_height;
+    bool scroll_subscribed;
 } EcsUiButtonDesc;
 
 /* Pressable descriptor preferred height is a logical unit. */
@@ -389,6 +393,7 @@ typedef struct EcsUiPressableDesc {
     bool disabled;
     ecs_entity_t style_token;
     float preferred_height;
+    bool scroll_subscribed;
 } EcsUiPressableDesc;
 
 typedef struct EcsUiTextDesc {
@@ -415,6 +420,7 @@ typedef struct EcsUiCustomDesc {
     uint64_t payload;
     EcsUiSizing width_sizing;
     EcsUiSizing height_sizing;
+    bool scroll_subscribed;
 } EcsUiCustomDesc;
 
 typedef struct EcsUiBuilderParentFrame {
@@ -520,6 +526,7 @@ typedef struct EcsUiTreeNodeSnapshot {
     bool has_layout;
     bool has_scroll_view;
     bool has_text_field_view;
+    bool scroll_subscribed;
     bool hovered;
     bool hover_within;
 } EcsUiTreeNodeSnapshot;
@@ -555,6 +562,8 @@ typedef struct EcsUiEvent {
     float elapsed;
     float velocity_x;
     float velocity_y;
+    float scroll_x;
+    float scroll_y;
     EcsUiPointerButton button;
     uint32_t codepoint;
     char text[ECS_UI_TEXT_MAX];
@@ -597,6 +606,7 @@ extern ECS_TAG_DECLARE(EcsUiUsesStyle);
 extern ECS_TAG_DECLARE(EcsUiHovered);
 extern ECS_TAG_DECLARE(EcsUiHoverWithin);
 extern ECS_TAG_DECLARE(EcsUiRevealedByHover);
+extern ECS_TAG_DECLARE(EcsUiScrollSubscribed);
 extern ECS_TAG_DECLARE(EcsUiThemeTag);
 extern ECS_TAG_DECLARE(EcsUiActiveTheme);
 extern ECS_TAG_DECLARE(EcsUiThemeStyle);
