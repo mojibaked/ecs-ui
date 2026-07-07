@@ -24,7 +24,11 @@ typedef struct EcsUiSolverContext {
     EcsUiSolverArena *arena;
     EcsUiSolverLayout *layouts;
     struct EcsUiSolverMetrics *metrics;
-    uint32_t *scratch_indices;
+    struct EcsUiSolverVirtualFlow *virtual_entries;
+    uint32_t virtual_count;
+    uint32_t virtual_capacity;
+    struct EcsUiSolverFlowItem *scratch_items;
+    uint32_t scratch_item_capacity;
     const EcsUiFrameLayoutOptions *layout_options;
     float surface_width;
     float surface_height;
@@ -415,19 +419,6 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
     if (ctx == NULL || ctx->tree == NULL) {
         return false;
     }
-    for (uint32_t i = 0u; i < ctx->tree->count; i += 1u) {
-        const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[i];
-        char message[128] = {0};
-        if (node->kind == ECS_UI_NODE_PRESSABLE && node->has_text_field_view) {
-            (void)snprintf(
-                message,
-                sizeof(message),
-                "unsupported text-field view on node kind %d -- stage 6c",
-                (int)node->kind);
-            EcsUiSolverSetError(ctx, message);
-            return false;
-        }
-    }
     return true;
 }
 
@@ -453,9 +444,21 @@ typedef struct EcsUiSolverMetrics {
     float flow_height;
     float flow_min_width;
     float flow_min_height;
+    uint32_t virtual_first;
+    uint32_t virtual_count;
     bool visible;
     bool offset_wrapper;
+    bool text_field_value;
 } EcsUiSolverMetrics;
+
+typedef struct EcsUiSolverVirtualFlow {
+    EcsUiSolverMetrics metrics;
+} EcsUiSolverVirtualFlow;
+
+typedef struct EcsUiSolverFlowItem {
+    bool virtual_item;
+    uint32_t index;
+} EcsUiSolverFlowItem;
 
 static bool EcsUiSolverLayoutHorizontal(const EcsUiTreeNodeSnapshot *node)
 {
@@ -491,6 +494,25 @@ static bool EcsUiSolverChildInParentFlow(
     uint32_t child)
 {
     return EcsUiSolverZStackChildInFlow(tree, parent, child);
+}
+
+static bool EcsUiSolverIsTextFieldValue(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (tree == NULL || index >= tree->count ||
+            tree->nodes[index].kind != ECS_UI_NODE_TEXT) {
+        return false;
+    }
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    if (node->parent_index == ECS_UI_TREE_INVALID_INDEX ||
+            node->parent_index >= tree->count) {
+        return false;
+    }
+    const EcsUiTreeNodeSnapshot *parent = &tree->nodes[node->parent_index];
+    return parent->kind == ECS_UI_NODE_PRESSABLE &&
+        parent->has_text_field_view &&
+        parent->text_field_view.value_node == node->entity;
 }
 
 static bool EcsUiSolverScrollClipsAxis(
@@ -812,8 +834,92 @@ static bool EcsUiSolverAxisResizable(
     const EcsUiSolverMetrics *metrics,
     bool x_axis)
 {
+    if (metrics != NULL && metrics->text_field_value) {
+        return false;
+    }
     return EcsUiSolverAxisSizing(metrics, x_axis).kind !=
         ECS_UI_SOLVER_SIZE_FIXED;
+}
+
+static EcsUiSolverMetrics *EcsUiSolverFlowMetrics(
+    EcsUiSolverContext *ctx,
+    EcsUiSolverFlowItem item)
+{
+    return item.virtual_item ?
+        &ctx->virtual_entries[item.index].metrics :
+        &ctx->metrics[item.index];
+}
+
+static EcsUiSolverFlowItem EcsUiSolverRealFlowItem(uint32_t index)
+{
+    return (EcsUiSolverFlowItem){.virtual_item = false, .index = index};
+}
+
+static EcsUiSolverFlowItem EcsUiSolverVirtualFlowItem(uint32_t index)
+{
+    return (EcsUiSolverFlowItem){.virtual_item = true, .index = index};
+}
+
+static bool EcsUiSolverAppendScratchFlowItem(
+    EcsUiSolverContext *ctx,
+    EcsUiSolverFlowItem item,
+    uint32_t *count)
+{
+    if (ctx == NULL || count == NULL || ctx->scratch_items == NULL ||
+            *count >= ctx->scratch_item_capacity) {
+        EcsUiSolverSetError(ctx, "native layout solver flow scratch overflow");
+        return false;
+    }
+    ctx->scratch_items[*count] = item;
+    *count += 1u;
+    return true;
+}
+
+static bool EcsUiSolverAppendChildFlowItems(
+    EcsUiSolverContext *ctx,
+    uint32_t parent,
+    uint32_t child,
+    uint32_t *count)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+    if (!child_metrics->visible ||
+            !EcsUiSolverChildInParentFlow(tree, parent, child)) {
+        return true;
+    }
+    if (child_metrics->text_field_value) {
+        const uint32_t first = child_metrics->virtual_first;
+        const uint32_t end = first + child_metrics->virtual_count;
+        for (uint32_t i = first; i < end; i += 1u) {
+            if (!EcsUiSolverAppendScratchFlowItem(
+                    ctx,
+                    EcsUiSolverVirtualFlowItem(i),
+                    count)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return EcsUiSolverAppendScratchFlowItem(
+        ctx,
+        EcsUiSolverRealFlowItem(child),
+        count);
+}
+
+static uint32_t EcsUiSolverCollectParentFlowItems(
+    EcsUiSolverContext *ctx,
+    uint32_t parent)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    uint32_t count = 0u;
+    for (uint32_t child = tree->nodes[parent].first_child;
+         child != ECS_UI_TREE_INVALID_INDEX;
+         child = tree->nodes[child].next_sibling) {
+        if (!EcsUiSolverAppendChildFlowItems(ctx, parent, child, &count)) {
+            return count;
+        }
+    }
+    return count;
 }
 
 typedef struct EcsUiSolverTextMeasure {
@@ -821,6 +927,11 @@ typedef struct EcsUiSolverTextMeasure {
     float height;
     float min_width;
 } EcsUiSolverTextMeasure;
+
+static uint32_t EcsUiSolverClampTextIndex(uint32_t index, size_t length)
+{
+    return index <= length ? index : (uint32_t)length;
+}
 
 static EcsUiSize EcsUiSolverMeasureTextSlice(
     EcsUiSolverContext *ctx,
@@ -845,12 +956,13 @@ static EcsUiSize EcsUiSolverMeasureTextSlice(
         ctx->measure_user_data);
 }
 
-static EcsUiSolverTextMeasure EcsUiSolverMeasureText(
+static EcsUiSolverTextMeasure EcsUiSolverMeasureTextRange(
     EcsUiSolverContext *ctx,
-    uint32_t index)
+    const char *text_or_null,
+    uint32_t start,
+    uint32_t end,
+    uint16_t font_size)
 {
-    EcsUiTreeSnapshot *tree = ctx->tree;
-    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     EcsUiSolverTextMeasure measured = {0};
     if (ctx->measure_text == NULL) {
         EcsUiSolverSetError(
@@ -859,29 +971,36 @@ static EcsUiSolverTextMeasure EcsUiSolverMeasureText(
         return measured;
     }
 
-    const float scale = EcsUiSolverScale(tree);
-    const uint16_t font_size =
-        EcsUiSolverU16(EcsUiSolverInheritedTextSize(tree, index) * scale);
-    const char *text = node->text.text;
-    const int32_t text_length = (int32_t)strlen(text);
+    const float scale = EcsUiSolverScale(ctx->tree);
+    const char *text = text_or_null != NULL ? text_or_null : "";
+    const size_t source_length = strlen(text);
+    uint32_t range_start = EcsUiSolverClampTextIndex(start, source_length);
+    uint32_t range_end = EcsUiSolverClampTextIndex(end, source_length);
+    if (range_start > range_end) {
+        uint32_t swap = range_start;
+        range_start = range_end;
+        range_end = swap;
+    }
+    const char *range_text = &text[range_start];
+    const int32_t text_length = (int32_t)(range_end - range_start);
     const float space_width =
         EcsUiSolverMeasureTextSlice(ctx, " ", 1, font_size).width;
 
-    int32_t start = 0;
-    int32_t end = 0;
+    int32_t word_start = 0;
+    int32_t word_end = 0;
     float line_width = 0.0f;
     float measured_width = 0.0f;
     float measured_height = 0.0f;
     float min_width = 0.0f;
-    while (end < text_length) {
-        const char current = text[end];
+    while (word_end < text_length) {
+        const char current = range_text[word_end];
         if (current == ' ' || current == '\n') {
-            const int32_t word_length = end - start;
+            const int32_t word_length = word_end - word_start;
             EcsUiSize dimensions = {0};
             if (word_length > 0) {
                 dimensions = EcsUiSolverMeasureTextSlice(
                     ctx,
-                    &text[start],
+                    &range_text[word_start],
                     word_length,
                     font_size);
             }
@@ -897,16 +1016,16 @@ static EcsUiSolverTextMeasure EcsUiSolverMeasureText(
                     EcsUiSolverMaxFloat(measured_width, line_width);
                 line_width = 0.0f;
             }
-            start = end + 1;
+            word_start = word_end + 1;
         }
-        end += 1;
+        word_end += 1;
     }
 
-    if (end - start > 0) {
+    if (word_end - word_start > 0) {
         const EcsUiSize dimensions = EcsUiSolverMeasureTextSlice(
             ctx,
-            &text[start],
-            end - start,
+            &range_text[word_start],
+            word_end - word_start,
             font_size);
         line_width += dimensions.width;
         measured_height =
@@ -921,6 +1040,302 @@ static EcsUiSolverTextMeasure EcsUiSolverMeasureText(
     return measured;
 }
 
+static EcsUiSolverTextMeasure EcsUiSolverMeasureText(
+    EcsUiSolverContext *ctx,
+    uint32_t index)
+{
+    const EcsUiTreeSnapshot *tree = ctx->tree;
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    const float scale = EcsUiSolverScale(tree);
+    const uint16_t font_size =
+        EcsUiSolverU16(EcsUiSolverInheritedTextSize(tree, index) * scale);
+    return EcsUiSolverMeasureTextRange(
+        ctx,
+        node->text.text,
+        0u,
+        (uint32_t)strlen(node->text.text),
+        font_size);
+}
+
+static EcsUiSolverMetrics *EcsUiSolverAppendTextFieldVirtualEntry(
+    EcsUiSolverContext *ctx,
+    EcsUiSolverMetrics *value_metrics,
+    EcsUiSolverSizing width_sizing,
+    EcsUiSolverSizing height_sizing,
+    float width,
+    float height,
+    float min_width,
+    float min_height)
+{
+    if (ctx == NULL || value_metrics == NULL ||
+            ctx->virtual_count >= ctx->virtual_capacity) {
+        EcsUiSolverSetError(ctx, "native layout solver virtual flow overflow");
+        return NULL;
+    }
+
+    EcsUiSolverVirtualFlow *entry = &ctx->virtual_entries[ctx->virtual_count];
+    ctx->virtual_count += 1u;
+    EcsUiSolverMetrics *metrics = &entry->metrics;
+    metrics->width_sizing = width_sizing;
+    metrics->height_sizing = height_sizing;
+    metrics->width = width;
+    metrics->height = height;
+    metrics->min_width = min_width;
+    metrics->min_height = min_height;
+    metrics->flow_width = width;
+    metrics->flow_height = height;
+    metrics->flow_min_width = min_width;
+    metrics->flow_min_height = min_height;
+    metrics->visible = true;
+
+    value_metrics->width += width;
+    value_metrics->height = EcsUiSolverMaxFloat(value_metrics->height, height);
+    value_metrics->min_width += min_width;
+    value_metrics->min_height =
+        EcsUiSolverMaxFloat(value_metrics->min_height, min_height);
+    value_metrics->flow_width = value_metrics->width;
+    value_metrics->flow_height = value_metrics->height;
+    value_metrics->flow_min_width = value_metrics->min_width;
+    value_metrics->flow_min_height = value_metrics->min_height;
+    return metrics;
+}
+
+static void EcsUiSolverAddTextFieldRange(
+    EcsUiSolverContext *ctx,
+    EcsUiSolverMetrics *value_metrics,
+    const EcsUiTreeNodeSnapshot *value_node,
+    uint16_t font_size,
+    uint32_t start,
+    uint32_t end,
+    bool selection_wrapper)
+{
+    if (value_node == NULL || start == end) {
+        return;
+    }
+    const EcsUiSolverTextMeasure text = EcsUiSolverMeasureTextRange(
+        ctx,
+        value_node->text.text,
+        start,
+        end,
+        font_size);
+    const EcsUiSolverSizing width_sizing = selection_wrapper ?
+        EcsUiSolverFitSizing() :
+        EcsUiSolverFixedSizing(text.width);
+    const EcsUiSolverSizing height_sizing = selection_wrapper ?
+        EcsUiSolverFitSizing() :
+        EcsUiSolverFixedSizing(text.height);
+    (void)EcsUiSolverAppendTextFieldVirtualEntry(
+        ctx,
+        value_metrics,
+        width_sizing,
+        height_sizing,
+        text.width,
+        text.height,
+        text.min_width,
+        text.height);
+}
+
+static void EcsUiSolverAddTextFieldCaret(
+    const EcsUiTreeSnapshot *tree,
+    EcsUiSolverContext *ctx,
+    EcsUiSolverMetrics *value_metrics,
+    const EcsUiTreeNodeSnapshot *field_node,
+    float resolved_text_size)
+{
+    (void)tree;
+    const float caret_width =
+        field_node != NULL && field_node->text_field_view.caret_width > 0.0f ?
+            field_node->text_field_view.caret_width :
+            2.0f;
+    const float caret_height = resolved_text_size + 8.0f;
+    (void)EcsUiSolverAppendTextFieldVirtualEntry(
+        ctx,
+        value_metrics,
+        EcsUiSolverFixedSizing(caret_width),
+        EcsUiSolverFixedSizing(caret_height),
+        caret_width,
+        caret_height,
+        caret_width,
+        caret_height);
+}
+
+static void EcsUiSolverBuildTextFieldVirtualFlow(
+    EcsUiSolverContext *ctx,
+    uint32_t value_index)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    const EcsUiTreeNodeSnapshot *value_node = &tree->nodes[value_index];
+    const EcsUiTreeNodeSnapshot *field_node =
+        &tree->nodes[value_node->parent_index];
+    EcsUiSolverMetrics *value_metrics = &ctx->metrics[value_index];
+    const EcsUiTextFieldView *view = &field_node->text_field_view;
+    const char *text = value_node->text.text;
+    const size_t length = strlen(text);
+    const uint32_t text_end = (uint32_t)length;
+    const float scale = EcsUiSolverScale(tree);
+    const float resolved_size =
+        EcsUiSolverInheritedTextSize(tree, value_index);
+    const uint16_t font_size = EcsUiSolverU16(resolved_size * scale);
+    const uint32_t cursor = EcsUiSolverClampTextIndex(view->cursor, length);
+    uint32_t selection_start =
+        EcsUiSolverClampTextIndex(view->selection_anchor, length);
+    uint32_t selection_end =
+        EcsUiSolverClampTextIndex(view->selection_focus, length);
+    if (selection_start > selection_end) {
+        uint32_t swap = selection_start;
+        selection_start = selection_end;
+        selection_end = swap;
+    }
+    const bool has_selection =
+        view->focused && selection_start < selection_end;
+
+    value_metrics->virtual_first = ctx->virtual_count;
+    value_metrics->virtual_count = 0u;
+    value_metrics->width = 0.0f;
+    value_metrics->height = 0.0f;
+    value_metrics->min_width = 0.0f;
+    value_metrics->min_height = 0.0f;
+    value_metrics->flow_width = 0.0f;
+    value_metrics->flow_height = 0.0f;
+    value_metrics->flow_min_width = 0.0f;
+    value_metrics->flow_min_height = 0.0f;
+
+    if (!view->focused) {
+        EcsUiSolverAddTextFieldRange(
+            ctx,
+            value_metrics,
+            value_node,
+            font_size,
+            0u,
+            text_end,
+            false);
+        value_metrics->virtual_count =
+            ctx->virtual_count - value_metrics->virtual_first;
+        return;
+    }
+
+    if (!has_selection) {
+        EcsUiSolverAddTextFieldRange(
+            ctx,
+            value_metrics,
+            value_node,
+            font_size,
+            0u,
+            cursor,
+            false);
+        EcsUiSolverAddTextFieldCaret(
+            tree,
+            ctx,
+            value_metrics,
+            field_node,
+            resolved_size);
+        EcsUiSolverAddTextFieldRange(
+            ctx,
+            value_metrics,
+            value_node,
+            font_size,
+            cursor,
+            text_end,
+            false);
+        value_metrics->virtual_count =
+            ctx->virtual_count - value_metrics->virtual_first;
+        return;
+    }
+
+    EcsUiSolverAddTextFieldRange(
+        ctx,
+        value_metrics,
+        value_node,
+        font_size,
+        0u,
+        selection_start,
+        false);
+    if (cursor == selection_start) {
+        EcsUiSolverAddTextFieldCaret(
+            tree,
+            ctx,
+            value_metrics,
+            field_node,
+            resolved_size);
+    }
+    EcsUiSolverAddTextFieldRange(
+        ctx,
+        value_metrics,
+        value_node,
+        font_size,
+        selection_start,
+        selection_end,
+        true);
+    if (cursor != selection_start) {
+        EcsUiSolverAddTextFieldCaret(
+            tree,
+            ctx,
+            value_metrics,
+            field_node,
+            resolved_size);
+    }
+    EcsUiSolverAddTextFieldRange(
+        ctx,
+        value_metrics,
+        value_node,
+        font_size,
+        selection_end,
+        text_end,
+        false);
+    value_metrics->virtual_count =
+        ctx->virtual_count - value_metrics->virtual_first;
+}
+
+static void EcsUiSolverAccumulateContainerFlow(
+    const EcsUiSolverMetrics *child_metrics,
+    bool horizontal,
+    bool clips_x,
+    bool clips_y,
+    float gap,
+    float *width,
+    float *height,
+    float *min_width,
+    float *min_height,
+    uint32_t *visible_child_count)
+{
+    const float child_width = child_metrics->flow_width;
+    const float child_height = child_metrics->flow_height;
+    const float child_min_width = child_metrics->flow_min_width;
+    const float child_min_height = child_metrics->flow_min_height;
+    if (horizontal) {
+        if (*visible_child_count > 0u) {
+            *width += gap;
+            if (!clips_x) {
+                *min_width += gap;
+            }
+        }
+        *width += child_width;
+        if (!clips_x) {
+            *min_width += child_min_width;
+        }
+        *height = EcsUiSolverMaxFloat(*height, child_height);
+        if (!clips_y) {
+            *min_height = EcsUiSolverMaxFloat(*min_height, child_min_height);
+        }
+    } else {
+        if (*visible_child_count > 0u) {
+            *height += gap;
+            if (!clips_y) {
+                *min_height += gap;
+            }
+        }
+        *height += child_height;
+        if (!clips_y) {
+            *min_height += child_min_height;
+        }
+        *width = EcsUiSolverMaxFloat(*width, child_width);
+        if (!clips_x) {
+            *min_width = EcsUiSolverMaxFloat(*min_width, child_min_width);
+        }
+    }
+    *visible_child_count += 1u;
+}
+
 static void EcsUiSolverComputeBottomUp(
     EcsUiSolverContext *ctx,
     uint32_t index,
@@ -929,7 +1344,9 @@ static void EcsUiSolverComputeBottomUp(
     EcsUiTreeSnapshot *tree = ctx->tree;
     EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     EcsUiSolverMetrics *metrics = &ctx->metrics[index];
-    const float node_opacity =
+    metrics->text_field_value = EcsUiSolverIsTextFieldValue(tree, index);
+    const float node_opacity = metrics->text_field_value ?
+        parent_opacity :
         parent_opacity * EcsUiSolverClamp01(node->visual.opacity);
     if (node_opacity <= 0.01f) {
         return;
@@ -956,7 +1373,18 @@ static void EcsUiSolverComputeBottomUp(
     float min_height = 0.0f;
     uint32_t visible_child_count = 0u;
 
-    if (node->kind == ECS_UI_NODE_TEXT) {
+    if (metrics->text_field_value) {
+        EcsUiSolverBuildTextFieldVirtualFlow(ctx, index);
+        if (ctx->failed) {
+            return;
+        }
+        width = metrics->width;
+        height = metrics->height;
+        min_width = metrics->min_width;
+        min_height = metrics->min_height;
+        metrics->width_sizing = EcsUiSolverFitSizing();
+        metrics->height_sizing = EcsUiSolverFitSizing();
+    } else if (node->kind == ECS_UI_NODE_TEXT) {
         const EcsUiSolverTextMeasure text = EcsUiSolverMeasureText(ctx, index);
         width = text.width;
         height = text.height;
@@ -975,44 +1403,35 @@ static void EcsUiSolverComputeBottomUp(
                     !EcsUiSolverChildInParentFlow(tree, index, child)) {
                 continue;
             }
-            const float child_width = child_metrics->flow_width;
-            const float child_height = child_metrics->flow_height;
-            const float child_min_width = child_metrics->flow_min_width;
-            const float child_min_height = child_metrics->flow_min_height;
-            if (horizontal) {
-                if (visible_child_count > 0u) {
-                    width += gap;
-                    if (!clips_x) {
-                        min_width += gap;
-                    }
+            if (child_metrics->text_field_value) {
+                const uint32_t first = child_metrics->virtual_first;
+                const uint32_t end = first + child_metrics->virtual_count;
+                for (uint32_t i = first; i < end; i += 1u) {
+                    EcsUiSolverAccumulateContainerFlow(
+                        &ctx->virtual_entries[i].metrics,
+                        horizontal,
+                        clips_x,
+                        clips_y,
+                        gap,
+                        &width,
+                        &height,
+                        &min_width,
+                        &min_height,
+                        &visible_child_count);
                 }
-                width += child_width;
-                if (!clips_x) {
-                    min_width += child_min_width;
-                }
-                height = EcsUiSolverMaxFloat(height, child_height);
-                if (!clips_y) {
-                    min_height =
-                        EcsUiSolverMaxFloat(min_height, child_min_height);
-                }
-            } else {
-                if (visible_child_count > 0u) {
-                    height += gap;
-                    if (!clips_y) {
-                        min_height += gap;
-                    }
-                }
-                height += child_height;
-                if (!clips_y) {
-                    min_height += child_min_height;
-                }
-                width = EcsUiSolverMaxFloat(width, child_width);
-                if (!clips_x) {
-                    min_width =
-                        EcsUiSolverMaxFloat(min_width, child_min_width);
-                }
+                continue;
             }
-            visible_child_count += 1u;
+            EcsUiSolverAccumulateContainerFlow(
+                child_metrics,
+                horizontal,
+                clips_x,
+                clips_y,
+                gap,
+                &width,
+                &height,
+                &min_width,
+                &min_height,
+                &visible_child_count);
         }
         if (horizontal) {
             width += padding_left + padding_right;
@@ -1048,7 +1467,9 @@ static void EcsUiSolverComputeBottomUp(
         &metrics->min_height,
         metrics->height_sizing);
     metrics->offset_wrapper =
-        node->kind != ECS_UI_NODE_ROOT && EcsUiSolverHasVisualOffset(node);
+        !metrics->text_field_value &&
+        node->kind != ECS_UI_NODE_ROOT &&
+        EcsUiSolverHasVisualOffset(node);
     if (metrics->offset_wrapper) {
         metrics->flow_width = EcsUiSolverOffsetSlotSize(metrics->width_sizing);
         metrics->flow_min_width = metrics->flow_width;
@@ -1080,17 +1501,16 @@ static uint32_t EcsUiSolverCollectAxisChildren(
     bool x_axis,
     bool grow_only)
 {
-    EcsUiTreeSnapshot *tree = ctx->tree;
     uint32_t count = 0u;
-    for (uint32_t child = tree->nodes[parent].first_child;
-         child != ECS_UI_TREE_INVALID_INDEX;
-         child = tree->nodes[child].next_sibling) {
-        EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
-        if (!EcsUiSolverChildInParentFlow(tree, parent, child)) {
-            continue;
-        }
+    const uint32_t flow_count = EcsUiSolverCollectParentFlowItems(ctx, parent);
+    if (ctx->failed) {
+        return 0u;
+    }
+    for (uint32_t i = 0u; i < flow_count; i += 1u) {
+        EcsUiSolverFlowItem item = ctx->scratch_items[i];
+        EcsUiSolverMetrics *child_metrics = EcsUiSolverFlowMetrics(ctx, item);
         if (!child_metrics->visible ||
-                !EcsUiSolverAxisResizable(child_metrics, x_axis)) {
+            !EcsUiSolverAxisResizable(child_metrics, x_axis)) {
             continue;
         }
         if (grow_only &&
@@ -1098,7 +1518,7 @@ static uint32_t EcsUiSolverCollectAxisChildren(
                     ECS_UI_SOLVER_SIZE_GROW) {
             continue;
         }
-        ctx->scratch_indices[count] = child;
+        ctx->scratch_items[count] = item;
         count += 1u;
     }
     return count;
@@ -1114,13 +1534,16 @@ static void EcsUiSolverWaterFillGrow(
     const float epsilon = EcsUiSolverPhysicalEpsilon(tree);
     uint32_t active_count =
         EcsUiSolverCollectAxisChildren(ctx, parent, x_axis, true);
+    if (ctx->failed) {
+        return;
+    }
     while (free_space > epsilon && active_count > 0u) {
         float smallest = 3.4e38f;
         float second_smallest = 3.4e38f;
         float amount = free_space;
         for (uint32_t i = 0u; i < active_count; i += 1u) {
-            uint32_t child = ctx->scratch_indices[i];
-            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            EcsUiSolverMetrics *child_metrics =
+                EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
             const float size = *EcsUiSolverAxisFlowSize(child_metrics, x_axis);
             if (EcsUiSolverFloatEqual(tree, size, smallest)) {
                 continue;
@@ -1137,8 +1560,8 @@ static void EcsUiSolverWaterFillGrow(
 
         amount = EcsUiSolverMinFloat(amount, free_space / (float)active_count);
         for (uint32_t i = 0u; i < active_count; i += 1u) {
-            uint32_t child = ctx->scratch_indices[i];
-            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            EcsUiSolverMetrics *child_metrics =
+                EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
             float *size = EcsUiSolverAxisFlowSize(child_metrics, x_axis);
             if (EcsUiSolverFloatEqual(tree, *size, smallest)) {
                 EcsUiSolverSetAxisFlowSize(child_metrics, x_axis, *size + amount);
@@ -1158,6 +1581,9 @@ static void EcsUiSolverCompressResizable(
     const float epsilon = EcsUiSolverPhysicalEpsilon(tree);
     uint32_t active_count =
         EcsUiSolverCollectAxisChildren(ctx, parent, x_axis, false);
+    if (ctx->failed) {
+        return;
+    }
     uint32_t iteration_limit =
         active_count > 0u ? (active_count * active_count * 8u) + 8u : 0u;
 
@@ -1176,8 +1602,8 @@ static void EcsUiSolverCompressResizable(
         float second_largest = 0.0f;
         float amount = free_space;
         for (uint32_t i = 0u; i < active_count; i += 1u) {
-            uint32_t child = ctx->scratch_indices[i];
-            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            EcsUiSolverMetrics *child_metrics =
+                EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
             const float size = *EcsUiSolverAxisFlowSize(child_metrics, x_axis);
             if (EcsUiSolverFloatEqual(tree, size, largest)) {
                 continue;
@@ -1194,8 +1620,8 @@ static void EcsUiSolverCompressResizable(
 
         amount = EcsUiSolverMaxFloat(amount, free_space / (float)active_count);
         for (uint32_t i = 0u; i < active_count; i += 1u) {
-            uint32_t child = ctx->scratch_indices[i];
-            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            EcsUiSolverMetrics *child_metrics =
+                EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
             float *size = EcsUiSolverAxisFlowSize(child_metrics, x_axis);
             const float min_size =
                 *EcsUiSolverAxisFlowMin(child_metrics, x_axis);
@@ -1205,7 +1631,7 @@ static void EcsUiSolverCompressResizable(
                 if (*size <= min_size) {
                     EcsUiSolverSetAxisFlowSize(child_metrics, x_axis, min_size);
                     active_count -= 1u;
-                    ctx->scratch_indices[i] = ctx->scratch_indices[active_count];
+                    ctx->scratch_items[i] = ctx->scratch_items[active_count];
                     i -= 1u;
                 }
                 free_space -= *size - previous;
@@ -1245,14 +1671,14 @@ static void EcsUiSolverSolveAxisTopDown(
         float inner = 0.0f;
         uint32_t visible_child_count = 0u;
         uint32_t grow_count = 0u;
-        for (uint32_t child = node->first_child;
-             child != ECS_UI_TREE_INVALID_INDEX;
-             child = tree->nodes[child].next_sibling) {
-            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
-            if (!child_metrics->visible ||
-                    !EcsUiSolverChildInParentFlow(tree, index, child)) {
-                continue;
-            }
+        const uint32_t flow_count =
+            EcsUiSolverCollectParentFlowItems(ctx, index);
+        if (ctx->failed) {
+            return;
+        }
+        for (uint32_t i = 0u; i < flow_count; i += 1u) {
+            EcsUiSolverMetrics *child_metrics =
+                EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
             inner += *EcsUiSolverAxisFlowSize(child_metrics, x_axis);
             if (visible_child_count > 0u) {
                 inner += gap;
@@ -1277,26 +1703,29 @@ static void EcsUiSolverSolveAxisTopDown(
         float max_size = parent_size - parent_padding;
         if (EcsUiSolverScrollClipsAxis(node, x_axis)) {
             float inner_content_size = 0.0f;
-            for (uint32_t child = node->first_child;
-                 child != ECS_UI_TREE_INVALID_INDEX;
-                 child = tree->nodes[child].next_sibling) {
-                EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
-                if (!child_metrics->visible ||
-                        !EcsUiSolverChildInParentFlow(tree, index, child)) {
-                    continue;
-                }
+            const uint32_t flow_count =
+                EcsUiSolverCollectParentFlowItems(ctx, index);
+            if (ctx->failed) {
+                return;
+            }
+            for (uint32_t i = 0u; i < flow_count; i += 1u) {
+                EcsUiSolverMetrics *child_metrics =
+                    EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
                 inner_content_size = EcsUiSolverMaxFloat(
                     inner_content_size,
                     *EcsUiSolverAxisFlowSize(child_metrics, x_axis));
             }
             max_size = EcsUiSolverMaxFloat(max_size, inner_content_size);
         }
-        for (uint32_t child = node->first_child;
-             child != ECS_UI_TREE_INVALID_INDEX;
-             child = tree->nodes[child].next_sibling) {
-            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+        const uint32_t flow_count =
+            EcsUiSolverCollectParentFlowItems(ctx, index);
+        if (ctx->failed) {
+            return;
+        }
+        for (uint32_t i = 0u; i < flow_count; i += 1u) {
+            EcsUiSolverMetrics *child_metrics =
+                EcsUiSolverFlowMetrics(ctx, ctx->scratch_items[i]);
             if (!child_metrics->visible ||
-                    !EcsUiSolverChildInParentFlow(tree, index, child) ||
                     !EcsUiSolverAxisResizable(child_metrics, x_axis)) {
                 continue;
             }
@@ -1322,7 +1751,8 @@ static void EcsUiSolverSolveAxisTopDown(
         if (!EcsUiSolverChildInParentFlow(tree, index, child)) {
             continue;
         }
-        if (ctx->metrics[child].offset_wrapper) {
+        if (ctx->metrics[child].text_field_value ||
+                ctx->metrics[child].offset_wrapper) {
             continue;
         }
         EcsUiSolverSolveAxisTopDown(ctx, child, x_axis);
@@ -1445,12 +1875,26 @@ static float EcsUiSolverChildrenMainSize(
                 !EcsUiSolverChildInParentFlow(tree, index, child)) {
             continue;
         }
+        if (child_metrics->text_field_value) {
+            const uint32_t first = child_metrics->virtual_first;
+            const uint32_t end = first + child_metrics->virtual_count;
+            for (uint32_t i = first; i < end; i += 1u) {
+                if (visible_child_count > 0u) {
+                    size += gap;
+                }
+                EcsUiSolverMetrics *virtual_metrics =
+                    &ctx->virtual_entries[i].metrics;
+                size += horizontal ?
+                    virtual_metrics->flow_width :
+                    virtual_metrics->flow_height;
+                visible_child_count += 1u;
+            }
+            continue;
+        }
         if (visible_child_count > 0u) {
             size += gap;
         }
-        size += horizontal ?
-            child_metrics->flow_width :
-            child_metrics->flow_height;
+        size += horizontal ? child_metrics->flow_width : child_metrics->flow_height;
         visible_child_count += 1u;
     }
     return size;
@@ -1469,6 +1913,20 @@ static float EcsUiSolverChildrenOffAxisSize(
         EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
         if (!child_metrics->visible ||
                 !EcsUiSolverChildInParentFlow(tree, index, child)) {
+            continue;
+        }
+        if (child_metrics->text_field_value) {
+            const uint32_t first = child_metrics->virtual_first;
+            const uint32_t end = first + child_metrics->virtual_count;
+            for (uint32_t i = first; i < end; i += 1u) {
+                EcsUiSolverMetrics *virtual_metrics =
+                    &ctx->virtual_entries[i].metrics;
+                size = EcsUiSolverMaxFloat(
+                    size,
+                    horizontal ?
+                        virtual_metrics->flow_height :
+                        virtual_metrics->flow_width);
+            }
             continue;
         }
         size = EcsUiSolverMaxFloat(
@@ -1701,6 +2159,9 @@ static void EcsUiSolverPlaceNode(
     if (!metrics->visible) {
         return;
     }
+    if (metrics->text_field_value) {
+        return;
+    }
     ctx->layouts[index] = (EcsUiSolverLayout){
         .rect = rect,
         .emitted = true,
@@ -1755,6 +2216,28 @@ static void EcsUiSolverPlaceNode(
         EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
         if (!child_metrics->visible ||
                 !EcsUiSolverChildInParentFlow(tree, index, child)) {
+            continue;
+        }
+        if (child_metrics->text_field_value) {
+            const uint32_t first = child_metrics->virtual_first;
+            const uint32_t end = first + child_metrics->virtual_count;
+            for (uint32_t i = first; i < end; i += 1u) {
+                EcsUiSolverMetrics *virtual_metrics =
+                    &ctx->virtual_entries[i].metrics;
+                if (child_count > 0u) {
+                    if (horizontal) {
+                        cursor_x += gap;
+                    } else {
+                        cursor_y += gap;
+                    }
+                }
+                if (horizontal) {
+                    cursor_x += virtual_metrics->flow_width;
+                } else {
+                    cursor_y += virtual_metrics->flow_height;
+                }
+                child_count += 1u;
+            }
             continue;
         }
         if (child_count > 0u) {
@@ -1929,17 +2412,36 @@ bool EcsUiSolverRun(
     }
     size_t layout_bytes = 0u;
     size_t metrics_bytes = 0u;
+    size_t virtual_bytes = 0u;
     size_t scratch_bytes = 0u;
     size_t metrics_offset = 0u;
+    size_t virtual_offset = 0u;
     size_t scratch_offset = 0u;
     size_t total_bytes = 0u;
+    if (tree->count > UINT32_MAX / 5u) {
+        EcsUiSolverSetError(&ctx, "native layout solver allocation failed");
+        return false;
+    }
+    const uint32_t flow_capacity = tree->count * 5u;
     if (!EcsUiSolverMulSize(sizeof(EcsUiSolverLayout), tree->count, &layout_bytes) ||
             !EcsUiSolverMulSize(sizeof(EcsUiSolverMetrics), tree->count, &metrics_bytes) ||
-            !EcsUiSolverMulSize(sizeof(uint32_t), tree->count, &scratch_bytes) ||
+            !EcsUiSolverMulSize(
+                sizeof(EcsUiSolverVirtualFlow),
+                flow_capacity,
+                &virtual_bytes) ||
+            !EcsUiSolverMulSize(
+                sizeof(EcsUiSolverFlowItem),
+                flow_capacity,
+                &scratch_bytes) ||
             !EcsUiSolverAlignSize(layout_bytes, sizeof(void *), &metrics_offset) ||
             metrics_offset > SIZE_MAX - metrics_bytes ||
             !EcsUiSolverAlignSize(
                 metrics_offset + metrics_bytes,
+                sizeof(void *),
+                &virtual_offset) ||
+            virtual_offset > SIZE_MAX - virtual_bytes ||
+            !EcsUiSolverAlignSize(
+                virtual_offset + virtual_bytes,
                 sizeof(void *),
                 &scratch_offset) ||
             scratch_offset > SIZE_MAX - scratch_bytes) {
@@ -1957,7 +2459,11 @@ bool EcsUiSolverRun(
     }
     ctx.layouts = (EcsUiSolverLayout *)work;
     ctx.metrics = (EcsUiSolverMetrics *)(void *)(work + metrics_offset);
-    ctx.scratch_indices = (uint32_t *)(void *)(work + scratch_offset);
+    ctx.virtual_entries =
+        (EcsUiSolverVirtualFlow *)(void *)(work + virtual_offset);
+    ctx.virtual_capacity = flow_capacity;
+    ctx.scratch_items = (EcsUiSolverFlowItem *)(void *)(work + scratch_offset);
+    ctx.scratch_item_capacity = flow_capacity;
     const EcsUiFrameLayoutOptions *layout =
         options != NULL ? options->layout : NULL;
     EcsUiSolverClearSnapshotLayout(tree);

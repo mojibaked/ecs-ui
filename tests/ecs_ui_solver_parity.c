@@ -65,13 +65,6 @@ static void TestFrameHandleError(
     CopyString(errors->last_message, sizeof(errors->last_message), message);
 }
 
-static void ResetErrors(TestFrameErrors *errors)
-{
-    if (errors != NULL) {
-        *errors = (TestFrameErrors){0};
-    }
-}
-
 static EcsUiSize TestMeasureText(
     const char *utf8,
     int32_t length,
@@ -581,35 +574,659 @@ static int BuildRootPreferredBelowViewport(
     return Require(EcsUiBuilderOk(&builder), "root preferred builder failed");
 }
 
-static int BuildUnsupportedTextFieldView(
+static int BuildTextFieldUnfocused(
     ecs_world_t *world,
     ecs_entity_t root)
 {
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
-    ecs_entity_t pressable = EcsUiBeginPressable(
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldUnfocusedFit",
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+            .padding = 1.25f,
+        });
+    ecs_entity_t field = EcsUiBeginPressable(
         &builder,
         (EcsUiPressableDesc){
-            .id = "UnsupportedTextField",
+            .id = "TextFieldUnfocused",
+            .preferred_height = 38.5f,
         });
     ecs_entity_t value = EcsUiAddText(
         &builder,
         (EcsUiTextDesc){
-            .id = "UnsupportedTextFieldValue",
-            .text = "field value",
+            .id = "TextFieldUnfocusedValue",
+            .text = "hello world beyond",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 5u,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field unfocused builder failed");
+}
+
+static int BuildTextFieldCursorMid(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldCursorMid",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldCursorMidValue",
+            .text = "abc def ghi",
+            .role = ECS_UI_TEXT_BODY,
         });
     EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
-    ecs_set(
-        world,
-        pressable,
-        EcsUiTextFieldView,
-        {
-            .value_node = value,
-            .focused = true,
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 5u,
+        .caret_width = 2.5f,
+        .focused = true,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field cursor mid builder failed");
+}
+
+static int BuildTextFieldCursorEdges(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .gap = 3.25f,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t start_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldCursorStart",
+            .preferred_height = 38.5f,
         });
+    ecs_entity_t start_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldCursorStartValue",
+            .text = "start edge",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t end_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldCursorEnd",
+            .preferred_height = 38.5f,
+        });
+    ecs_entity_t end_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldCursorEndValue",
+            .text = "end edge",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, start_field, EcsUiTextFieldView, {
+        .value_node = start_value,
+        .cursor = 0u,
+        .focused = true,
+    });
+    ecs_set(world, end_field, EcsUiTextFieldView, {
+        .value_node = end_value,
+        .cursor = 8u,
+        .focused = true,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field edge cursor builder failed");
+}
+
+static int BuildTextFieldSelectionCarets(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .gap = 3.25f,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t start_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldSelectionStart",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t start_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldSelectionStartValue",
+            .text = "selectable text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t end_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldSelectionEnd",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t end_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldSelectionEndValue",
+            .text = "selectable text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, start_field, EcsUiTextFieldView, {
+        .value_node = start_value,
+        .cursor = 2u,
+        .selection_anchor = 2u,
+        .selection_focus = 8u,
+        .focused = true,
+    });
+    ecs_set(world, end_field, EcsUiTextFieldView, {
+        .value_node = end_value,
+        .cursor = 8u,
+        .selection_anchor = 2u,
+        .selection_focus = 8u,
+        .focused = true,
+    });
     return Require(
         EcsUiBuilderOk(&builder),
-        "unsupported text field builder failed");
+        "text field selection caret builder failed");
+}
+
+static int BuildTextFieldSelectionClamp(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldSelectionClamp",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldSelectionClampValue",
+            .text = "clamp me",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 99u,
+        .selection_anchor = 99u,
+        .selection_focus = 2u,
+        .focused = true,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field clamp builder failed");
+}
+
+static int BuildTextFieldStyled(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t styled = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldStyledAncestor",
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldStyled",
+            .preferred_height = 48.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldStyledValue",
+            .text = "styled body",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, styled, EcsUiTextStyle, {
+        .body_size = 30.5f,
+    });
+    ecs_set(world, value, EcsUiTextStyle, {
+        .body_size = 22.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field styled builder failed");
+}
+
+static int BuildTextFieldFitWidthChain(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldFitOuter",
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+            .padding = 1.25f,
+        });
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldFit",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldFitValue",
+            .text = "fit chain words",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 4u,
+        .caret_width = 2.5f,
+        .focused = true,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field fit builder failed");
+}
+
+static int BuildTextFieldCompression(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldCompressParent",
+            .preferred_width = 96.5f,
+            .preferred_height = 54.5f,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldCompress",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldCompressValue",
+            .text = "superlongword tiny",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextFieldCompressSibling",
+            .kind = "parity.textfield",
+            .preferred_width = 26.5f,
+            .preferred_height = 26.5f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldSelectionCompressParent",
+            .preferred_width = 90.5f,
+            .preferred_height = 54.5f,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+    ecs_entity_t selection_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldSelectionCompress",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t selection_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldSelectionCompressValue",
+            .text = "aa bb selected words tail",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "TextFieldSelectionTrailingIcon",
+            .name = "selection.trailing",
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldMultiCompressParent",
+            .preferred_width = 118.5f,
+            .preferred_height = 54.5f,
+            .padding = 2.25f,
+        });
+    ecs_entity_t multi_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldMultiCompress",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t multi_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldMultiCompressValue",
+            .text = "aa bb selected words tail",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldMultiFitSibling",
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextFieldMultiFitLeaf",
+            .kind = "parity.textfield",
+            .preferred_width = 52.5f,
+            .preferred_height = 18.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 5u,
+        .focused = true,
+    });
+    ecs_set(world, selection_field, EcsUiTextFieldView, {
+        .value_node = selection_value,
+        .cursor = 20u,
+        .selection_anchor = 6u,
+        .selection_focus = 20u,
+        .focused = true,
+    });
+    ecs_set(world, multi_field, EcsUiTextFieldView, {
+        .value_node = multi_value,
+        .cursor = 20u,
+        .selection_anchor = 6u,
+        .selection_focus = 20u,
+        .focused = true,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "text field compression builder failed");
+}
+
+static int BuildTextFieldOpacityZeroValue(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "TextFieldOpacityFit",
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+            .padding = 1.25f,
+        });
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldOpacityZero",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldOpacityZeroValue",
+            .text = "opacity zero value words",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+    });
+    ecs_set(world, value, EcsUiVisual, {
+        .opacity = 0.0f,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "text field opacity-zero builder failed");
+}
+
+static int BuildTextFieldScrollComposition(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 1.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "TextFieldScroll",
+                .preferred_width = 118.5f,
+                .preferred_height = 48.5f,
+                .padding = 2.25f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldInScroll",
+            .preferred_height = 40.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldInScrollValue",
+            .text = "scrolled selected value tail",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextFieldScrollSibling",
+            .kind = "parity.textfield",
+            .preferred_width = 44.5f,
+            .preferred_height = 26.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 16u,
+        .selection_anchor = 9u,
+        .selection_focus = 16u,
+        .focused = true,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "text field scroll composition builder failed");
+}
+
+static int BuildTextFieldExtraChildren(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldExtraChildren",
+            .preferred_height = 42.5f,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "TextFieldLeadingIcon",
+            .name = "leading",
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldExtraValue",
+            .text = "with icon",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextFieldTrailingCustom",
+            .kind = "parity.textfield",
+            .preferred_width = 18.5f,
+            .preferred_height = 18.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 4u,
+        .focused = true,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field extra children builder failed");
+}
+
+static int BuildTextFieldFallbacks(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(world, root, EcsUiStack, {
+        .axis = ECS_UI_AXIS_VERTICAL,
+        .gap = 3.25f,
+        .padding = 2.25f,
+    });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t missing_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldMissingValue",
+            .preferred_height = 38.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldMissingNormalText",
+            .text = "normal missing",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t non_text_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "TextFieldNonTextValue",
+            .preferred_height = 38.5f,
+        });
+    ecs_entity_t non_text = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "TextFieldNonTextCustom",
+            .kind = "parity.textfield",
+            .preferred_width = 18.5f,
+            .preferred_height = 18.5f,
+        });
+    (void)EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "TextFieldNonTextNormalText",
+            .text = "normal non text",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_entity_t missing = ecs_entity(world, {
+        .name = "TextFieldMissingEntity",
+        .sep = "",
+    });
+    ecs_set(world, missing_field, EcsUiTextFieldView, {
+        .value_node = missing,
+        .focused = true,
+    });
+    ecs_set(world, non_text_field, EcsUiTextFieldView, {
+        .value_node = non_text,
+        .focused = true,
+    });
+    return Require(EcsUiBuilderOk(&builder), "text field fallback builder failed");
 }
 
 static int BuildFitStackSizing(
@@ -4938,65 +5555,6 @@ static int TestDeepDivergenceProof(void)
     return result;
 }
 
-static int RunUnsupportedCase(
-    TestFrameErrors *errors,
-    const char *name,
-    BuildParityTreeFn build,
-    const char *expected_message)
-{
-    int result = 0;
-    ecs_world_t *world = CreateWorld();
-    if (world == NULL) {
-        return Require(false, "failed to create unsupported world");
-    }
-
-    char root_id[ECS_UI_ID_MAX] = {0};
-    (void)snprintf(root_id, sizeof(root_id), "%sRoot", name);
-    ecs_entity_t root = EcsUiRootEntity(world, root_id);
-    result |= Require(root != 0, "failed to create unsupported root");
-    result |= build(world, root);
-
-    EcsUiTreeSnapshot tree = {0};
-    result |= Require(
-        EcsUiReadTree(world, root, &tree),
-        "failed to read unsupported snapshot");
-    if (result != 0) {
-        EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
-        ecs_fini(world);
-        return result;
-    }
-
-    ResetErrors(errors);
-    EcsUiTheme theme = EcsUiThemeDefault();
-    EcsUiFrameLayoutOptions options = LayoutOptions(1.0f);
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
-    const EcsUiDrawList *draw_list =
-        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL);
-    result |= Require(draw_list == NULL, "unsupported native run should fail");
-    result |= Require(errors != NULL && errors->count > 0u, "unsupported error missing");
-    result |= Require(
-        errors != NULL && errors->last_kind == ECS_UI_FRAME_ERROR_INTERNAL,
-        "unsupported error kind mismatch");
-    result |= Require(
-        errors != NULL && strstr(errors->last_message, expected_message) != NULL,
-        "unsupported error message mismatch");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
-    ecs_fini(world);
-    return result;
-}
-
-static int TestUnsupportedStageFailures(TestFrameErrors *errors)
-{
-    int result = 0;
-    result |= RunUnsupportedCase(
-        errors,
-        "unsupported_text_field_view",
-        BuildUnsupportedTextFieldView,
-        "unsupported text-field view on node kind 9 -- stage 6c");
-    return result;
-}
-
 int main(void)
 {
     int result = 0;
@@ -5198,6 +5756,54 @@ int main(void)
             .build = BuildTextMeasurementEdgeCases,
         },
         {
+            .name = "text_field_unfocused",
+            .build = BuildTextFieldUnfocused,
+        },
+        {
+            .name = "text_field_cursor_mid",
+            .build = BuildTextFieldCursorMid,
+        },
+        {
+            .name = "text_field_cursor_edges",
+            .build = BuildTextFieldCursorEdges,
+        },
+        {
+            .name = "text_field_selection_carets",
+            .build = BuildTextFieldSelectionCarets,
+        },
+        {
+            .name = "text_field_selection_clamp",
+            .build = BuildTextFieldSelectionClamp,
+        },
+        {
+            .name = "text_field_styled",
+            .build = BuildTextFieldStyled,
+        },
+        {
+            .name = "text_field_fit_width_chain",
+            .build = BuildTextFieldFitWidthChain,
+        },
+        {
+            .name = "text_field_compression",
+            .build = BuildTextFieldCompression,
+        },
+        {
+            .name = "text_field_opacity_zero_value",
+            .build = BuildTextFieldOpacityZeroValue,
+        },
+        {
+            .name = "text_field_scroll_composition",
+            .build = BuildTextFieldScrollComposition,
+        },
+        {
+            .name = "text_field_extra_children",
+            .build = BuildTextFieldExtraChildren,
+        },
+        {
+            .name = "text_field_fallbacks",
+            .build = BuildTextFieldFallbacks,
+        },
+        {
             .name = "zstack_basic",
             .build = BuildZStackBasic,
         },
@@ -5353,7 +5959,6 @@ int main(void)
         }
     }
     result |= TestDeepDivergenceProof();
-    result |= TestUnsupportedStageFailures(&errors);
 
     EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     EcsUiFrameBackendShutdown();

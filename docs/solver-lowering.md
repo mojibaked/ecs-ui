@@ -35,10 +35,10 @@ current Stage 1 rules are:
   height defaults to 96, button and pressable heights default to 46, and icons
   are 16 by 16.
 
-Unstaged features must fail loudly instead of producing plausible rects. After
-stage 6b, the remaining loud guard is pressables with text-field synthetic
-children (`-- stage 6c`); the frame backend reports the solver error and
-returns no draw list for that run.
+Unstaged features fail loudly instead of producing plausible rects. Stage 6c
+removes the final emitted-feature guard by solving pressables with
+text-field synthetic children; after 6c, the remaining non-coverage is the
+adoption-time list outside rect parity.
 
 The Stage 2 grow subset is deliberately narrower than Clay's full grow/shrink
 algorithm. It covers positive free space on the parent's layout axis with
@@ -302,8 +302,8 @@ should prove wrapper-rect parity for newline text.
 ## Stage 6: floating, ZStack, placement, visual offsets, scroll
 
 Implemented in sub-stages, committed separately: 6a floating/ZStack/placement/
-visual offsets; 6b scroll; 6c text-field synthetic elements (guard stays until
-then, message retagged "-- stage 6c").
+visual offsets; 6b scroll; 6c text-field synthetic elements (removing the
+final emitted-feature guard).
 
 ### Clay's floating machinery (what the solver reimplements)
 
@@ -472,7 +472,58 @@ effects the solver must reproduce:
 placement (all 9 x 9), placement sizing, point-anchor flip/clamp, z-index
 bookkeeping ONLY insofar as it never affects rects, visual-offset wrapper
 pairs for all node kinds, bevel floaters as paint-only no-ops. 6b in scope:
-clip sizing rules, scroll offsets, content dims. Still failing loudly after
-6a+6b: pressables with a text-field view (stage 6c). Out of parity scope
-permanently (adoption-time list): z/paint order, pointer-over ordering,
-capture modes, scissor commands, retained offset MUTATION (the wheel path).
+clip sizing rules, scroll offsets, content dims. 6c in scope: pressables with
+a text-field view. Out of parity scope permanently (adoption-time list):
+z/paint order, pointer-over ordering, capture modes, scissor commands,
+retained offset MUTATION (the wheel path).
+
+### Bridge lowering: text-field pressables (6c)
+
+A pressable with `has_text_field_view` keeps its normal declaration
+(LEFT_TO_RIGHT, box padding else 12, gap 0, childAlignment y CENTER) but its
+VALUE child — the TEXT child whose entity matches `text_field_view.value_node`
+— is replaced by synthetic inline segments; all other children emit normally.
+
+- Segment order (view state; cursor/selection indices clamped to the value
+  string length, selection normalized so start <= end, selection counts only
+  when `focused && start < end`):
+  - not focused: one inline range [0, end);
+  - focused, no selection: [0, cursor), caret, [cursor, end);
+  - focused with selection: [0, sel_start), caret if cursor == sel_start,
+    selection wrapper containing [sel_start, sel_end), caret if cursor !=
+    sel_start, [sel_end, end).
+- Inline ranges are BARE `CLAY_TEXT` elements (auto ids, NO size+8 wrapper):
+  dims = per-word measured size of the substring, min = longest word in the
+  substring, non-resizable (WRAP_NONE). An empty range emits NOTHING (segment
+  count varies with cursor position). Inline ranges use
+  `EcsUiClayDefaultTextLayout()` rather than the VALUE node's authored text
+  layout.
+- The caret is a fixed element, id "_Caret" on the value node:
+  width FIXED(scaled(caret_width > 0 ? caret_width : 2)), height
+  FIXED(scaled(resolved size + 8)) — size resolution uses the INHERITED value
+  style chain (value node's own style wins), same as segment fonts.
+- The selection wrapper, id "_Selection" on the value node: default sizing
+  (FIT both axes -> sizes to its inline range), childAlignment y CENTER. It is
+  its own resizable flow item in the pressable and compresses independently
+  from fixed text segments, the fixed caret, and any other FIT/GROW siblings.
+- RECT-PARITY CONSEQUENCE: no element ever carries the VALUE node's id — the
+  value TEXT node is NOT enriched on the clay side (`has_layout` false), and
+  the solver must likewise emit no layout for it. The synthetic segments
+  affect layout only through the pressable's content: measured text widths,
+  caret width, and longest-word mins feed the pressable's flow sums and min
+  floors (pressable gap is 0 for text fields).
+- The value child is routed directly to `EcsUiClayEmitTextFieldValue`, bypassing
+  normal `EmitNode` opacity gating. The value node's own `visual.opacity`
+  therefore has no layout effect; parent opacity still gates the pressable
+  subtree before child emission is reached.
+- The pressable's preferred walk contributions are unchanged (walk height =
+  preferred/46, walk width = 0 — the walk never sees the synthetics).
+- If `value_node` matches no child, or matches a non-TEXT child, no child is
+  replaced and the pressable emits its children normally.
+
+### Stage 6c scope
+
+Text-field pressables lower to the synthetic segment flow above; the loud
+failure is removed. After 6c no emitted feature fails loudly; the adoption-
+time non-coverage list (z/paint order, pointer-over, capture, scissor,
+retained offset mutation) is unchanged.
