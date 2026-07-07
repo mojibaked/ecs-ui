@@ -1267,7 +1267,9 @@ bool EcsUiRaylibStep(
     }
 
     if (frame.should_present) {
+        EcsUiRaylibSetEventWaiting(false);
         immediate = EcsUiRaylibStepRunHook(desc->hooks.present, ctx) || immediate;
+        EcsUiRaylibSetEventWaiting(false);
         immediate =
             EcsUiRaylibStepRunHook(desc->hooks.after_present_cleanup, ctx) ||
             immediate;

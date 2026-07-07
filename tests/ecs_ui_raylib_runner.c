@@ -63,11 +63,20 @@ static void EventWaitingDisable(void)
 }
 
 typedef struct EventWaitingStepCtx {
+    uint32_t render_calls;
     uint32_t present_calls;
     uint32_t park_calls;
     bool present_saw_enabled;
     bool park_saw_disabled;
 } EventWaitingStepCtx;
+
+static bool EventWaitingRenderEnable(void *ctx)
+{
+    EventWaitingStepCtx *step = (EventWaitingStepCtx *)ctx;
+    step->render_calls += 1u;
+    EventWaitingEnable();
+    return false;
+}
 
 static bool EventWaitingPresent(void *ctx)
 {
@@ -607,7 +616,7 @@ static int TestStepOwnsEventWaitingToggle(void)
             !ctx.present_saw_enabled &&
             ctx.park_calls == 1u &&
             !event_waiting_trace.enabled &&
-            strcmp(event_waiting_trace.order, "DEDD") == 0,
+            strcmp(event_waiting_trace.order, "DEDDDD") == 0,
         "event waiting hot frame should stay nonblocking");
 
     result |= Require(
@@ -637,7 +646,7 @@ static int TestStepOwnsEventWaitingToggle(void)
             ctx.park_calls == 2u &&
             !ctx.park_saw_disabled &&
             !event_waiting_trace.enabled &&
-            strcmp(event_waiting_trace.order, "DEDDDED") == 0,
+            strcmp(event_waiting_trace.order, "DEDDDDDED") == 0,
         "event waiting park restoration mismatch");
 
     EventWaitingTraceReset();
@@ -672,6 +681,146 @@ static int TestStepOwnsEventWaitingToggle(void)
     EcsUiRaylibParkerDestroy(parker);
     EcsUiWakeRegistryDestroy(registry);
     EcsUiFrameSignalAccumulatorDestroy(signals);
+    return result;
+}
+
+static int TestForceRenderAfterFdWakeKeepsPresentNonblocking(void)
+{
+    int result = 0;
+    int fds[2] = {-1, -1};
+    TestPostCtx post = {0};
+    EcsUiRaylibParker *parker = TestCreateParker(&post);
+    EcsUiFrameSignalAccumulator *signals =
+        EcsUiFrameSignalAccumulatorCreate();
+    EcsUiWakeRegistry *registry = EcsUiWakeRegistryCreate();
+    EcsUiWakeHandle pending =
+        EcsUiWakeRegisterPending(registry, "attach.reply");
+    EcsUiWakeHandle fd_handle = {0};
+    EcsUiRaylibStepState state;
+    EcsUiRaylibStepResult step = {0};
+    EcsUiFrameClassifyResult seed = {0};
+    EventWaitingStepCtx ctx = {0};
+    EcsUiRaylibWakeReason reason = {0};
+
+    EcsUiRaylibTestSetEventWaitingFns(
+        EventWaitingEnable,
+        EventWaitingDisable);
+    EventWaitingTraceReset();
+    EcsUiRaylibStepStateInit(&state);
+    result |= Require(parker != NULL, "force after fd parker missing");
+    result |= Require(signals != NULL, "force after fd signals missing");
+    result |= Require(registry != NULL, "force after fd registry missing");
+    result |= Require(
+        socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0,
+        "force after fd socketpair failed");
+    if (registry != NULL && fds[0] >= 0) {
+        fd_handle = EcsUiWakeRegisterPosixFd(
+            registry,
+            "attach.listener",
+            fds[0],
+            ECS_UI_WAKE_FD_INTEREST_READ);
+    }
+    result |= Require(
+        EcsUiWakeHandleIsValid(pending),
+        "force after fd pending handle missing");
+    result |= Require(
+        EcsUiWakeHandleIsValid(fd_handle),
+        "force after fd handle missing");
+    result |= Require(
+        EcsUiFrameClassify(signals, NULL, &seed),
+        "force after fd seed classify failed");
+
+    const uint64_t wake_sequence =
+        parker != NULL ? EcsUiRaylibParkerWakeSequence(parker) : 0u;
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .parker = parker,
+                .now_ns = TestMonotonicNs(),
+                .dt = 0.016,
+                .enable_event_waiting = true,
+                .hooks = {
+                    .park = EventWaitingPark,
+                    .ctx = &ctx,
+                },
+            },
+            &step),
+        "force after fd park step failed");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_PARK &&
+            step.park_armed &&
+            ctx.park_calls == 1u &&
+            !event_waiting_trace.enabled,
+        "force after fd initial park mismatch");
+
+    const unsigned char byte = 11u;
+    result |= Require(
+        write(fds[1], &byte, sizeof(byte)) == (ssize_t)sizeof(byte),
+        "force after fd socket write failed");
+    result |= Require(
+        EcsUiRaylibParkerWaitForWake(
+            parker,
+            wake_sequence,
+            250000000u,
+            &reason),
+        "force after fd wake timed out");
+    result |= Require(
+        reason.kind == ECS_UI_RAYLIB_WAKE_FD &&
+            strcmp(reason.label, "attach.listener") == 0,
+        "force after fd wake reason mismatch");
+
+    EventWaitingTraceReset();
+    ctx = (EventWaitingStepCtx){0};
+    result |= Require(
+        EcsUiWakeSetPending(registry, pending, true),
+        "force after fd pending set failed");
+    result |= Require(
+        EcsUiFrameSignalMark(signals, ECS_UI_FRAME_MARK_FORCE_RENDER),
+        "force after fd force mark failed");
+    result |= Require(
+        EcsUiRaylibStep(
+            &state,
+            &(EcsUiRaylibStepDesc){
+                .frame_signals = signals,
+                .wake_registry = registry,
+                .parker = parker,
+                .now_ns = TestMonotonicNs(),
+                .dt = 0.016,
+                .enable_event_waiting = true,
+                .hooks = {
+                    .render = EventWaitingRenderEnable,
+                    .present = EventWaitingPresent,
+                    .park = EventWaitingPark,
+                    .ctx = &ctx,
+                },
+            },
+            &step),
+        "force after fd render step failed");
+    result |= Require(
+        step.frame_classification == ECS_UI_FRAME_RENDER_AND_PRESENT &&
+            step.frame_reason.kind == ECS_UI_FRAME_REASON_FORCE_RENDER &&
+            strcmp(step.frame_reason.label, "force-render") == 0 &&
+            ctx.render_calls == 1u &&
+            ctx.present_calls == 1u &&
+            ctx.park_calls == 0u &&
+            !ctx.present_saw_enabled &&
+            !event_waiting_trace.enabled &&
+            strcmp(event_waiting_trace.order, "DEDD") == 0,
+        "force-render after fd wake should present with waiting disabled");
+
+    EcsUiRaylibTestSetEventWaitingFns(NULL, NULL);
+    EcsUiRaylibParkerDestroy(parker);
+    EcsUiWakeRegistryDestroy(registry);
+    EcsUiFrameSignalAccumulatorDestroy(signals);
+    if (fds[0] >= 0) {
+        (void)close(fds[0]);
+    }
+    if (fds[1] >= 0) {
+        (void)close(fds[1]);
+    }
     return result;
 }
 #endif
@@ -1243,6 +1392,7 @@ int main(void)
     result |= TestStepSkipsRenderForParkAndPresentOnly();
 #if !defined(_WIN32)
     result |= TestStepOwnsEventWaitingToggle();
+    result |= TestForceRenderAfterFdWakeKeepsPresentNonblocking();
 #endif
     result |= TestCapabilityDisabledIsVisible();
     result |= TestRunLifecycle();
