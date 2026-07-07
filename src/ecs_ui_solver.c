@@ -23,6 +23,8 @@ typedef struct EcsUiSolverContext {
     EcsUiTreeSnapshot *tree;
     EcsUiSolverArena *arena;
     EcsUiSolverLayout *layouts;
+    struct EcsUiSolverMetrics *metrics;
+    uint32_t *scratch_indices;
     char *error_message;
     size_t error_message_size;
     bool failed;
@@ -31,6 +33,11 @@ typedef struct EcsUiSolverContext {
 static float EcsUiSolverMaxFloat(float a, float b)
 {
     return a > b ? a : b;
+}
+
+static float EcsUiSolverMinFloat(float a, float b)
+{
+    return a < b ? a : b;
 }
 
 static float EcsUiSolverClampPositive(float value)
@@ -52,6 +59,11 @@ static float EcsUiSolverClamp01(float value)
 static float EcsUiSolverScale(const EcsUiTreeSnapshot *tree)
 {
     return tree != NULL && tree->scale > 0.0f ? tree->scale : 1.0f;
+}
+
+static float EcsUiSolverPhysicalEpsilon(const EcsUiTreeSnapshot *tree)
+{
+    return 0.01f / EcsUiSolverScale(tree);
 }
 
 static uint16_t EcsUiSolverU16(float value)
@@ -287,22 +299,6 @@ static void EcsUiSolverSetError(
         message);
 }
 
-static bool EcsUiSolverNodeUsesFit(const EcsUiTreeNodeSnapshot *node)
-{
-    if (node == NULL) {
-        return false;
-    }
-    if (EcsUiSolverNodeIsStack(node)) {
-        return node->stack.width_sizing == ECS_UI_SIZE_FIT ||
-            node->stack.height_sizing == ECS_UI_SIZE_FIT;
-    }
-    if (node->kind == ECS_UI_NODE_CUSTOM) {
-        return node->custom.width_sizing == ECS_UI_SIZE_FIT ||
-            node->custom.height_sizing == ECS_UI_SIZE_FIT;
-    }
-    return false;
-}
-
 static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
 {
     if (ctx == NULL || ctx->tree == NULL) {
@@ -311,6 +307,13 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
     for (uint32_t i = 0u; i < ctx->tree->count; i += 1u) {
         const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[i];
         char message[128] = {0};
+        if (node->kind == ECS_UI_NODE_ROOT &&
+                node->stack.axis == ECS_UI_AXIS_HORIZONTAL) {
+            EcsUiSolverSetError(
+                ctx,
+                "unsupported root horizontal axis -- stage 4");
+            return false;
+        }
         if (node->kind == ECS_UI_NODE_TEXT) {
             (void)snprintf(
                 message,
@@ -329,11 +332,20 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
             EcsUiSolverSetError(ctx, message);
             return false;
         }
-        if (EcsUiSolverNodeUsesFit(node)) {
+        if (node->has_placement) {
             (void)snprintf(
                 message,
                 sizeof(message),
-                "unsupported FIT sizing on node kind %d -- stage 3",
+                "unsupported placement on node kind %d -- stage 6",
+                (int)node->kind);
+            EcsUiSolverSetError(ctx, message);
+            return false;
+        }
+        if (node->has_scroll_view) {
+            (void)snprintf(
+                message,
+                sizeof(message),
+                "unsupported scroll/clip on node kind %d -- stage 6",
                 (int)node->kind);
             EcsUiSolverSetError(ctx, message);
             return false;
@@ -342,86 +354,62 @@ static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
     return true;
 }
 
-static float EcsUiSolverPreferredWidth(
-    const EcsUiTreeSnapshot *tree,
-    uint32_t index);
+typedef enum EcsUiSolverSizingKind {
+    ECS_UI_SOLVER_SIZE_FIXED = 0,
+    ECS_UI_SOLVER_SIZE_FIT = 1,
+    ECS_UI_SOLVER_SIZE_GROW = 2,
+} EcsUiSolverSizingKind;
 
-static float EcsUiSolverPreferredHeight(
-    const EcsUiTreeSnapshot *tree,
-    uint32_t index);
+typedef struct EcsUiSolverSizing {
+    EcsUiSolverSizingKind kind;
+    float fixed;
+} EcsUiSolverSizing;
 
-static float EcsUiSolverPreferredWidth(
-    const EcsUiTreeSnapshot *tree,
-    uint32_t index)
+typedef struct EcsUiSolverMetrics {
+    EcsUiSolverSizing width_sizing;
+    EcsUiSolverSizing height_sizing;
+    float width;
+    float height;
+    float min_width;
+    float min_height;
+    bool visible;
+} EcsUiSolverMetrics;
+
+static bool EcsUiSolverLayoutHorizontal(const EcsUiTreeNodeSnapshot *node)
 {
-    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
-    if (EcsUiSolverNodeIsStack(node) &&
-            node->stack.preferred_width > 0.0f &&
-            node->stack.width_sizing != ECS_UI_SIZE_GROW) {
-        return node->stack.preferred_width;
-    }
-
-    switch (node->kind) {
-    case ECS_UI_NODE_ICON:
-        return ECS_UI_SOLVER_ICON_SIZE;
-    case ECS_UI_NODE_BUTTON:
-        return node->button.preferred_width > 0.0f ?
-            node->button.preferred_width :
-            0.0f;
-    case ECS_UI_NODE_CUSTOM:
-        if (node->custom.width_sizing == ECS_UI_SIZE_GROW) {
-            return 0.0f;
-        }
-        return node->custom.preferred_width > 0.0f ?
-            node->custom.preferred_width :
-            0.0f;
-    case ECS_UI_NODE_HSTACK: {
-        float width =
-            EcsUiSolverPaddingLeft(tree, node) +
-            EcsUiSolverPaddingRight(tree, node);
-        uint32_t child_count = 0u;
-        for (uint32_t child = node->first_child; child != ECS_UI_TREE_INVALID_INDEX;
-             child = tree->nodes[child].next_sibling) {
-            if (child_count > 0u) {
-                width += EcsUiSolverGap(tree, node);
-            }
-            width += EcsUiSolverPreferredWidth(tree, child);
-            child_count += 1u;
-        }
-        return width;
-    }
-    case ECS_UI_NODE_ROOT:
-    case ECS_UI_NODE_VSTACK:
-    case ECS_UI_NODE_ZSTACK: {
-        float width =
-            EcsUiSolverPaddingLeft(tree, node) +
-            EcsUiSolverPaddingRight(tree, node);
-        for (uint32_t child = node->first_child; child != ECS_UI_TREE_INVALID_INDEX;
-             child = tree->nodes[child].next_sibling) {
-            width = EcsUiSolverMaxFloat(
-                width,
-                EcsUiSolverPaddingLeft(tree, node) +
-                    EcsUiSolverPaddingRight(tree, node) +
-                    EcsUiSolverPreferredWidth(tree, child));
-        }
-        return width;
-    }
-    case ECS_UI_NODE_TEXT:
-    case ECS_UI_NODE_PRESSABLE:
-    case ECS_UI_NODE_NONE:
-    default:
-        return 0.0f;
-    }
+    return node != NULL &&
+        (node->kind == ECS_UI_NODE_HSTACK ||
+         node->kind == ECS_UI_NODE_BUTTON ||
+         node->kind == ECS_UI_NODE_PRESSABLE);
 }
 
-static float EcsUiSolverPreferredHeight(
+static float EcsUiSolverRawPaddingTop(const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiSolverStackPaddingSide(node->stack.padding_top, node->stack.padding);
+}
+
+static float EcsUiSolverRawPaddingBottom(const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiSolverStackPaddingSide(node->stack.padding_bottom, node->stack.padding);
+}
+
+static float EcsUiSolverRawGap(const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiSolverClampPositive(node->stack.gap);
+}
+
+static float EcsUiSolverPreferredWalkHeight(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index);
+
+static float EcsUiSolverPreferredWalkHeight(
     const EcsUiTreeSnapshot *tree,
     uint32_t index)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     if (EcsUiSolverNodeIsStack(node) &&
             node->stack.preferred_height > 0.0f &&
-            node->stack.height_sizing != ECS_UI_SIZE_GROW) {
+            node->stack.height_sizing == ECS_UI_SIZE_AUTO) {
         return node->stack.preferred_height;
     }
 
@@ -445,25 +433,25 @@ static float EcsUiSolverPreferredHeight(
              child = tree->nodes[child].next_sibling) {
             height = EcsUiSolverMaxFloat(
                 height,
-                EcsUiSolverPreferredHeight(tree, child));
+                EcsUiSolverPreferredWalkHeight(tree, child));
         }
-        return EcsUiSolverPaddingTop(tree, node) +
-            EcsUiSolverPaddingBottom(tree, node) +
+        return EcsUiSolverRawPaddingTop(node) +
+            EcsUiSolverRawPaddingBottom(node) +
             height;
     }
     case ECS_UI_NODE_ROOT:
     case ECS_UI_NODE_VSTACK:
     case ECS_UI_NODE_ZSTACK: {
         float height =
-            EcsUiSolverPaddingTop(tree, node) +
-            EcsUiSolverPaddingBottom(tree, node);
+            EcsUiSolverRawPaddingTop(node) +
+            EcsUiSolverRawPaddingBottom(node);
         uint32_t child_count = 0u;
         for (uint32_t child = node->first_child; child != ECS_UI_TREE_INVALID_INDEX;
              child = tree->nodes[child].next_sibling) {
             if (child_count > 0u && node->kind != ECS_UI_NODE_ZSTACK) {
-                height += EcsUiSolverGap(tree, node);
+                height += EcsUiSolverRawGap(node);
             }
-            height += EcsUiSolverPreferredHeight(tree, child);
+            height += EcsUiSolverPreferredWalkHeight(tree, child);
             child_count += 1u;
         }
         return height;
@@ -474,264 +462,509 @@ static float EcsUiSolverPreferredHeight(
     }
 }
 
-static float EcsUiSolverChildWidth(
+static EcsUiSolverSizing EcsUiSolverFixedSizing(float value)
+{
+    return (EcsUiSolverSizing){
+        .kind = ECS_UI_SOLVER_SIZE_FIXED,
+        .fixed = EcsUiSolverClampPositive(value),
+    };
+}
+
+static EcsUiSolverSizing EcsUiSolverGrowSizing(void)
+{
+    return (EcsUiSolverSizing){.kind = ECS_UI_SOLVER_SIZE_GROW};
+}
+
+static EcsUiSolverSizing EcsUiSolverFitSizing(void)
+{
+    return (EcsUiSolverSizing){.kind = ECS_UI_SOLVER_SIZE_FIT};
+}
+
+static EcsUiSolverSizing EcsUiSolverWidthSizing(
     const EcsUiTreeSnapshot *tree,
-    uint32_t index,
-    float parent_content_width)
+    uint32_t index)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     if (EcsUiSolverNodeIsStack(node)) {
-        if (node->stack.preferred_width > 0.0f &&
-                node->stack.width_sizing != ECS_UI_SIZE_GROW) {
-            return node->stack.preferred_width;
+        EcsUiSolverSizing sizing = EcsUiSolverGrowSizing();
+        if (node->stack.preferred_width > 0.0f) {
+            sizing = EcsUiSolverFixedSizing(node->stack.preferred_width);
         }
-        return parent_content_width;
+        if (node->stack.width_sizing == ECS_UI_SIZE_GROW) {
+            sizing = EcsUiSolverGrowSizing();
+        } else if (node->stack.width_sizing == ECS_UI_SIZE_FIT) {
+            sizing = EcsUiSolverFitSizing();
+        }
+        return sizing;
     }
     if (node->kind == ECS_UI_NODE_CUSTOM) {
+        EcsUiSolverSizing sizing = node->custom.preferred_width > 0.0f ?
+            EcsUiSolverFixedSizing(node->custom.preferred_width) :
+            EcsUiSolverGrowSizing();
         if (node->custom.width_sizing == ECS_UI_SIZE_GROW) {
-            return parent_content_width;
+            sizing = EcsUiSolverGrowSizing();
         }
-        return node->custom.preferred_width > 0.0f ?
-            node->custom.preferred_width :
-            parent_content_width;
+        return sizing;
     }
     if (node->kind == ECS_UI_NODE_BUTTON) {
         return node->button.preferred_width > 0.0f ?
-            node->button.preferred_width :
-            parent_content_width;
+            EcsUiSolverFixedSizing(node->button.preferred_width) :
+            EcsUiSolverGrowSizing();
     }
     if (node->kind == ECS_UI_NODE_PRESSABLE) {
-        return parent_content_width;
-    }
-    if (node->kind == ECS_UI_NODE_TEXT) {
-        return 0.0f;
+        return EcsUiSolverGrowSizing();
     }
     if (node->kind == ECS_UI_NODE_ICON) {
-        return ECS_UI_SOLVER_ICON_SIZE;
+        return EcsUiSolverFixedSizing(ECS_UI_SOLVER_ICON_SIZE);
     }
-    return EcsUiSolverPreferredWidth(tree, index);
+    return EcsUiSolverFixedSizing(0.0f);
 }
 
-static bool EcsUiSolverWidthGrows(const EcsUiTreeNodeSnapshot *node)
-{
-    if (node == NULL) {
-        return false;
-    }
-    if (EcsUiSolverNodeIsStack(node)) {
-        return node->stack.width_sizing == ECS_UI_SIZE_GROW ||
-            node->stack.preferred_width <= 0.0f;
-    }
-    if (node->kind == ECS_UI_NODE_CUSTOM) {
-        return node->custom.width_sizing == ECS_UI_SIZE_GROW ||
-            node->custom.preferred_width <= 0.0f;
-    }
-    if (node->kind == ECS_UI_NODE_BUTTON) {
-        return node->button.preferred_width <= 0.0f;
-    }
-    return node->kind == ECS_UI_NODE_PRESSABLE;
-}
-
-static bool EcsUiSolverHeightGrows(const EcsUiTreeNodeSnapshot *node)
-{
-    if (node == NULL) {
-        return false;
-    }
-    if (EcsUiSolverNodeIsStack(node)) {
-        return node->kind == ECS_UI_NODE_ROOT ||
-            node->stack.height_sizing == ECS_UI_SIZE_GROW;
-    }
-    if (node->kind == ECS_UI_NODE_CUSTOM) {
-        return node->custom.height_sizing == ECS_UI_SIZE_GROW;
-    }
-    return false;
-}
-
-static float EcsUiSolverChildHeight(
+static EcsUiSolverSizing EcsUiSolverHeightSizing(
     const EcsUiTreeSnapshot *tree,
-    uint32_t index,
-    float parent_content_height)
+    uint32_t index)
 {
     const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
     if (EcsUiSolverNodeIsStack(node)) {
-        if (node->stack.preferred_height > 0.0f &&
-                node->stack.height_sizing != ECS_UI_SIZE_GROW) {
-            return node->stack.preferred_height;
+        EcsUiSolverSizing sizing = EcsUiSolverGrowSizing();
+        if (node->kind != ECS_UI_NODE_ROOT &&
+                node->parent_index != ECS_UI_TREE_INVALID_INDEX &&
+                node->parent_index < tree->count &&
+                tree->nodes[node->parent_index].kind != ECS_UI_NODE_ZSTACK) {
+            sizing = EcsUiSolverFixedSizing(
+                EcsUiSolverPreferredWalkHeight(tree, index));
+        }
+        if (node->stack.preferred_height > 0.0f) {
+            sizing = EcsUiSolverFixedSizing(node->stack.preferred_height);
         }
         if (node->stack.height_sizing == ECS_UI_SIZE_GROW) {
-            return parent_content_height;
+            sizing = EcsUiSolverGrowSizing();
+        } else if (node->stack.height_sizing == ECS_UI_SIZE_FIT) {
+            sizing = EcsUiSolverFitSizing();
         }
-        return EcsUiSolverPreferredHeight(tree, index);
+        return sizing;
     }
     if (node->kind == ECS_UI_NODE_CUSTOM) {
-        return node->custom.height_sizing == ECS_UI_SIZE_GROW ?
-            parent_content_height :
-            EcsUiSolverCustomHeight(node);
-    }
-    return EcsUiSolverPreferredHeight(tree, index);
-}
-
-static bool EcsUiSolverChildMainGrows(
-    const EcsUiTreeSnapshot *tree,
-    uint32_t index,
-    bool horizontal)
-{
-    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
-    return horizontal ? EcsUiSolverWidthGrows(node) : EcsUiSolverHeightGrows(node);
-}
-
-static float EcsUiSolverChildMainBaseSize(
-    const EcsUiTreeSnapshot *tree,
-    uint32_t index,
-    bool horizontal,
-    float parent_content_width,
-    float parent_content_height)
-{
-    if (horizontal) {
-        const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
-        if (node->kind == ECS_UI_NODE_CUSTOM &&
-                EcsUiSolverWidthGrows(node)) {
-            return 0.0f;
+        EcsUiSolverSizing sizing =
+            EcsUiSolverFixedSizing(EcsUiSolverCustomHeight(node));
+        if (node->custom.height_sizing == ECS_UI_SIZE_GROW) {
+            sizing = EcsUiSolverGrowSizing();
         }
-        return EcsUiSolverWidthGrows(node) ?
-            EcsUiSolverPreferredWidth(tree, index) :
-            EcsUiSolverChildWidth(tree, index, parent_content_width);
+        return sizing;
     }
-
-    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
-    if (node->kind == ECS_UI_NODE_CUSTOM &&
-            EcsUiSolverHeightGrows(node)) {
-        return 0.0f;
+    if (node->kind == ECS_UI_NODE_ICON) {
+        return EcsUiSolverFixedSizing(ECS_UI_SOLVER_ICON_SIZE);
     }
-    return EcsUiSolverHeightGrows(node) ?
-        EcsUiSolverPreferredHeight(tree, index) :
-        EcsUiSolverChildHeight(tree, index, parent_content_height);
+    if (node->kind == ECS_UI_NODE_BUTTON) {
+        return EcsUiSolverFixedSizing(EcsUiSolverButtonHeight(node));
+    }
+    if (node->kind == ECS_UI_NODE_PRESSABLE) {
+        return EcsUiSolverFixedSizing(EcsUiSolverPressableHeight(node));
+    }
+    return EcsUiSolverFixedSizing(0.0f);
 }
 
-static void EcsUiSolverSolveNode(
+static void EcsUiSolverClampToSizing(
+    float *size,
+    float *min_size,
+    EcsUiSolverSizing sizing)
+{
+    if (sizing.kind != ECS_UI_SOLVER_SIZE_FIXED) {
+        return;
+    }
+    *size = sizing.fixed;
+    *min_size = sizing.fixed;
+}
+
+static float *EcsUiSolverAxisSize(EcsUiSolverMetrics *metrics, bool x_axis)
+{
+    return x_axis ? &metrics->width : &metrics->height;
+}
+
+static float *EcsUiSolverAxisMin(EcsUiSolverMetrics *metrics, bool x_axis)
+{
+    return x_axis ? &metrics->min_width : &metrics->min_height;
+}
+
+static EcsUiSolverSizing EcsUiSolverAxisSizing(
+    const EcsUiSolverMetrics *metrics,
+    bool x_axis)
+{
+    return x_axis ? metrics->width_sizing : metrics->height_sizing;
+}
+
+static bool EcsUiSolverAxisResizable(
+    const EcsUiSolverMetrics *metrics,
+    bool x_axis)
+{
+    return EcsUiSolverAxisSizing(metrics, x_axis).kind !=
+        ECS_UI_SOLVER_SIZE_FIXED;
+}
+
+static void EcsUiSolverComputeBottomUp(
     EcsUiSolverContext *ctx,
     uint32_t index,
-    EcsUiSolverRect rect,
     float parent_opacity)
 {
     EcsUiTreeSnapshot *tree = ctx->tree;
     EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    EcsUiSolverMetrics *metrics = &ctx->metrics[index];
     const float node_opacity =
         parent_opacity * EcsUiSolverClamp01(node->visual.opacity);
     if (node_opacity <= 0.01f) {
+        return;
+    }
+    metrics->visible = true;
+    metrics->width_sizing = EcsUiSolverWidthSizing(tree, index);
+    metrics->height_sizing = EcsUiSolverHeightSizing(tree, index);
+
+    const float padding_left = EcsUiSolverPaddingLeft(tree, node);
+    const float padding_top = EcsUiSolverPaddingTop(tree, node);
+    const float padding_right = EcsUiSolverPaddingRight(tree, node);
+    const float padding_bottom = EcsUiSolverPaddingBottom(tree, node);
+    const float gap = EcsUiSolverGap(tree, node);
+    const bool container = EcsUiSolverNodeIsStack(node) ||
+        node->kind == ECS_UI_NODE_BUTTON ||
+        node->kind == ECS_UI_NODE_PRESSABLE;
+    const bool horizontal = EcsUiSolverLayoutHorizontal(node);
+
+    float width = 0.0f;
+    float height = 0.0f;
+    float min_width = 0.0f;
+    float min_height = 0.0f;
+    uint32_t visible_child_count = 0u;
+
+    if (container) {
+        for (uint32_t child = node->first_child;
+             child != ECS_UI_TREE_INVALID_INDEX;
+             child = tree->nodes[child].next_sibling) {
+            EcsUiSolverComputeBottomUp(ctx, child, node_opacity);
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            if (!child_metrics->visible) {
+                continue;
+            }
+            const float child_width = child_metrics->width;
+            const float child_height = child_metrics->height;
+            const float child_min_width = child_metrics->min_width;
+            const float child_min_height = child_metrics->min_height;
+            if (horizontal) {
+                if (visible_child_count > 0u) {
+                    width += gap;
+                    min_width += gap;
+                }
+                width += child_width;
+                min_width += child_min_width;
+                height = EcsUiSolverMaxFloat(height, child_height);
+                min_height = EcsUiSolverMaxFloat(min_height, child_min_height);
+            } else {
+                if (visible_child_count > 0u) {
+                    height += gap;
+                    min_height += gap;
+                }
+                height += child_height;
+                min_height += child_min_height;
+                width = EcsUiSolverMaxFloat(width, child_width);
+                min_width = EcsUiSolverMaxFloat(min_width, child_min_width);
+            }
+            visible_child_count += 1u;
+        }
+        width += padding_left + padding_right;
+        min_width += padding_left + padding_right;
+        height += padding_top + padding_bottom;
+        min_height += padding_top + padding_bottom;
+    }
+
+    metrics->width = width;
+    metrics->height = height;
+    metrics->min_width = min_width;
+    metrics->min_height = min_height;
+    EcsUiSolverClampToSizing(
+        &metrics->width,
+        &metrics->min_width,
+        metrics->width_sizing);
+    EcsUiSolverClampToSizing(
+        &metrics->height,
+        &metrics->min_height,
+        metrics->height_sizing);
+}
+
+static bool EcsUiSolverFloatEqual(
+    const EcsUiTreeSnapshot *tree,
+    float a,
+    float b)
+{
+    const float delta = a - b;
+    const float epsilon = EcsUiSolverPhysicalEpsilon(tree);
+    return delta < epsilon && delta > -epsilon;
+}
+
+static uint32_t EcsUiSolverCollectAxisChildren(
+    EcsUiSolverContext *ctx,
+    uint32_t parent,
+    bool x_axis,
+    bool grow_only)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    uint32_t count = 0u;
+    for (uint32_t child = tree->nodes[parent].first_child;
+         child != ECS_UI_TREE_INVALID_INDEX;
+         child = tree->nodes[child].next_sibling) {
+        EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+        if (!child_metrics->visible ||
+                !EcsUiSolverAxisResizable(child_metrics, x_axis)) {
+            continue;
+        }
+        if (grow_only &&
+                EcsUiSolverAxisSizing(child_metrics, x_axis).kind !=
+                    ECS_UI_SOLVER_SIZE_GROW) {
+            continue;
+        }
+        ctx->scratch_indices[count] = child;
+        count += 1u;
+    }
+    return count;
+}
+
+static void EcsUiSolverWaterFillGrow(
+    EcsUiSolverContext *ctx,
+    uint32_t parent,
+    bool x_axis,
+    float free_space)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    const float epsilon = EcsUiSolverPhysicalEpsilon(tree);
+    uint32_t active_count =
+        EcsUiSolverCollectAxisChildren(ctx, parent, x_axis, true);
+    while (free_space > epsilon && active_count > 0u) {
+        float smallest = 3.4e38f;
+        float second_smallest = 3.4e38f;
+        float amount = free_space;
+        for (uint32_t i = 0u; i < active_count; i += 1u) {
+            uint32_t child = ctx->scratch_indices[i];
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            const float size = *EcsUiSolverAxisSize(child_metrics, x_axis);
+            if (EcsUiSolverFloatEqual(tree, size, smallest)) {
+                continue;
+            }
+            if (size < smallest) {
+                second_smallest = smallest;
+                smallest = size;
+            }
+            if (size > smallest) {
+                second_smallest = EcsUiSolverMinFloat(second_smallest, size);
+                amount = second_smallest - smallest;
+            }
+        }
+
+        amount = EcsUiSolverMinFloat(amount, free_space / (float)active_count);
+        for (uint32_t i = 0u; i < active_count; i += 1u) {
+            uint32_t child = ctx->scratch_indices[i];
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            float *size = EcsUiSolverAxisSize(child_metrics, x_axis);
+            if (EcsUiSolverFloatEqual(tree, *size, smallest)) {
+                *size += amount;
+                free_space -= amount;
+            }
+        }
+    }
+}
+
+static void EcsUiSolverCompressResizable(
+    EcsUiSolverContext *ctx,
+    uint32_t parent,
+    bool x_axis,
+    float free_space)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    const float epsilon = EcsUiSolverPhysicalEpsilon(tree);
+    uint32_t active_count =
+        EcsUiSolverCollectAxisChildren(ctx, parent, x_axis, false);
+
+    /* Stage 3 min dimensions equal content for supported node kinds, so this
+     * path usually cannot shrink yet. Keep the loop shaped like Clay so text
+     * and scroll stages inherit the same compression/dropout behavior. */
+    while (free_space < -epsilon && active_count > 0u) {
+        float largest = 0.0f;
+        float second_largest = 0.0f;
+        float amount = free_space;
+        for (uint32_t i = 0u; i < active_count; i += 1u) {
+            uint32_t child = ctx->scratch_indices[i];
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            const float size = *EcsUiSolverAxisSize(child_metrics, x_axis);
+            if (EcsUiSolverFloatEqual(tree, size, largest)) {
+                continue;
+            }
+            if (size > largest) {
+                second_largest = largest;
+                largest = size;
+            }
+            if (size < largest) {
+                second_largest = EcsUiSolverMaxFloat(second_largest, size);
+                amount = second_largest - largest;
+            }
+        }
+
+        amount = EcsUiSolverMaxFloat(amount, free_space / (float)active_count);
+        for (uint32_t i = 0u; i < active_count; i += 1u) {
+            uint32_t child = ctx->scratch_indices[i];
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            float *size = EcsUiSolverAxisSize(child_metrics, x_axis);
+            const float min_size = *EcsUiSolverAxisMin(child_metrics, x_axis);
+            if (EcsUiSolverFloatEqual(tree, *size, largest)) {
+                const float previous = *size;
+                *size += amount;
+                if (*size <= min_size) {
+                    *size = min_size;
+                    active_count -= 1u;
+                    ctx->scratch_indices[i] = ctx->scratch_indices[active_count];
+                    i -= 1u;
+                }
+                free_space -= *size - previous;
+            }
+        }
+    }
+}
+
+static void EcsUiSolverSolveAxisTopDown(
+    EcsUiSolverContext *ctx,
+    uint32_t index,
+    bool x_axis)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    EcsUiSolverMetrics *metrics = &ctx->metrics[index];
+    if (!metrics->visible) {
+        return;
+    }
+    const bool container = EcsUiSolverNodeIsStack(node) ||
+        node->kind == ECS_UI_NODE_BUTTON ||
+        node->kind == ECS_UI_NODE_PRESSABLE;
+    if (!container) {
+        return;
+    }
+
+    const bool along_axis =
+        (x_axis && EcsUiSolverLayoutHorizontal(node)) ||
+        (!x_axis && !EcsUiSolverLayoutHorizontal(node));
+    const float parent_size = *EcsUiSolverAxisSize(metrics, x_axis);
+    const float parent_padding = x_axis ?
+        EcsUiSolverPaddingLeft(tree, node) + EcsUiSolverPaddingRight(tree, node) :
+        EcsUiSolverPaddingTop(tree, node) + EcsUiSolverPaddingBottom(tree, node);
+    const float gap = EcsUiSolverGap(tree, node);
+
+    if (along_axis) {
+        float inner = 0.0f;
+        uint32_t visible_child_count = 0u;
+        uint32_t grow_count = 0u;
+        for (uint32_t child = node->first_child;
+             child != ECS_UI_TREE_INVALID_INDEX;
+             child = tree->nodes[child].next_sibling) {
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            if (!child_metrics->visible) {
+                continue;
+            }
+            inner += *EcsUiSolverAxisSize(child_metrics, x_axis);
+            if (visible_child_count > 0u) {
+                inner += gap;
+            }
+            if (EcsUiSolverAxisSizing(child_metrics, x_axis).kind ==
+                    ECS_UI_SOLVER_SIZE_GROW) {
+                grow_count += 1u;
+            }
+            visible_child_count += 1u;
+        }
+        const float free_space = parent_size - parent_padding - inner;
+        if (free_space > 0.0f && grow_count > 0u) {
+            EcsUiSolverWaterFillGrow(ctx, index, x_axis, free_space);
+        } else if (free_space < 0.0f) {
+            EcsUiSolverCompressResizable(ctx, index, x_axis, free_space);
+        }
+    } else {
+        const float max_size = parent_size - parent_padding;
+        for (uint32_t child = node->first_child;
+             child != ECS_UI_TREE_INVALID_INDEX;
+             child = tree->nodes[child].next_sibling) {
+            EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+            if (!child_metrics->visible ||
+                    !EcsUiSolverAxisResizable(child_metrics, x_axis)) {
+                continue;
+            }
+            float *size = EcsUiSolverAxisSize(child_metrics, x_axis);
+            const float min_size = *EcsUiSolverAxisMin(child_metrics, x_axis);
+            if (EcsUiSolverAxisSizing(child_metrics, x_axis).kind ==
+                    ECS_UI_SOLVER_SIZE_GROW) {
+                *size = max_size;
+            }
+            if (*size > max_size) {
+                *size = max_size;
+            }
+            if (*size < min_size) {
+                *size = min_size;
+            }
+        }
+    }
+
+    for (uint32_t child = node->first_child;
+         child != ECS_UI_TREE_INVALID_INDEX;
+         child = tree->nodes[child].next_sibling) {
+        EcsUiSolverSolveAxisTopDown(ctx, child, x_axis);
+    }
+}
+
+static void EcsUiSolverPlaceNode(
+    EcsUiSolverContext *ctx,
+    uint32_t index,
+    EcsUiSolverRect rect)
+{
+    EcsUiTreeSnapshot *tree = ctx->tree;
+    EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    EcsUiSolverMetrics *metrics = &ctx->metrics[index];
+    if (!metrics->visible) {
         return;
     }
     ctx->layouts[index] = (EcsUiSolverLayout){
         .rect = rect,
         .emitted = true,
     };
-    if (!EcsUiSolverNodeIsStack(node) &&
-            node->kind != ECS_UI_NODE_BUTTON &&
-            node->kind != ECS_UI_NODE_PRESSABLE) {
+    const bool container = EcsUiSolverNodeIsStack(node) ||
+        node->kind == ECS_UI_NODE_BUTTON ||
+        node->kind == ECS_UI_NODE_PRESSABLE;
+    if (!container) {
         return;
     }
 
-    const float padding_left = EcsUiSolverPaddingLeft(tree, node);
-    const float padding_top = EcsUiSolverPaddingTop(tree, node);
-    const float padding_right = EcsUiSolverPaddingRight(tree, node);
-    const float padding_bottom = EcsUiSolverPaddingBottom(tree, node);
-    const float content_x = rect.x + padding_left;
-    const float content_y = rect.y + padding_top;
-    const float content_width = EcsUiSolverMaxFloat(
-        rect.width - padding_left - padding_right,
-        0.0f);
-    const float content_height = EcsUiSolverMaxFloat(
-        rect.height - padding_top - padding_bottom,
-        0.0f);
-    const bool horizontal =
-        node->kind == ECS_UI_NODE_HSTACK ||
-        node->kind == ECS_UI_NODE_BUTTON ||
-        node->kind == ECS_UI_NODE_PRESSABLE;
-
-    const float available_main = horizontal ? content_width : content_height;
+    const float content_x = rect.x + EcsUiSolverPaddingLeft(tree, node);
+    const float content_y = rect.y + EcsUiSolverPaddingTop(tree, node);
+    const bool horizontal = EcsUiSolverLayoutHorizontal(node);
     const float gap = EcsUiSolverGap(tree, node);
-    float main_sum = 0.0f;
-    uint32_t visible_child_count = 0u;
-    uint32_t grow_child_count = 0u;
-    for (uint32_t child = node->first_child; child != ECS_UI_TREE_INVALID_INDEX;
-         child = tree->nodes[child].next_sibling) {
-        EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
-        const float child_opacity =
-            node_opacity * EcsUiSolverClamp01(child_node->visual.opacity);
-        if (child_opacity <= 0.01f) {
-            continue;
-        }
-        main_sum += EcsUiSolverChildMainBaseSize(
-            tree,
-            child,
-            horizontal,
-            content_width,
-            content_height);
-        if (EcsUiSolverChildMainGrows(tree, child, horizontal)) {
-            grow_child_count += 1u;
-        }
-        visible_child_count += 1u;
-    }
-    const float gap_sum =
-        node->kind != ECS_UI_NODE_ZSTACK && visible_child_count > 1u ?
-            gap * (float)(visible_child_count - 1u) :
-            0.0f;
-    const float grow_add =
-        grow_child_count > 0u && available_main > main_sum + gap_sum ?
-            (available_main - main_sum - gap_sum) / (float)grow_child_count :
-            0.0f;
-
     float cursor_x = content_x;
     float cursor_y = content_y;
     uint32_t child_count = 0u;
-    for (uint32_t child = node->first_child; child != ECS_UI_TREE_INVALID_INDEX;
+    for (uint32_t child = node->first_child;
+         child != ECS_UI_TREE_INVALID_INDEX;
          child = tree->nodes[child].next_sibling) {
-        EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
-        const float child_opacity =
-            node_opacity * EcsUiSolverClamp01(child_node->visual.opacity);
-        if (child_opacity <= 0.01f) {
+        EcsUiSolverMetrics *child_metrics = &ctx->metrics[child];
+        if (!child_metrics->visible) {
             continue;
         }
-        if (child_count > 0u && node->kind != ECS_UI_NODE_ZSTACK) {
+        if (child_count > 0u) {
             if (horizontal) {
                 cursor_x += gap;
             } else {
                 cursor_y += gap;
             }
         }
-        float child_width = EcsUiSolverChildWidth(tree, child, content_width);
-        float child_height = EcsUiSolverChildHeight(tree, child, content_height);
-        if (horizontal) {
-            child_width = EcsUiSolverChildMainBaseSize(
-                tree,
-                child,
-                true,
-                content_width,
-                content_height);
-            if (EcsUiSolverChildMainGrows(tree, child, true)) {
-                child_width += grow_add;
-            }
-        } else {
-            child_height = EcsUiSolverChildMainBaseSize(
-                tree,
-                child,
-                false,
-                content_width,
-                content_height);
-            if (EcsUiSolverChildMainGrows(tree, child, false)) {
-                child_height += grow_add;
-            }
-        }
         EcsUiSolverRect child_rect = {
             .x = cursor_x,
             .y = cursor_y,
-            .width = child_width,
-            .height = child_height,
+            .width = child_metrics->width,
+            .height = child_metrics->height,
         };
-        EcsUiSolverSolveNode(ctx, child, child_rect, node_opacity);
+        EcsUiSolverPlaceNode(ctx, child, child_rect);
         if (horizontal) {
-            cursor_x += child_width;
-        } else if (node->kind != ECS_UI_NODE_ZSTACK) {
-            cursor_y += child_height;
+            cursor_x += child_metrics->width;
+        } else {
+            cursor_y += child_metrics->height;
         }
         child_count += 1u;
     }
@@ -786,6 +1019,31 @@ static void EcsUiSolverApplyDeepDivergence(EcsUiSolverContext *ctx)
     }
 }
 
+static bool EcsUiSolverMulSize(size_t a, size_t b, size_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+    if (a != 0u && b > SIZE_MAX / a) {
+        return false;
+    }
+    *out = a * b;
+    return true;
+}
+
+static bool EcsUiSolverAlignSize(size_t value, size_t align, size_t *out)
+{
+    if (out == NULL || align == 0u) {
+        return false;
+    }
+    const size_t mask = align - 1u;
+    if (value > SIZE_MAX - mask) {
+        return false;
+    }
+    *out = (value + mask) & ~mask;
+    return true;
+}
+
 bool EcsUiSolverRun(
     EcsUiTreeSnapshot *tree,
     const EcsUiSolverRunOptions *options,
@@ -806,40 +1064,64 @@ bool EcsUiSolverRun(
     if (!EcsUiSolverValidateSupported(&ctx)) {
         return false;
     }
-    EcsUiSolverLayout *layouts = (EcsUiSolverLayout *)EcsUiSolverArenaAlloc(
-        arena,
-        sizeof(layouts[0]) * tree->count,
-        sizeof(void *));
-    if (layouts == NULL) {
+    size_t layout_bytes = 0u;
+    size_t metrics_bytes = 0u;
+    size_t scratch_bytes = 0u;
+    size_t metrics_offset = 0u;
+    size_t scratch_offset = 0u;
+    size_t total_bytes = 0u;
+    if (!EcsUiSolverMulSize(sizeof(EcsUiSolverLayout), tree->count, &layout_bytes) ||
+            !EcsUiSolverMulSize(sizeof(EcsUiSolverMetrics), tree->count, &metrics_bytes) ||
+            !EcsUiSolverMulSize(sizeof(uint32_t), tree->count, &scratch_bytes) ||
+            !EcsUiSolverAlignSize(layout_bytes, sizeof(void *), &metrics_offset) ||
+            metrics_offset > SIZE_MAX - metrics_bytes ||
+            !EcsUiSolverAlignSize(
+                metrics_offset + metrics_bytes,
+                sizeof(void *),
+                &scratch_offset) ||
+            scratch_offset > SIZE_MAX - scratch_bytes) {
         EcsUiSolverSetError(&ctx, "native layout solver allocation failed");
         return false;
     }
-    ctx.layouts = layouts;
-    EcsUiSolverClearSnapshotLayout(tree);
+    total_bytes = scratch_offset + scratch_bytes;
+    unsigned char *work = (unsigned char *)EcsUiSolverArenaAlloc(
+        arena,
+        total_bytes,
+        sizeof(void *));
+    if (work == NULL) {
+        EcsUiSolverSetError(&ctx, "native layout solver allocation failed");
+        return false;
+    }
+    ctx.layouts = (EcsUiSolverLayout *)work;
+    ctx.metrics = (EcsUiSolverMetrics *)(void *)(work + metrics_offset);
+    ctx.scratch_indices = (uint32_t *)(void *)(work + scratch_offset);
     const EcsUiFrameLayoutOptions *layout =
         options != NULL ? options->layout : NULL;
-    EcsUiSolverRect root_rect = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = EcsUiSolverLogicalRootWidth(tree, layout),
-        .height = EcsUiSolverLogicalRootHeight(tree, layout),
-    };
-    const EcsUiTreeNodeSnapshot *root = &tree->nodes[0];
-    const bool root_width_fixed =
-        root->stack.preferred_width > 0.0f &&
-        root->stack.width_sizing != ECS_UI_SIZE_GROW;
-    const bool root_height_fixed =
-        root->stack.preferred_height > 0.0f &&
-        root->stack.height_sizing != ECS_UI_SIZE_GROW;
-    root_rect.width = root_width_fixed ?
-        root->stack.preferred_width :
-        EcsUiSolverMaxFloat(root_rect.width, EcsUiSolverPreferredWidth(tree, 0u));
-    root_rect.height = root_height_fixed ?
-        root->stack.preferred_height :
-        EcsUiSolverMaxFloat(
-            root_rect.height,
-            EcsUiSolverPreferredHeight(tree, 0u));
-    EcsUiSolverSolveNode(&ctx, 0u, root_rect, 1.0f);
+    EcsUiSolverClearSnapshotLayout(tree);
+    EcsUiSolverComputeBottomUp(&ctx, 0u, 1.0f);
+    if (ctx.metrics[0].visible) {
+        if (ctx.metrics[0].width_sizing.kind == ECS_UI_SOLVER_SIZE_GROW) {
+            ctx.metrics[0].width = EcsUiSolverMaxFloat(
+                ctx.metrics[0].width,
+                EcsUiSolverLogicalRootWidth(tree, layout));
+        }
+        if (ctx.metrics[0].height_sizing.kind == ECS_UI_SOLVER_SIZE_GROW) {
+            ctx.metrics[0].height = EcsUiSolverMaxFloat(
+                ctx.metrics[0].height,
+                EcsUiSolverLogicalRootHeight(tree, layout));
+        }
+    }
+    EcsUiSolverSolveAxisTopDown(&ctx, 0u, true);
+    EcsUiSolverSolveAxisTopDown(&ctx, 0u, false);
+    EcsUiSolverPlaceNode(
+        &ctx,
+        0u,
+        (EcsUiSolverRect){
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = ctx.metrics[0].width,
+            .height = ctx.metrics[0].height,
+        });
     if (options != NULL && options->force_divergence && ctx.layouts[0].emitted) {
         ctx.layouts[0].rect.x += 7.0f;
     }
