@@ -2,6 +2,7 @@
 #define ECS_UI_ECS_UI_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <flecs.h>
@@ -505,6 +506,11 @@ typedef struct EcsUiTreeSnapshot {
     EcsUiTreeNodeSnapshot nodes[ECS_UI_TREE_NODE_MAX];
 } EcsUiTreeSnapshot;
 
+typedef struct EcsUiTreeDebugDumpResult {
+    size_t bytes_written;
+    bool truncated;
+} EcsUiTreeDebugDumpResult;
+
 /* Pointer coordinates are window-origin logical units after bridge conversion. */
 typedef struct EcsUiEvent {
     EcsUiEventType type;
@@ -647,6 +653,24 @@ bool EcsUiReadTree(
 const EcsUiTreeNodeSnapshot *EcsUiTreeSnapshotFindNodeById(
     const EcsUiTreeSnapshot *tree,
     const char *id);
+/*
+ * Write a deterministic, one-line-per-node debug dump of an already-read tree
+ * snapshot. The dump is snapshot-first so callers can enrich layout beforehand
+ * and normalize entity ids for tests. Returns bytes written, excluding the
+ * trailing NUL, and whether the dump output was truncated by the buffer.
+ *
+ * Duplicate authored ids are printed on every matching node; the dump does not
+ * imply id uniqueness.
+ */
+EcsUiTreeDebugDumpResult EcsUiTreeDebugDumpSnapshot(
+    const EcsUiTreeSnapshot *tree,
+    char *buffer,
+    size_t size);
+EcsUiTreeDebugDumpResult EcsUiTreeDebugDump(
+    const ecs_world_t *world,
+    ecs_entity_t root,
+    char *buffer,
+    size_t size);
 
 void EcsUiEventListClear(EcsUiEventList *events);
 bool EcsUiEventListPush(EcsUiEventList *events, const EcsUiEvent *event);

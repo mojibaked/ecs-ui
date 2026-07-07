@@ -1,6 +1,7 @@
 #include "ecs_ui/ecs_ui.h"
 #include "ecs_ui_projection_internal.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -2072,6 +2073,267 @@ const EcsUiTreeNodeSnapshot *EcsUiTreeSnapshotFindNodeById(
         }
     }
     return NULL;
+}
+
+typedef struct EcsUiDebugDumpWriter {
+    char *buffer;
+    size_t size;
+    size_t bytes_written;
+    bool truncated;
+} EcsUiDebugDumpWriter;
+
+static const char *EcsUiDebugNodeKindName(EcsUiNodeKind kind)
+{
+    switch (kind) {
+    case ECS_UI_NODE_ROOT:
+        return "root";
+    case ECS_UI_NODE_VSTACK:
+        return "vstack";
+    case ECS_UI_NODE_HSTACK:
+        return "hstack";
+    case ECS_UI_NODE_ZSTACK:
+        return "zstack";
+    case ECS_UI_NODE_BUTTON:
+        return "button";
+    case ECS_UI_NODE_TEXT:
+        return "text";
+    case ECS_UI_NODE_ICON:
+        return "icon";
+    case ECS_UI_NODE_CUSTOM:
+        return "custom";
+    case ECS_UI_NODE_PRESSABLE:
+        return "pressable";
+    case ECS_UI_NODE_NONE:
+    default:
+        return "none";
+    }
+}
+
+static const char *EcsUiDebugHitTestName(EcsUiHitTestMode mode)
+{
+    switch (mode) {
+    case ECS_UI_HIT_TEST_NONE:
+        return "none";
+    case ECS_UI_HIT_TEST_CHILDREN:
+        return "children";
+    case ECS_UI_HIT_TEST_CAPTURE:
+        return "capture";
+    case ECS_UI_HIT_TEST_AUTO:
+    default:
+        return "auto";
+    }
+}
+
+static void EcsUiDebugIndexString(
+    uint32_t index,
+    char *out,
+    size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+    if (index == ECS_UI_TREE_INVALID_INDEX) {
+        (void)snprintf(out, out_size, "none");
+        return;
+    }
+    (void)snprintf(out, out_size, "%u", index);
+}
+
+static void EcsUiDebugChildRangeString(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiTreeNodeSnapshot *node,
+    char *out,
+    size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+    if (tree == NULL || node == NULL ||
+        node->first_child == ECS_UI_TREE_INVALID_INDEX ||
+        node->first_child >= tree->count) {
+        (void)snprintf(out, out_size, "none");
+        return;
+    }
+
+    uint32_t last_child = node->first_child;
+    uint32_t child_count = 0u;
+    for (uint32_t child = node->first_child;
+            child != ECS_UI_TREE_INVALID_INDEX && child < tree->count &&
+            child_count <= tree->count;
+            child = tree->nodes[child].next_sibling) {
+        last_child = child;
+        child_count += 1u;
+    }
+
+    (void)snprintf(
+        out,
+        out_size,
+        "%u..%u count=%u",
+        node->first_child,
+        last_child,
+        child_count);
+}
+
+static void EcsUiDebugDumpAppend(
+    EcsUiDebugDumpWriter *writer,
+    const char *format,
+    ...)
+{
+    if (writer == NULL || format == NULL) {
+        return;
+    }
+
+    char line[512] = {0};
+    va_list args;
+    va_start(args, format);
+    const int formatted = vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    if (formatted <= 0) {
+        return;
+    }
+
+    size_t length = (size_t)formatted;
+    if (length >= sizeof(line)) {
+        length = sizeof(line) - 1u;
+        writer->truncated = true;
+    }
+
+    if (writer->buffer == NULL || writer->size == 0u) {
+        writer->truncated = true;
+        return;
+    }
+
+    if (writer->bytes_written >= writer->size - 1u) {
+        writer->buffer[writer->size - 1u] = '\0';
+        writer->truncated = true;
+        return;
+    }
+
+    const size_t available = writer->size - 1u - writer->bytes_written;
+    const size_t copy_length = length < available ? length : available;
+    memcpy(writer->buffer + writer->bytes_written, line, copy_length);
+    writer->bytes_written += copy_length;
+    writer->buffer[writer->bytes_written] = '\0';
+    if (copy_length < length) {
+        writer->truncated = true;
+    }
+}
+
+static void EcsUiDebugDumpNode(
+    EcsUiDebugDumpWriter *writer,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (writer == NULL || tree == NULL || index >= tree->count) {
+        return;
+    }
+
+    const EcsUiTreeNodeSnapshot *node = &tree->nodes[index];
+    char parent[16] = {0};
+    char children[48] = {0};
+    EcsUiDebugIndexString(node->parent_index, parent, sizeof(parent));
+    EcsUiDebugChildRangeString(tree, node, children, sizeof(children));
+
+    EcsUiDebugDumpAppend(
+        writer,
+        "[%u] parent=%s children=%s depth=%u entity=%llu id=\"%s\" "
+        "kind=%s hit=%s visual(opacity=%.3g offset=%.3g,%.3g) "
+        "placement=%s",
+        index,
+        parent,
+        children,
+        node->depth,
+        (unsigned long long)node->entity,
+        node->id,
+        EcsUiDebugNodeKindName(node->kind),
+        EcsUiDebugHitTestName(node->hit_test.mode),
+        node->visual.opacity,
+        node->visual.offset_x,
+        node->visual.offset_y,
+        node->has_placement ? "yes" : "no");
+
+    if (node->has_text_field_view) {
+        EcsUiDebugDumpAppend(
+            writer,
+            " text_field=%s",
+            node->text_field_view.focused ? "focused" : "blurred");
+    }
+
+    if (node->has_layout) {
+        EcsUiDebugDumpAppend(
+            writer,
+            " layout=(%.3g,%.3g %.3gx%.3g)",
+            node->layout_x,
+            node->layout_y,
+            node->layout_width,
+            node->layout_height);
+    } else {
+        EcsUiDebugDumpAppend(writer, " layout=none");
+    }
+
+    EcsUiDebugDumpAppend(writer, "\n");
+}
+
+EcsUiTreeDebugDumpResult EcsUiTreeDebugDumpSnapshot(
+    const EcsUiTreeSnapshot *tree,
+    char *buffer,
+    size_t size)
+{
+    EcsUiDebugDumpWriter writer = {
+        .buffer = buffer,
+        .size = size,
+    };
+    if (buffer != NULL && size > 0u) {
+        buffer[0] = '\0';
+    }
+
+    if (tree == NULL) {
+        EcsUiDebugDumpAppend(&writer, "tree <null>\n");
+        return (EcsUiTreeDebugDumpResult){
+            .bytes_written = writer.bytes_written,
+            .truncated = writer.truncated,
+        };
+    }
+
+    EcsUiDebugDumpAppend(
+        &writer,
+        "tree root=%llu scale=%.3g count=%u truncated=%s\n",
+        (unsigned long long)tree->root,
+        tree->scale,
+        tree->count,
+        tree->truncated ? "true" : "false");
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        EcsUiDebugDumpNode(&writer, tree, i);
+    }
+
+    return (EcsUiTreeDebugDumpResult){
+        .bytes_written = writer.bytes_written,
+        .truncated = writer.truncated,
+    };
+}
+
+EcsUiTreeDebugDumpResult EcsUiTreeDebugDump(
+    const ecs_world_t *world,
+    ecs_entity_t root,
+    char *buffer,
+    size_t size)
+{
+    EcsUiTreeSnapshot tree = {0};
+    if (!EcsUiReadTree(world, root, &tree)) {
+        EcsUiDebugDumpWriter writer = {
+            .buffer = buffer,
+            .size = size,
+        };
+        if (buffer != NULL && size > 0u) {
+            buffer[0] = '\0';
+        }
+        EcsUiDebugDumpAppend(&writer, "tree <unreadable>\n");
+        return (EcsUiTreeDebugDumpResult){
+            .bytes_written = writer.bytes_written,
+            .truncated = writer.truncated,
+        };
+    }
+    return EcsUiTreeDebugDumpSnapshot(&tree, buffer, size);
 }
 
 void EcsUiEventListClear(EcsUiEventList *events)

@@ -263,6 +263,13 @@ if(ECS_UI_BUILD_TESTS)
     ecs_ui_enable_warnings(ecs_ui_frame_classifier)
     add_test(NAME ecs_ui_frame_classifier COMMAND ecs_ui_frame_classifier)
 
+    add_executable(ecs_ui_debug_dump
+        tests/ecs_ui_debug_dump.c)
+    target_link_libraries(ecs_ui_debug_dump
+        PRIVATE ecs_ui)
+    ecs_ui_enable_warnings(ecs_ui_debug_dump)
+    add_test(NAME ecs_ui_debug_dump COMMAND ecs_ui_debug_dump)
+
     if(TARGET ecs_ui_raylib)
         add_executable(ecs_ui_raylib_runner
             tests/ecs_ui_raylib_runner.c)
