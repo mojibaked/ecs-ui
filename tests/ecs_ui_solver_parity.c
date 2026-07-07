@@ -547,29 +547,32 @@ static int BuildUnsupportedTextFieldView(
         "unsupported text field builder failed");
 }
 
-static int BuildUnsupportedZStack(
+static int BuildUnsupportedScrollView(
     ecs_world_t *world,
     ecs_entity_t root)
 {
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
-    (void)EcsUiBeginZStack(
+    (void)EcsUiBeginVScrollView(
         &builder,
-        (EcsUiStackDesc){
-            .id = "UnsupportedZStack",
-            .preferred_width = 40.0f,
-            .preferred_height = 30.0f,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "UnsupportedScrollView",
+                .preferred_width = 80.0f,
+                .preferred_height = 60.0f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
         });
     (void)EcsUiAddCustom(
         &builder,
         (EcsUiCustomDesc){
-            .id = "UnsupportedZChild",
+            .id = "UnsupportedScrollChild",
             .kind = "parity.unsupported",
             .preferred_width = 10.0f,
             .preferred_height = 10.0f,
         });
     EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
-    return Require(EcsUiBuilderOk(&builder), "unsupported zstack builder failed");
+    return Require(EcsUiBuilderOk(&builder), "unsupported scroll builder failed");
 }
 
 static int BuildFitStackSizing(
@@ -2734,6 +2737,1209 @@ static int BuildGrowZeroMinOverflow(
     return Require(EcsUiBuilderOk(&builder), "zero-min grow builder failed");
 }
 
+static int BuildZStackBasic(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 3.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZBasic",
+            .padding = 4.25f,
+            .preferred_width = 120.5f,
+            .preferred_height = 70.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZBasicFlow",
+            .kind = "parity.zstack",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZBasicFloating",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZBasicFloatingFill",
+            .kind = "parity.zstack",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "zstack basic builder failed");
+}
+
+static int BuildZStackAutoHeightWalk(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t zstack = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZAutoHeight",
+            .padding = 3.25f,
+            .preferred_width = 140.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZAutoFlow",
+            .kind = "parity.zwalk",
+            .preferred_width = 30.5f,
+            .preferred_height = 11.5f,
+        });
+    ecs_entity_t floating = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZAutoFloating",
+            .kind = "parity.zwalk",
+            .preferred_width = 80.5f,
+            .preferred_height = 27.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        zstack,
+        EcsUiVisual,
+        {.opacity = 1.0f});
+    ecs_set(
+        world,
+        floating,
+        EcsUiPlacement,
+        {
+            .mode = ECS_UI_PLACEMENT_PARENT,
+            .parent_x = ECS_UI_ALIGN_END,
+            .parent_y = ECS_UI_ALIGN_START,
+            .child_x = ECS_UI_ALIGN_END,
+            .child_y = ECS_UI_ALIGN_START,
+            .width = 80.5f,
+            .height = 27.5f,
+        });
+    return Require(EcsUiBuilderOk(&builder), "zstack auto-height builder failed");
+}
+
+static int BuildZStackPlacementAttachPoints(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZAttach",
+            .padding = 5.25f,
+            .preferred_width = 160.5f,
+            .preferred_height = 110.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZAttachFlow",
+            .kind = "parity.attach",
+            .preferred_width = 30.5f,
+            .preferred_height = 20.5f,
+        });
+    ecs_entity_t rb = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "AttachLeftTopToRightBottom",
+            .kind = "parity.attach",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    ecs_entity_t center = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "AttachCenter",
+            .kind = "parity.attach",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    ecs_entity_t lt = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "AttachRightBottomToLeftTop",
+            .kind = "parity.attach",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        rb,
+        EcsUiPlacement,
+        {
+            .mode = ECS_UI_PLACEMENT_PARENT,
+            .parent_x = ECS_UI_ALIGN_END,
+            .parent_y = ECS_UI_ALIGN_END,
+            .child_x = ECS_UI_ALIGN_START,
+            .child_y = ECS_UI_ALIGN_START,
+            .offset_x = 3.25f,
+            .offset_y = -4.5f,
+            .width = 22.5f,
+            .height = 18.5f,
+        });
+    ecs_set(
+        world,
+        center,
+        EcsUiPlacement,
+        {
+            .mode = ECS_UI_PLACEMENT_PARENT,
+            .parent_x = ECS_UI_ALIGN_CENTER,
+            .parent_y = ECS_UI_ALIGN_CENTER,
+            .child_x = ECS_UI_ALIGN_CENTER,
+            .child_y = ECS_UI_ALIGN_CENTER,
+            .offset_x = -6.25f,
+            .offset_y = 5.5f,
+            .width = 28.5f,
+            .height = 16.5f,
+        });
+    ecs_set(
+        world,
+        lt,
+        EcsUiPlacement,
+        {
+            .mode = ECS_UI_PLACEMENT_PARENT,
+            .parent_x = ECS_UI_ALIGN_START,
+            .parent_y = ECS_UI_ALIGN_START,
+            .child_x = ECS_UI_ALIGN_END,
+            .child_y = ECS_UI_ALIGN_END,
+            .offset_x = 2.5f,
+            .offset_y = 7.25f,
+            .width = 24.5f,
+            .height = 19.5f,
+        });
+    return Require(EcsUiBuilderOk(&builder), "zstack attach builder failed");
+}
+
+static int BuildZStackPlacementGrowAxes(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 1.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZGrowPlacement",
+            .preferred_width = 130.5f,
+            .preferred_height = 72.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZGrowPlacementFlow",
+            .kind = "parity.placement",
+            .preferred_width = 12.5f,
+            .preferred_height = 10.5f,
+        });
+    ecs_entity_t grow_width = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PlacementGrowWidth",
+            .kind = "parity.placement",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        grow_width,
+        EcsUiPlacement,
+        {
+            .mode = ECS_UI_PLACEMENT_PARENT,
+            .parent_x = ECS_UI_ALIGN_START,
+            .parent_y = ECS_UI_ALIGN_END,
+            .child_x = ECS_UI_ALIGN_START,
+            .child_y = ECS_UI_ALIGN_END,
+            .offset_x = 4.25f,
+            .offset_y = -3.25f,
+            .height = 23.5f,
+        });
+    return Require(EcsUiBuilderOk(&builder), "zstack placement grow builder failed");
+}
+
+static int BuildZStackPlacedFirstNoFlow(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZPlacedFirst",
+            .padding = 4.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    ecs_entity_t first = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZPlacedFirstFloating",
+            .kind = "parity.no-flow",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZPlacedFirstAlsoFloating",
+            .kind = "parity.no-flow",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(
+        world,
+        first,
+        EcsUiPlacement,
+        {
+            .mode = ECS_UI_PLACEMENT_PARENT,
+            .parent_x = ECS_UI_ALIGN_CENTER,
+            .parent_y = ECS_UI_ALIGN_CENTER,
+            .child_x = ECS_UI_ALIGN_CENTER,
+            .child_y = ECS_UI_ALIGN_CENTER,
+            .width = 20.5f,
+            .height = 15.5f,
+        });
+    return Require(EcsUiBuilderOk(&builder), "zstack placed-first builder failed");
+}
+
+static int BuildPointAnchorFlipClamp(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 1.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZPointAnchor",
+            .preferred_width = 80.5f,
+            .preferred_height = 60.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointAnchorFlow",
+            .kind = "parity.point",
+            .preferred_width = 5.5f,
+            .preferred_height = 5.5f,
+        });
+    ecs_entity_t fits = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointFits",
+            .kind = "parity.point",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    ecs_entity_t flips = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointFlips",
+            .kind = "parity.point",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    ecs_entity_t clamp_zero = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointClampZero",
+            .kind = "parity.point",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    ecs_entity_t pin_root = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointPinRoot",
+            .kind = "parity.point",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    ecs_entity_t zero_size = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointZeroSize",
+            .kind = "parity.point",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, fits, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 20.25f,
+        .point_y = 18.25f,
+        .width = 30.5f,
+        .height = 22.5f,
+    });
+    ecs_set(world, flips, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 230.25f,
+        .point_y = 170.25f,
+        .width = 40.5f,
+        .height = 32.5f,
+    });
+    ecs_set(world, clamp_zero, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 230.25f,
+        .point_y = 170.25f,
+        .width = 250.5f,
+        .height = 190.5f,
+    });
+    ecs_set(world, pin_root, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 400.25f,
+        .point_y = 260.25f,
+        .width = 80.5f,
+        .height = 50.5f,
+    });
+    ecs_set(world, zero_size, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 300.25f,
+        .point_y = 210.25f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "point anchor builder failed");
+}
+
+static int BuildPointAnchorVisualOffset(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 1.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZPointOffset",
+            .preferred_width = 90.5f,
+            .preferred_height = 64.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointOffsetFlow",
+            .kind = "parity.point",
+            .preferred_width = 8.5f,
+            .preferred_height = 8.5f,
+        });
+    ecs_entity_t child = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointOffsetChild",
+            .kind = "parity.point",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, child, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 50.25f,
+        .point_y = 40.25f,
+        .width = 30.5f,
+        .height = 20.5f,
+    });
+    ecs_set(world, child, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 13.25f,
+        .offset_y = -9.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "point visual offset builder failed");
+}
+
+static int BuildZStackPlacedTextChild(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZPlacedText",
+            .preferred_width = 150.5f,
+            .preferred_height = 80.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZPlacedTextFlow",
+            .kind = "parity.text",
+            .preferred_width = 12.5f,
+            .preferred_height = 10.5f,
+        });
+    ecs_entity_t text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PlacedText",
+            .text = "placed text",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, text, EcsUiTextLayout, {
+        .align_x = ECS_UI_ALIGN_END,
+        .align_y = ECS_UI_ALIGN_CENTER,
+    });
+    ecs_set(world, text, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_CENTER,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_CENTER,
+        .child_y = ECS_UI_ALIGN_END,
+        .offset_x = 4.25f,
+        .offset_y = -6.25f,
+        .width = 80.5f,
+        .height = 28.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "zstack placed text builder failed");
+}
+
+static int BuildVisualOffsetFlow(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 5.25f,
+            .padding = 3.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t offset_stack = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetStack",
+            .preferred_width = 80.5f,
+            .preferred_height = 34.5f,
+            .padding = 2.25f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetStackChild",
+            .kind = "parity.offset",
+            .preferred_width = 20.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t button = EcsUiBeginButton(
+        &builder,
+        (EcsUiButtonDesc){
+            .id = "OffsetButton",
+            .preferred_width = 90.5f,
+            .preferred_height = 36.5f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetAlignedRow",
+            .preferred_width = 150.5f,
+            .preferred_height = 50.5f,
+            .align_y = ECS_UI_ALIGN_END,
+            .gap = 6.25f,
+        });
+    ecs_entity_t row_offset = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetAlignedChild",
+            .kind = "parity.offset",
+            .preferred_width = 30.5f,
+            .preferred_height = 14.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetAlignedSibling",
+            .kind = "parity.offset",
+            .preferred_width = 25.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t nested_outer = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NestedOffsetOuter",
+            .preferred_width = 70.5f,
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t nested_inner = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NestedOffsetInner",
+            .kind = "parity.offset",
+            .preferred_width = 18.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, offset_stack, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 7.25f,
+        .offset_y = -3.5f,
+    });
+    ecs_set(world, button, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = -5.25f,
+        .offset_y = 4.5f,
+    });
+    ecs_set(world, row_offset, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 8.25f,
+        .offset_y = -5.5f,
+    });
+    ecs_set(world, nested_outer, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 4.25f,
+        .offset_y = 3.5f,
+    });
+    ecs_set(world, nested_inner, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = -2.25f,
+        .offset_y = 6.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "visual offset builder failed");
+}
+
+static int BuildOffsetFitInFit(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetFitRow",
+            .gap = 3.5f,
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    ecs_entity_t offset_fit = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetFitChild",
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetFitContent",
+            .kind = "parity.offset-fit",
+            .preferred_width = 35.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "OffsetFitIcon",
+            .name = "pin",
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, offset_fit, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 6.25f,
+        .offset_y = 4.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "offset fit-in-fit builder failed");
+}
+
+static int BuildOffsetGrowWithContent(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetGrowRow",
+            .gap = 4.25f,
+            .preferred_width = 120.75f,
+            .preferred_height = 42.5f,
+        });
+    ecs_entity_t offset_grow = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetGrowChild",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetGrowContent",
+            .kind = "parity.offset-grow",
+            .preferred_width = 80.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PlainGrowSibling",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PlainGrowContent",
+            .kind = "parity.offset-grow",
+            .preferred_width = 10.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, offset_grow, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 5.25f,
+        .offset_y = -3.5f,
+    });
+    return Require(EcsUiBuilderOk(&builder), "offset grow builder failed");
+}
+
+static int BuildFloatingWrapperNoMinFloor(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZNoMinFloor",
+            .preferred_width = 30.5f,
+            .preferred_height = 24.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NoMinFloorFlow",
+            .kind = "parity.no-min",
+            .preferred_width = 4.5f,
+            .preferred_height = 4.5f,
+        });
+    ecs_entity_t floating = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NoMinFloorFloating",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NoMinFloorContent",
+            .kind = "parity.no-min",
+            .preferred_width = 60.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, floating, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_END,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "floating no-min-floor builder failed");
+}
+
+static int BuildUnsizedPlacedTextSmallZStack(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZSmallText",
+            .preferred_width = 30.5f,
+            .preferred_height = 18.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZSmallTextFlow",
+            .kind = "parity.small-text",
+            .preferred_width = 3.5f,
+            .preferred_height = 3.5f,
+        });
+    ecs_entity_t text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "SmallUnsizedPlacedText",
+            .text = "wide placed text",
+            .role = ECS_UI_TEXT_LABEL,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, text, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_END,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "small unsized placed text builder failed");
+}
+
+static int BuildEmptyFitContainers(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 3.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "EmptyFitHeightRow",
+            .padding = 2.25f,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    EcsUiEnd(&builder);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "EmptyFitWidthColumn",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "empty fit containers builder failed");
+}
+
+static int BuildPointAnchorIgnoresPlacementOffset(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 1.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZPointIgnoreOffset",
+            .preferred_width = 90.5f,
+            .preferred_height = 64.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointIgnoreOffsetFlow",
+            .kind = "parity.point-offset",
+            .preferred_width = 8.5f,
+            .preferred_height = 8.5f,
+        });
+    ecs_entity_t child = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "PointIgnoresPlacementOffset",
+            .kind = "parity.point-offset",
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, child, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_POINT,
+        .point_x = 44.25f,
+        .point_y = 36.25f,
+        .offset_x = 31.5f,
+        .offset_y = -22.5f,
+        .width = 24.5f,
+        .height = 18.5f,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "point placement offset no-op builder failed");
+}
+
+static int BuildOffsetTextLocalSlotHeight(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t styled = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "OffsetTextStyledAncestor",
+            .gap = 6.0f,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    ecs_entity_t text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "OffsetLocalText",
+            .text = "local slot inherited body",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "OffsetLocalSibling",
+            .kind = "parity.offset-text",
+            .preferred_width = 20.0f,
+            .preferred_height = 10.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, styled, EcsUiTextStyle, {
+        .body_size = 30.0f,
+    });
+    ecs_set(world, text, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 3.0f,
+        .offset_y = 2.0f,
+    });
+    return Require(
+        EcsUiBuilderOk(&builder),
+        "offset text local slot builder failed");
+}
+
+static int BuildOpacitySkippedFloating(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t zstack = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZOpacity",
+            .preferred_width = 100.5f,
+            .preferred_height = 60.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZOpacityFlow",
+            .kind = "parity.opacity",
+            .preferred_width = 20.5f,
+            .preferred_height = 15.5f,
+        });
+    ecs_entity_t skipped = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "ZOpacitySkipped",
+            .kind = "parity.opacity",
+            .preferred_width = 70.5f,
+            .preferred_height = 40.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    ecs_set(world, zstack, EcsUiVisual, {.opacity = 0.1f});
+    ecs_set(world, skipped, EcsUiVisual, {.opacity = 0.1f});
+    return Require(EcsUiBuilderOk(&builder), "zstack opacity builder failed");
+}
+
+static int BuildBevelNoRects(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .padding = 2.25f,
+        });
+
+    const EcsUiBoxStyle bevel_style = {
+        .background = {30u, 40u, 50u, 255u},
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = {255u, 255u, 255u, 255u},
+        .bevel_dark = {0u, 0u, 0u, 255u},
+    };
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "BevelBox",
+            .preferred_width = 100.5f,
+            .preferred_height = 50.5f,
+            .padding = 4.25f,
+            .style = &bevel_style,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "BevelContent",
+            .kind = "parity.bevel",
+            .preferred_width = 20.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "bevel no-rects builder failed");
+}
+
+static int BuildZStackNestingFit(
+    ecs_world_t *world,
+    ecs_entity_t root)
+{
+    ecs_set(
+        world,
+        root,
+        EcsUiStack,
+        {
+            .axis = ECS_UI_AXIS_VERTICAL,
+            .gap = 4.25f,
+            .padding = 2.25f,
+        });
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "FitParentOfZ",
+            .padding = 3.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NestedZ",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_FIT,
+            .height_sizing = ECS_UI_SIZE_FIT,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NestedZFlow",
+            .kind = "parity.nesting",
+            .preferred_width = 20.5f,
+            .preferred_height = 14.5f,
+        });
+    (void)EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NestedZFloatingStack",
+            .padding = 2.25f,
+            .width_sizing = ECS_UI_SIZE_GROW,
+            .height_sizing = ECS_UI_SIZE_GROW,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NestedZFloatingContent",
+            .kind = "parity.nesting",
+            .preferred_width = 140.5f,
+            .preferred_height = 80.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "ZWithStackFlow",
+            .preferred_width = 120.5f,
+            .preferred_height = 80.5f,
+        });
+    (void)EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "StackInsideZFlow",
+            .preferred_width = 60.5f,
+            .preferred_height = 24.5f,
+            .gap = 3.25f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "StackInsideZFlowA",
+            .kind = "parity.nesting",
+            .preferred_width = 14.5f,
+            .preferred_height = 12.5f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "StackInsideZFlowB",
+            .kind = "parity.nesting",
+            .preferred_width = 16.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    return Require(EcsUiBuilderOk(&builder), "zstack nesting builder failed");
+}
+
 static EcsUiFrameLayoutOptions LayoutOptions(float scale)
 {
     return (EcsUiFrameLayoutOptions){
@@ -2951,12 +4157,12 @@ static int TestUnsupportedStageFailures(TestFrameErrors *errors)
         errors,
         "unsupported_text_field_view",
         BuildUnsupportedTextFieldView,
-        "unsupported text-field view on node kind 9 -- stage 6");
+        "unsupported text-field view on node kind 9 -- stage 6c");
     result |= RunUnsupportedCase(
         errors,
-        "unsupported_zstack",
-        BuildUnsupportedZStack,
-        "unsupported node kind 4 -- stage 6");
+        "unsupported_scroll_view",
+        BuildUnsupportedScrollView,
+        "unsupported scroll/clip on node kind 2 -- stage 6b");
     return result;
 }
 
@@ -3159,6 +4365,82 @@ int main(void)
         {
             .name = "text_measurement_edge_cases",
             .build = BuildTextMeasurementEdgeCases,
+        },
+        {
+            .name = "zstack_basic",
+            .build = BuildZStackBasic,
+        },
+        {
+            .name = "zstack_auto_height_walk",
+            .build = BuildZStackAutoHeightWalk,
+        },
+        {
+            .name = "zstack_placement_attach_points",
+            .build = BuildZStackPlacementAttachPoints,
+        },
+        {
+            .name = "zstack_placement_grow_axes",
+            .build = BuildZStackPlacementGrowAxes,
+        },
+        {
+            .name = "zstack_placed_first_no_flow",
+            .build = BuildZStackPlacedFirstNoFlow,
+        },
+        {
+            .name = "point_anchor_flip_clamp",
+            .build = BuildPointAnchorFlipClamp,
+        },
+        {
+            .name = "point_anchor_visual_offset",
+            .build = BuildPointAnchorVisualOffset,
+        },
+        {
+            .name = "zstack_placed_text_child",
+            .build = BuildZStackPlacedTextChild,
+        },
+        {
+            .name = "visual_offset_flow",
+            .build = BuildVisualOffsetFlow,
+        },
+        {
+            .name = "offset_fit_in_fit",
+            .build = BuildOffsetFitInFit,
+        },
+        {
+            .name = "offset_grow_with_content",
+            .build = BuildOffsetGrowWithContent,
+        },
+        {
+            .name = "floating_wrapper_no_min_floor",
+            .build = BuildFloatingWrapperNoMinFloor,
+        },
+        {
+            .name = "unsized_placed_text_small_zstack",
+            .build = BuildUnsizedPlacedTextSmallZStack,
+        },
+        {
+            .name = "empty_fit_containers",
+            .build = BuildEmptyFitContainers,
+        },
+        {
+            .name = "point_anchor_ignores_placement_offset",
+            .build = BuildPointAnchorIgnoresPlacementOffset,
+        },
+        {
+            .name = "offset_text_local_slot_height",
+            .build = BuildOffsetTextLocalSlotHeight,
+        },
+        {
+            .name = "opacity_skipped_floating",
+            .build = BuildOpacitySkippedFloating,
+        },
+        {
+            .name = "bevel_no_rects",
+            .build = BuildBevelNoRects,
+        },
+        {
+            .name = "zstack_nesting_fit",
+            .build = BuildZStackNestingFit,
         },
         {
             .name = "vertical_grow_distribution",

@@ -530,6 +530,8 @@ const EcsUiDrawList *EcsUiFrameRun(
                 tree,
                 &(EcsUiSolverRunOptions){
                     .layout = options,
+                    .surface_width = backend->desc.surface_width,
+                    .surface_height = backend->desc.surface_height,
                     .measure_text = backend->desc.measure_text,
                     .measure_user_data = backend->desc.measure_user_data,
                     .force_divergence =

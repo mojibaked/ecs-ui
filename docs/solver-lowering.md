@@ -35,10 +35,10 @@ current Stage 1 rules are:
   height defaults to 96, button and pressable heights default to 46, and icons
   are 16 by 16.
 
-Unstaged features must fail loudly instead of producing plausible rects. The
-native solver reports unsupported text as stage 5 and ZStack/floating/scroll as
-stage 6 through the frame backend error callback, and returns no draw list for
-that run.
+Unstaged features must fail loudly instead of producing plausible rects. After
+stage 6a, the remaining loud guards are scroll containers (`-- stage 6b`) and
+pressables with text-field synthetic children (`-- stage 6c`); the frame backend
+reports the solver error and returns no draw list for that run.
 
 The Stage 2 grow subset is deliberately narrower than Clay's full grow/shrink
 algorithm. It covers positive free space on the parent's layout axis with
@@ -298,3 +298,165 @@ value/caret/selection elements are stage 6 — once TEXT stops failing loudly
 this needs its OWN explicit guard), ZStack/floating/scroll (stage 6).
 Newline-in-text line boxes need no solver support (see above) but a golden
 should prove wrapper-rect parity for newline text.
+
+## Stage 6: floating, ZStack, placement, visual offsets, scroll
+
+Implemented in sub-stages, committed separately: 6a floating/ZStack/placement/
+visual offsets; 6b scroll; 6c text-field synthetic elements (guard stays until
+then, message retagged "-- stage 6c").
+
+### Clay's floating machinery (what the solver reimplements)
+
+- A floating element is REMOVED from parent flow entirely: it is not in the
+  parent's children for content sums, gaps, alignment, or minDimensions (the
+  close pass only bumps `floatingChildrenCount`); it becomes its own layout
+  tree root.
+- Floating root sizing (per axis, before the normal top-down pass runs inside
+  the floating subtree): GROW snaps to the ATTACH PARENT's final dimension on
+  that axis; FIXED stays fixed; FIT keeps bottom-up content. Then the root is
+  clamped only by its own sizing min/max; descendant content minDimensions do
+  NOT floor the floating wrapper. The standard along/off-axis passes then run
+  within the subtree, where oversized children can overhang or compress.
+- Floating root positioning (final layout pass):
+  `target = parent_attach_point(parent bounding box) - element_attach_offset
+  (0 / half / full of the floating root's dims per element attach point)
+	  + floating offset`. ATTACH_TO_PARENT uses the declaring parent's box.
+	  ATTACH_TO_ROOT uses Clay's `Clay__RootContainer`, whose dimensions are the
+	  full surface passed to `Clay_SetLayoutDimensions`, not the bounded viewport
+	  wrapper used by frame layout options.
+- ecs-ui never enables external scroll handling, so clay applies a clip's
+  `childOffset` directly as the scroll shift during positioning, and floating
+  roots attached inside clip contents do NOT get the extra childOffset
+  correction.
+
+### Bridge lowering: viewport wrapper and z-base
+
+With layout options (the harness path), the whole tree is emitted inside a
+floating viewport wrapper: FIXED physical bounds size, offset = bounds
+origin, ATTACH_TO_ROOT, z = options z_index, which also becomes the base
+added to every relative z below. Enrichment subtracts the bounds origin and
+divides by scale, so node rects are logical root-relative — the solver's
+existing coordinate space. z affects paint order only, never rects: the
+solver ignores z entirely (adoption-time concern, already on the non-coverage
+list).
+
+### Bridge lowering: ZStack
+
+The ZStack node itself is a normal container: FlowLayout sizing + stack
+padding, NO direction/gap/childAlignment overrides — so it keeps Clay
+defaults (LEFT_TO_RIGHT, gap 0, LEFT/TOP alignment). Empty-container off-axis
+padding is direction-generic in Clay: a LEFT_TO_RIGHT container with no flow
+children has cross-axis height 0, while a TOP_TO_BOTTOM container with no flow
+children has cross-axis width 0. Main-axis padding still contributes. Children:
+
+- The FIRST child, if it has NO placement, is emitted as a normal flow child
+  (including the visual-offset wrapper path below).
+- Every other child — and the first child too when it HAS a placement — is
+  wrapped in a floating wrapper. z starts at 1 for the first floating child
+  and increments per floating child (base + z). The opacity gate for floating
+  children multiplies the ZStack's cumulative opacity with the child's own.
+- Floating wrapper id: child id + "Floating" suffix (the child's own element,
+  emitted inside via EmitNodeContent, carries the node id and is what the
+  scoreboard sees) — EXCEPT a placed TEXT child, where the wrapper itself
+  takes the NODE id (no suffix) and directly contains the text content, with
+  childAlignment from the child's text layout (x and y both, unlike the
+  normal TEXT wrapper which only sets y).
+- Floating wrapper sizing: with placement, width/height are FIXED(scaled
+  value) when the placement value > 0, else GROW(0); without placement,
+  GROW(0) both axes. A GROW axis on a non-point floating root snaps to the
+  ZStack's final dims per the floating-root sizing rule above. A point-anchored
+  GROW axis snaps to Clay's full root container/surface dimension because
+  `attachTo = ROOT`; this is separate from the flip/clamp root-size below.
+- Floating wrapper childAlignment: LEFT/TOP except the placed-text case.
+- Floating config:
+  - NOT point-anchored: attachTo PARENT (the ZStack); attach points from the
+    placement's child_x/child_y (element side) and parent_x/parent_y (parent
+    side) via the all-9 mapping when placed, else LEFT_TOP/LEFT_TOP; offset =
+    scaled(visual.offset + placement.offset) (placement part only when
+    placed).
+  - Point-anchored (placement.mode == POINT): attachTo ROOT with
+    LEFT_TOP/LEFT_TOP attach and offset computed by the flip/clamp below.
+    `placement.offset_x/y` are ignored in this mode; only `visual.offset_x/y`
+    are added to the authored point before flip/clamp.
+
+### Point-anchor flip/clamp (solver-owned, logical root space)
+
+Per axis, with point = placement.point + visual.offset (logical), size =
+the AUTHORED placement size (NOT the solved size), root_size = logical root
+bounds:
+1. if size > 0 and root_size > 0 and point + size > root_size: flip to
+   point - size;
+2. clamp to >= 0;
+3. if root_size > 0 and 0 < size <= root_size and still overflowing: pin to
+   root_size - size.
+A zero/GROW placement size disables flip and overflow-pin (but not the >= 0
+clamp). The bridge then emits physical `root_origin + resolved * scale`
+attached LEFT_TOP to Clay's root; after enrichment subtracts the bounded
+viewport origin, the node rect lands at the resolved logical point. If that
+axis is GROW, the floating wrapper's size still comes from the full surface
+root container as described above. The solver computes the resolved point
+directly in logical space.
+
+### Bridge lowering: visual-offset wrapper pairs (ANY node kind, any parent)
+
+A non-root node with |visual.offset_x| or |visual.offset_y| > 0.01 is
+emitted as a Layout/Visual wrapper pair: the Layout wrapper (id suffix
+"Layout") takes the node's FlowLayout SIZING and occupies the node's flow
+slot; inside it a Visual wrapper (suffix "Visual") floats ATTACH_TO_PARENT
+LEFT_TOP/LEFT_TOP with offset = scaled(visual.offset), GROW/GROW (= sized to
+the Layout wrapper), z unset (0); the node's own element is emitted inside.
+Because the Visual wrapper is floating, the Layout wrapper's content and
+minDimensions are EMPTY: FIXED axes keep their fixed FlowLayout size, while
+GROW/FIT axes contribute 0 content/min to the parent. For TEXT specifically,
+the Layout wrapper's fixed height is `EcsUiClayFlowLayout`'s value:
+snapshot-local role/style size + 8, not inherited style; the real TEXT wrapper
+inside the floating Visual wrapper still uses inherited style. Net rect effect:
+the node and its whole subtree sit at the resolved empty/fixed flow slot
+SHIFTED by the scaled visual offset, while flow around the node is unaffected
+by the node's real content. NOTE: stages 1-5 never covered visual offsets
+(goldens never authored them, and the solver ignored them before 6a) — stage
+6a closes that silent gap for all node kinds, not just ZStack children.
+
+### Bevel edge floaters
+
+Bevelled boxes emit four 1px floating strips (suffixed ids, z base+20,
+corner attach points, GROW/FIXED sizing). They are floating (no flow
+impact), never carry node ids, and are paint-only: the solver ignores them.
+
+### Bridge lowering: scroll containers (6b)
+
+A stack with has_scroll_view emits the same container declaration plus
+`clip = {horizontal, vertical, childOffset}` where the flags come from the
+authored scroll axes and childOffset is Clay's retained per-id scroll
+position (physical px, mutated by the wheel handler between frames). Layout
+effects the solver must reproduce:
+- No compression on a clipped axis (children keep their sizes on overflow).
+- Off-axis GROW children inside a clipped-axis parent get their max extended
+  to max(parent inner size, inner content size) instead of parent inner.
+- The close pass EXCLUDES children's minDimensions on clipped axes (the
+  scroll container's own min on that axis is padding only) — this feeds
+  ancestor compression floors.
+- Descendant positions shift by childOffset during placement (scroll offsets
+  move children; the container rect is unaffected).
+- Content dims: Clay reports contentSize = content + padding via
+  Clay_GetScrollContainerData, computed in the positioning pass from final
+  child sizes. The solver computes and reports the same per scroll node; the
+  harness compares them against Clay's (extending the scoreboard beyond
+  rects for scroll nodes only). The bridge ALSO keeps a hand-rolled fallback
+  (EcsUiClayStackContentWidth/Height) used only when Clay reports zero — the
+  fallback is input-routing code, not layout, and is NOT part of solver
+  parity.
+- Offsets are retained CLAY state, not snapshot state: the parity harness
+  must inject offsets explicitly (write Clay's scrollPosition between frames,
+  pass the same per-node offsets to the solver via run options).
+
+### Stage 6 scope
+
+6a in scope: ZStack containers, floating wrappers with attach-point
+placement (all 9 x 9), placement sizing, point-anchor flip/clamp, z-index
+bookkeeping ONLY insofar as it never affects rects, visual-offset wrapper
+pairs for all node kinds, bevel floaters as paint-only no-ops. 6b in scope:
+clip sizing rules, scroll offsets, content dims. Still failing loudly after
+6a+6b: pressables with a text-field view (stage 6c). Out of parity scope
+permanently (adoption-time list): z/paint order, pointer-over ordering,
+capture modes, scissor commands, retained offset MUTATION (the wheel path).
