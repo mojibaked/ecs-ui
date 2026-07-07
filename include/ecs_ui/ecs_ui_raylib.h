@@ -4,6 +4,7 @@
 #include <raylib.h>
 
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_frame.h"
 #include "ecs_ui/ecs_ui_runner.h"
 
 #ifdef __cplusplus
@@ -36,6 +37,18 @@ typedef struct EcsUiRaylibDrawOptions {
     EcsUiRaylibCustomDrawFn icon_draw;
     EcsUiRaylibCustomDrawFn nine_slice_draw;
 } EcsUiRaylibDrawOptions;
+
+EcsUiSize EcsUiRaylibMeasureText(
+    const char *utf8,
+    int32_t length,
+    const EcsUiTextMeasureSpec *spec,
+    void *user_data);
+void EcsUiRaylibRenderDrawList(
+    const EcsUiDrawList *draw_list,
+    Font *fonts,
+    const EcsUiRaylibRenderContext *root_context,
+    const EcsUiRaylibDrawOptions *options);
+void EcsUiRaylibReleaseDrawListRenderer(void);
 
 typedef enum EcsUiRaylibWakeReasonKind {
     ECS_UI_RAYLIB_WAKE_NONE = 0,

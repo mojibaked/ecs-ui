@@ -70,7 +70,7 @@ not require clay.h):
 - Lifecycle: `EcsUiFrameBackendDesc { surface_w/h, measure fn + user_data, error cb }`,
   `bool EcsUiFrameBackendInit(desc)` (arena allocated internally, clean failure, single
   active backend, main-thread only — documented), `EcsUiFrameBackendShutdown(void)`,
-  `EcsUiFrameSetSurfaceSize(float,float)`, `EcsUiFrameSetCullingEnabled(bool)`.
+  `EcsUiFrameBackendSetSurfaceSize(float,float)`, `EcsUiFrameBackendSetCullingEnabled(bool)`.
 - Frame run: `const EcsUiDrawList *EcsUiFrameRun(EcsUiTreeSnapshot *tree,
   const EcsUiTheme*, const EcsUiFrameLayoutOptions*, const EcsUiPointerState
   *pointer_or_null, EcsUiInteractionFrame *frame_or_null)` — wraps BeginLayout +

@@ -25,15 +25,14 @@ set(ECS_UI_RAYLIB_SOURCE
     ""
     CACHE PATH
     "Path to a raylib source checkout containing CMakeLists.txt")
-set(ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE
-    ""
-    CACHE PATH
-    "Path to Clay's raylib renderer directory containing clay_renderer_raylib.c")
 
-if(NOT ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE AND
-        EXISTS "$ENV{HOME}/source/clay/renderers/raylib/clay_renderer_raylib.c")
-    set(ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE
-        "$ENV{HOME}/source/clay/renderers/raylib")
+if(NOT ECS_UI_CLAY_SOURCE AND EXISTS "$ENV{HOME}/source/clay/clay.h")
+    set(ECS_UI_CLAY_SOURCE "$ENV{HOME}/source/clay")
+endif()
+
+if(NOT ECS_UI_FLECS_SOURCE AND
+        EXISTS "$ENV{HOME}/source/flecs/distr/flecs.c")
+    set(ECS_UI_FLECS_SOURCE "$ENV{HOME}/source/flecs/distr")
 endif()
 
 include(cmake/EcsUiWarnings.cmake)
@@ -124,6 +123,14 @@ if(ECS_UI_BUILD_CLAY_ADAPTER)
         target_link_libraries(ecs_ui_clay
             PUBLIC ecs_ui ${ECS_UI_CLAY_TARGET})
         ecs_ui_enable_warnings(ecs_ui_clay)
+
+        add_library(ecs_ui_frame STATIC
+            src/ecs_ui_frame.c)
+        add_library(ecs_ui::frame ALIAS ecs_ui_frame)
+        target_link_libraries(ecs_ui_frame
+            PUBLIC ecs_ui
+            PRIVATE ecs_ui_clay)
+        ecs_ui_enable_warnings(ecs_ui_frame)
     endif()
 endif()
 
@@ -171,6 +178,12 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
     target_link_libraries(ecs_ui_raylib
         PUBLIC ecs_ui ${ECS_UI_RAYLIB_TARGET}
         PRIVATE Threads::Threads)
+    if(TARGET ecs_ui_frame)
+        target_sources(ecs_ui_raylib
+            PRIVATE src/ecs_ui_raylib_frame.c)
+        target_link_libraries(ecs_ui_raylib
+            PRIVATE ecs_ui_frame ecs_ui_clay)
+    endif()
     if(TARGET glfw)
         # The bounded park shim wakes raylib's glfwWaitEvents path by posting an
         # empty GLFW event from its watcher thread when vendored GLFW is exposed.
@@ -206,27 +219,20 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
                 ecs_ui_text_input)
         ecs_ui_enable_warnings(ecs_ui_raylib_demo)
 
-        if(TARGET ecs_ui_clay AND
-                ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE AND
-                EXISTS "${ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE}/clay_renderer_raylib.c")
+        if(TARGET ecs_ui_frame)
             add_executable(ecs_ui_clay_raylib_demo
                 ${ECS_UI_RAYLIB_DEMO_COMMON_SOURCES}
-                examples/raylib_demo/clay_main.c
-                examples/raylib_demo/clay_raylib_bridge.c)
-            target_include_directories(ecs_ui_clay_raylib_demo
-                PRIVATE "${ECS_UI_CLAY_RAYLIB_RENDERER_SOURCE}")
+                examples/raylib_demo/clay_main.c)
             target_link_libraries(ecs_ui_clay_raylib_demo
                 PRIVATE
-                    ecs_ui_clay
+                    ecs_ui_frame
                     ecs_ui_raylib
                     ecs_ui_animation
                     ecs_ui_navigation
                     ecs_ui_text_input)
         else()
             message(STATUS
-                "Clay raylib renderer not found; skipping "
-                "ecs_ui_clay_raylib_demo. Pass "
-                "-DECS_UI_CLAY_RAYLIB_RENDERER_SOURCE=/path/to/clay/renderers/raylib.")
+                "ecs_ui_frame not found; skipping ecs_ui_clay_raylib_demo.")
         endif()
     endif()
 endif()
@@ -288,6 +294,26 @@ if(ECS_UI_BUILD_TESTS)
         add_test(
             NAME ecs_ui_raylib_presentation_cache
             COMMAND ecs_ui_raylib_presentation_cache)
+
+        if(TARGET ecs_ui_frame)
+            add_executable(ecs_ui_frame_header_compile
+                tests/ecs_ui_frame_header_compile.c)
+            target_link_libraries(ecs_ui_frame_header_compile
+                PRIVATE ecs_ui_raylib)
+            ecs_ui_enable_warnings(ecs_ui_frame_header_compile)
+            add_test(
+                NAME ecs_ui_frame_header_compile
+                COMMAND ecs_ui_frame_header_compile)
+
+            add_executable(ecs_ui_raylib_draw_list
+                tests/ecs_ui_raylib_draw_list.c)
+            target_link_libraries(ecs_ui_raylib_draw_list
+                PRIVATE ecs_ui_raylib ecs_ui_frame)
+            ecs_ui_enable_warnings(ecs_ui_raylib_draw_list)
+            add_test(
+                NAME ecs_ui_raylib_draw_list
+                COMMAND ecs_ui_raylib_draw_list)
+        endif()
     endif()
 
     if(TARGET ecs_ui_clay)
@@ -297,5 +323,16 @@ if(ECS_UI_BUILD_TESTS)
             PRIVATE ecs_ui_clay)
         ecs_ui_enable_warnings(ecs_ui_clay_parity)
         add_test(NAME ecs_ui_clay_parity COMMAND ecs_ui_clay_parity)
+    endif()
+
+    if(TARGET ecs_ui_frame)
+        add_executable(ecs_ui_frame_containment
+            tests/ecs_ui_frame_containment.c)
+        target_link_libraries(ecs_ui_frame_containment
+            PRIVATE ecs_ui_frame ecs_ui_clay)
+        ecs_ui_enable_warnings(ecs_ui_frame_containment)
+        add_test(
+            NAME ecs_ui_frame_containment
+            COMMAND ecs_ui_frame_containment)
     endif()
 endif()

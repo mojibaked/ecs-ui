@@ -1,4 +1,3 @@
-#include "clay_raylib_bridge.h"
 #include "demo_anim.h"
 #include "demo_app.h"
 #include "demo_nav.h"
@@ -7,11 +6,10 @@
 #include "demo_theme.h"
 #include "demo_ui.h"
 #include "ecs_ui/ecs_ui_animation.h"
-#include "ecs_ui/ecs_ui_clay.h"
+#include "ecs_ui/ecs_ui_frame.h"
 #include "ecs_ui/ecs_ui_raylib.h"
 
 #include <raylib.h>
-#include <stdlib.h>
 #include <stdio.h>
 
 #define DEMO_CLAY_NEXT_FRAME_NS 16666667u
@@ -20,7 +18,7 @@ typedef struct DemoClayRunCtx {
     ecs_world_t *app_world;
     ecs_world_t *ui_world;
     ecs_entity_t root;
-    EcsUiClayInteractionState *interaction_state;
+    EcsUiInteractionState *interaction_state;
     Font *fonts;
     EcsUiFrameSignalAccumulator *frame_signals;
     EcsUiFrameSignalHandle tree_signal;
@@ -28,11 +26,12 @@ typedef struct DemoClayRunCtx {
     EcsUiWakeHandle animation_deadline;
     EcsUiTreeSnapshot tree;
     EcsUiTheme theme;
-    EcsUiClayLayoutOptions layout_options;
-    EcsUiClayInteractionFrame interaction_frame;
-    Clay_RenderCommandArray render_commands;
+    EcsUiFrameLayoutOptions layout_options;
+    EcsUiInteractionFrame interaction_frame;
+    const EcsUiDrawList *draw_list;
     EcsUiEventList events;
-    EcsUiClayRaylibRenderOptions render_options;
+    EcsUiRaylibRenderContext render_context;
+    EcsUiRaylibDrawOptions render_options;
     uint64_t tree_revision;
     Vector2 previous_mouse;
     bool has_previous_mouse;
@@ -41,16 +40,13 @@ typedef struct DemoClayRunCtx {
     bool drawing;
 } DemoClayRunCtx;
 
-static void DemoClayHandleErrors(Clay_ErrorData error_data)
+static void DemoClayHandleErrors(
+    EcsUiFrameErrorKind kind,
+    const char *message,
+    void *user_data)
 {
-    char message[256] = {0};
-    const int32_t length = error_data.errorText.length < (int32_t)sizeof(message) - 1 ?
-        error_data.errorText.length :
-        (int32_t)sizeof(message) - 1;
-    for (int32_t i = 0; i < length; i += 1) {
-        message[i] = error_data.errorText.chars[i];
-    }
-    TraceLog(LOG_WARNING, "CLAY: %s", message);
+    (void)user_data;
+    TraceLog(LOG_WARNING, "FRAME[%d]: %s", (int)kind, message);
 }
 
 static EcsUiTheme DemoClayTheme(const ecs_world_t *ui_world)
@@ -201,28 +197,17 @@ static void DemoClayCollectKeyboardEvents(EcsUiEventList *events)
     }
 }
 
-static EcsUiClayLayoutOptions DemoClayLayoutOptions(void)
+static EcsUiFrameLayoutOptions DemoClayLayoutOptions(void)
 {
     const float margin = 40.0f;
-    return (EcsUiClayLayoutOptions){
-        .bounds = {
+    return (EcsUiFrameLayoutOptions){
+        .physical_bounds = {
             .x = margin,
             .y = margin,
             .width = (float)GetScreenWidth() - (margin * 2.0f),
             .height = (float)GetScreenHeight() - (margin * 2.0f),
         },
     };
-}
-
-static Clay_RenderCommandArray DemoClayEmitRenderCommands(
-    const EcsUiTreeSnapshot *tree,
-    const EcsUiTheme *theme,
-    const EcsUiClayLayoutOptions *layout_options,
-    EcsUiClayInteractionFrame *frame)
-{
-    Clay_BeginLayout();
-    EcsUiClayEmitTreeEx(tree, theme, layout_options, frame);
-    return Clay_EndLayout();
 }
 
 static void DemoClayBumpRevision(DemoClayRunCtx *ctx)
@@ -281,19 +266,21 @@ static bool DemoClayRaylibInputChanged(
 static void DemoClayBuildRenderOptions(DemoClayRunCtx *ctx)
 {
     const float render_scale = ctx->tree.scale > 0.0f ? ctx->tree.scale : 1.0f;
-    ctx->render_options = (EcsUiClayRaylibRenderOptions){
-        .custom_draw = DemoTerminalDrawCustom,
+    ctx->render_context = (EcsUiRaylibRenderContext){
         .physical_root_bounds = {
-            .x = ctx->layout_options.bounds.x,
-            .y = ctx->layout_options.bounds.y,
-            .width = ctx->layout_options.bounds.width,
-            .height = ctx->layout_options.bounds.height,
+            .x = ctx->layout_options.physical_bounds.x,
+            .y = ctx->layout_options.physical_bounds.y,
+            .width = ctx->layout_options.physical_bounds.width,
+            .height = ctx->layout_options.physical_bounds.height,
         },
         .logical_origin = {
-            .x = ctx->layout_options.bounds.x / render_scale,
-            .y = ctx->layout_options.bounds.y / render_scale,
+            .x = ctx->layout_options.physical_bounds.x / render_scale,
+            .y = ctx->layout_options.physical_bounds.y / render_scale,
         },
         .scale = render_scale,
+    };
+    ctx->render_options = (EcsUiRaylibDrawOptions){
+        .custom_draw = DemoTerminalDrawCustom,
         .user_data = ctx->ui_world,
     };
 }
@@ -304,10 +291,9 @@ static bool DemoClayPreInputPump(void *user_data)
     ctx->theme = DemoClayTheme(ctx->ui_world);
     ctx->layout_options = DemoClayLayoutOptions();
     ctx->events = (EcsUiEventList){0};
-    Clay_SetLayoutDimensions((Clay_Dimensions){
-        .width = (float)GetScreenWidth(),
-        .height = (float)GetScreenHeight(),
-    });
+    EcsUiFrameBackendSetSurfaceSize(
+        (float)GetScreenWidth(),
+        (float)GetScreenHeight());
     if (IsWindowResized()) {
         (void)EcsUiFrameSignalMark(
             ctx->frame_signals,
@@ -317,7 +303,7 @@ static bool DemoClayPreInputPump(void *user_data)
 
     Vector2 mouse = GetMousePosition();
     Vector2 scroll = GetMouseWheelMoveV();
-    EcsUiClayPointerState pointer = {
+    EcsUiPointerState pointer = {
         .x = mouse.x,
         .y = mouse.y,
         .time = GetTime(),
@@ -339,26 +325,21 @@ static bool DemoClayPreInputPump(void *user_data)
     } else {
         ctx->tree = (EcsUiTreeSnapshot){0};
     }
-    EcsUiClayInteractionFrameBegin(
-        &ctx->interaction_frame,
-        ctx->interaction_state);
-    (void)DemoClayEmitRenderCommands(
+    ctx->interaction_frame = (EcsUiInteractionFrame){
+        .state = ctx->interaction_state,
+    };
+    (void)EcsUiFrameRun(
         &ctx->tree,
         &ctx->theme,
         &ctx->layout_options,
-        &ctx->interaction_frame);
-    Clay_SetPointerState(
-        (Clay_Vector2){pointer.x, pointer.y},
-        pointer.down);
-
-    EcsUiClayCollectFrameEvents(
+        &pointer,
+        &ctx->interaction_frame
+    );
+    EcsUiFrameCollectEvents(
         &ctx->interaction_frame,
         pointer,
         &ctx->events);
-    Clay_UpdateScrollContainers(
-        false,
-        (Clay_Vector2){.x = 0.0f, .y = 0.0f},
-        GetFrameTime());
+    EcsUiFrameSettleScroll(GetFrameTime());
     DemoClayCollectKeyboardEvents(&ctx->events);
     if (DemoClayRaylibInputChanged(ctx, mouse, scroll) ||
             DemoClayHasNonHoverEvent(&ctx->events)) {
@@ -391,12 +372,12 @@ static bool DemoClayTick(double dt, void *user_data)
     }
 
     ctx->theme = DemoClayTheme(ctx->ui_world);
-    ctx->render_commands =
-        DemoClayEmitRenderCommands(
-            &ctx->tree,
-            &ctx->theme,
-            &ctx->layout_options,
-            NULL);
+    ctx->draw_list = EcsUiFrameRun(
+        &ctx->tree,
+        &ctx->theme,
+        &ctx->layout_options,
+        NULL,
+        NULL);
     DemoClayBuildRenderOptions(ctx);
 
     const bool animation_active = EcsUiAnimationHasActive(ctx->ui_world);
@@ -418,9 +399,10 @@ static void DemoClayDrawCurrent(DemoClayRunCtx *ctx)
     BeginDrawing();
     ctx->drawing = true;
     ClearBackground(DemoClayClearColor(&ctx->theme));
-    EcsUiClayRaylibRenderEx(
-        ctx->render_commands,
+    EcsUiRaylibRenderDrawList(
+        ctx->draw_list,
         ctx->fonts,
+        &ctx->render_context,
         &ctx->render_options);
 }
 
@@ -455,30 +437,21 @@ int main(void)
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(900, 560, "ecs-ui Clay raylib demo");
 
-    uint64_t clay_memory_size = Clay_MinMemorySize();
-    void *clay_memory = malloc(clay_memory_size);
-    if (clay_memory == NULL) {
+    Font fonts[1] = {0};
+    fonts[0] = GetFontDefault();
+    if (!EcsUiFrameBackendInit(
+            &(EcsUiFrameBackendDesc){
+                .surface_width = (float)GetScreenWidth(),
+                .surface_height = (float)GetScreenHeight(),
+                .measure_text = EcsUiRaylibMeasureText,
+                .measure_user_data = fonts,
+                .error = DemoClayHandleErrors,
+            })) {
         CloseWindow();
         return 1;
     }
-
-    Clay_Arena clay_arena =
-        Clay_CreateArenaWithCapacityAndMemory(clay_memory_size, clay_memory);
-    Clay_Initialize(
-        clay_arena,
-        (Clay_Dimensions){
-            .width = (float)GetScreenWidth(),
-            .height = (float)GetScreenHeight(),
-        },
-        (Clay_ErrorHandler){
-            .errorHandlerFunction = DemoClayHandleErrors,
-        });
-
-    Font fonts[1] = {0};
-    fonts[0] = GetFontDefault();
-    Clay_SetMeasureTextFunction(EcsUiClayRaylibMeasureText, fonts);
-    EcsUiClayInteractionState interaction_state = {0};
-    EcsUiClayInteractionStateInit(&interaction_state);
+    EcsUiInteractionState interaction_state = {0};
+    EcsUiFrameInteractionStateInit(&interaction_state);
 
     ecs_world_t *app_world = ecs_init();
     DemoAppRegister(app_world);
@@ -538,7 +511,7 @@ int main(void)
     EcsUiFrameSignalAccumulatorDestroy(frame_signals);
     ecs_fini(ui_world);
     ecs_fini(app_world);
-    Clay_Raylib_Close();
-    free(clay_memory);
+    EcsUiRaylibReleaseDrawListRenderer();
+    EcsUiFrameBackendShutdown();
     return 0;
 }
