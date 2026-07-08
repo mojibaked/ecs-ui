@@ -48,12 +48,9 @@ static EcsUiColorF EcsUiPaintBoxFill(
         return EcsUiStyleHasNineSlice(node) ?
             EcsUiPaintTransparent() :
             EcsUiStylePressableColor(theme, node);
-    case ECS_UI_NODE_CUSTOM:
-        return EcsUiStyleHasNineSlice(node) ?
-            EcsUiPaintTransparent() :
-            EcsUiStyleColorFrom(theme->surface_subtle);
     case ECS_UI_NODE_TEXT:
     case ECS_UI_NODE_ICON:
+    case ECS_UI_NODE_CUSTOM:
     case ECS_UI_NODE_NONE:
     default:
         return EcsUiPaintTransparent();
@@ -98,6 +95,37 @@ static EcsUiPaintCornerRadius EcsUiPaintBoxRadius(
     };
 }
 
+static EcsUiPaintRect EcsUiPaintNodeRect(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL ?
+        (EcsUiPaintRect){
+            .x = node->layout_x,
+            .y = node->layout_y,
+            .width = node->layout_width,
+            .height = node->layout_height,
+        } :
+        (EcsUiPaintRect){0};
+}
+
+static EcsUiPaintItem *EcsUiPaintReserve(
+    EcsUiPaintList *list,
+    uint32_t item_capacity)
+{
+    if (list == NULL) {
+        return NULL;
+    }
+    if (list->count >= item_capacity || list->count >= ECS_UI_PAINT_ITEM_MAX) {
+        list->truncated = true;
+        return NULL;
+    }
+
+    EcsUiPaintItem *item = &list->items[list->count];
+    *item = (EcsUiPaintItem){0};
+    item->order = list->count;
+    list->count += 1u;
+    return item;
+}
+
 static bool EcsUiPaintPushBox(
     EcsUiPaintList *list,
     const EcsUiTreeNodeSnapshot *node,
@@ -110,39 +138,205 @@ static bool EcsUiPaintPushBox(
     if (list == NULL || node == NULL) {
         return false;
     }
-    if (list->count >= item_capacity || list->count >= ECS_UI_PAINT_ITEM_MAX) {
-        list->truncated = true;
+    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    if (item == NULL) {
         return false;
     }
 
-    const uint32_t order = list->count;
-    list->items[list->count] = (EcsUiPaintItem){
-        .key = {
-            .source = node->entity,
-            .role = ECS_UI_PAINT_ROLE_BOX,
-            .part = 0u,
-            .generation = list->generation,
-        },
-        .primitive = ECS_UI_PAINT_PRIMITIVE_BOX,
-        .rect = {
-            .x = node->layout_x,
-            .y = node->layout_y,
-            .width = node->layout_width,
-            .height = node->layout_height,
-        },
-        .clip = {0},
-        .opacity = opacity,
-        .order = order,
-        .payload = {
-            .box = {
-                .fill = fill,
-                .radius = radius,
-                .border = border,
-            },
-        },
+    item->key = (EcsUiPaintKey){
+        .source = node->entity,
+        .role = ECS_UI_PAINT_ROLE_BOX,
+        .part = 0u,
+        .generation = list->generation,
     };
-    list->count += 1u;
+    item->primitive = ECS_UI_PAINT_PRIMITIVE_BOX;
+    item->rect = EcsUiPaintNodeRect(node);
+    item->opacity = opacity;
+    item->payload.box = (EcsUiPaintBox){
+        .fill = fill,
+        .radius = radius,
+        .border = border,
+    };
     return true;
+}
+
+static bool EcsUiPaintPushCustom(
+    EcsUiPaintList *list,
+    const EcsUiTreeNodeSnapshot *node,
+    uint16_t role,
+    EcsUiColorF color,
+    float opacity,
+    uint32_t item_capacity)
+{
+    if (list == NULL || node == NULL) {
+        return false;
+    }
+    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    if (item == NULL) {
+        return false;
+    }
+
+    item->key = (EcsUiPaintKey){
+        .source = node->entity,
+        .role = role,
+        .part = 0u,
+        .generation = list->generation,
+    };
+    item->primitive = ECS_UI_PAINT_PRIMITIVE_CUSTOM;
+    item->rect = EcsUiPaintNodeRect(node);
+    item->opacity = opacity;
+    item->payload.custom = (EcsUiPaintCustom){
+        .source = node->entity,
+        .color = color,
+    };
+    return true;
+}
+
+static EcsUiPaintRect EcsUiPaintBevelRect(
+    const EcsUiTreeNodeSnapshot *node,
+    uint16_t part)
+{
+    const EcsUiPaintRect rect = EcsUiPaintNodeRect(node);
+    switch (part) {
+    case ECS_UI_PAINT_BEVEL_EDGE_TOP:
+        return (EcsUiPaintRect){
+            .x = rect.x,
+            .y = rect.y,
+            .width = rect.width,
+            .height = 1.0f,
+        };
+    case ECS_UI_PAINT_BEVEL_EDGE_LEFT:
+        return (EcsUiPaintRect){
+            .x = rect.x,
+            .y = rect.y,
+            .width = 1.0f,
+            .height = rect.height,
+        };
+    case ECS_UI_PAINT_BEVEL_EDGE_BOTTOM:
+        return (EcsUiPaintRect){
+            .x = rect.x,
+            .y = rect.y + rect.height - 1.0f,
+            .width = rect.width,
+            .height = 1.0f,
+        };
+    case ECS_UI_PAINT_BEVEL_EDGE_RIGHT:
+    default:
+        return (EcsUiPaintRect){
+            .x = rect.x + rect.width - 1.0f,
+            .y = rect.y,
+            .width = 1.0f,
+            .height = rect.height,
+        };
+    }
+}
+
+static bool EcsUiPaintPushBevelEdge(
+    EcsUiPaintList *list,
+    const EcsUiTreeNodeSnapshot *node,
+    uint16_t part,
+    EcsUiColorF color,
+    float opacity,
+    uint32_t item_capacity)
+{
+    if (list == NULL || node == NULL) {
+        return false;
+    }
+    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    if (item == NULL) {
+        return false;
+    }
+
+    item->key = (EcsUiPaintKey){
+        .source = node->entity,
+        .role = ECS_UI_PAINT_ROLE_BEVEL_EDGE,
+        .part = part,
+        .generation = list->generation,
+    };
+    item->primitive = ECS_UI_PAINT_PRIMITIVE_BOX;
+    item->rect = EcsUiPaintBevelRect(node, part);
+    item->opacity = opacity;
+    item->payload.bevel_edge = (EcsUiPaintBevelEdge){
+        .color = color,
+    };
+    return true;
+}
+
+static uint16_t EcsUiPaintCustomRole(const EcsUiTreeNodeSnapshot *node)
+{
+    if (node == NULL) {
+        return ECS_UI_PAINT_ROLE_NONE;
+    }
+    if (node->kind == ECS_UI_NODE_ICON) {
+        return ECS_UI_PAINT_ROLE_ICON;
+    }
+    if (node->kind == ECS_UI_NODE_CUSTOM) {
+        return ECS_UI_PAINT_ROLE_CUSTOM;
+    }
+    if (EcsUiStyleHasNineSlice(node)) {
+        return ECS_UI_PAINT_ROLE_NINE_SLICE;
+    }
+    return ECS_UI_PAINT_ROLE_NONE;
+}
+
+static EcsUiColorF EcsUiPaintCustomColor(
+    const EcsUiTreeNodeSnapshot *node,
+    const EcsUiTheme *theme)
+{
+    if (node == NULL || theme == NULL) {
+        return EcsUiPaintTransparent();
+    }
+    if (node->kind == ECS_UI_NODE_ICON) {
+        return EcsUiStyleIconColor();
+    }
+    if (EcsUiStyleHasNineSlice(node)) {
+        return EcsUiStyleNineSliceTint(node);
+    }
+    if (node->kind == ECS_UI_NODE_CUSTOM) {
+        return EcsUiStyleColorFrom(theme->surface_subtle);
+    }
+    return EcsUiPaintTransparent();
+}
+
+static bool EcsUiPaintEmitBevel(
+    EcsUiPaintList *list,
+    const EcsUiTreeNodeSnapshot *node,
+    float opacity,
+    uint32_t item_capacity)
+{
+    if (!EcsUiStyleHasDrawableBevel(node)) {
+        return true;
+    }
+
+    const EcsUiColorF top_left = EcsUiStyleBevelTopLeftColor(node);
+    const EcsUiColorF bottom_right = EcsUiStyleBevelBottomRightColor(node);
+    return EcsUiPaintPushBevelEdge(
+            list,
+            node,
+            ECS_UI_PAINT_BEVEL_EDGE_TOP,
+            top_left,
+            opacity,
+            item_capacity) &&
+        EcsUiPaintPushBevelEdge(
+            list,
+            node,
+            ECS_UI_PAINT_BEVEL_EDGE_LEFT,
+            top_left,
+            opacity,
+            item_capacity) &&
+        EcsUiPaintPushBevelEdge(
+            list,
+            node,
+            ECS_UI_PAINT_BEVEL_EDGE_BOTTOM,
+            bottom_right,
+            opacity,
+            item_capacity) &&
+        EcsUiPaintPushBevelEdge(
+            list,
+            node,
+            ECS_UI_PAINT_BEVEL_EDGE_RIGHT,
+            bottom_right,
+            opacity,
+            item_capacity);
 }
 
 static bool EcsUiPaintEmitNode(
@@ -181,6 +375,19 @@ static bool EcsUiPaintEmitNode(
                 return false;
             }
         }
+
+        const uint16_t custom_role = EcsUiPaintCustomRole(node);
+        if (custom_role != ECS_UI_PAINT_ROLE_NONE) {
+            if (!EcsUiPaintPushCustom(
+                    list,
+                    node,
+                    custom_role,
+                    EcsUiPaintCustomColor(node, theme),
+                    opacity,
+                    item_capacity)) {
+                return false;
+            }
+        }
     }
 
     for (uint32_t child = node->first_child;
@@ -196,7 +403,7 @@ static bool EcsUiPaintEmitNode(
             return false;
         }
     }
-    return true;
+    return EcsUiPaintEmitBevel(list, node, opacity, item_capacity);
 }
 
 bool EcsUiPaintListBuildWithCapacity(

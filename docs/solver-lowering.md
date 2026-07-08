@@ -586,6 +586,56 @@ SEMANTIC when paint must change, or CLAY-ONLY when it is a scaffolding quirk
 that the durable paint artifact should not preserve; CLAY-ONLY cases must be
 documented in the test and here before being accepted.
 
+### Paint pass (stage 7.4 decorations)
+
+Stage 7.4 adds decoration roles without changing layout or the live renderer.
+Paint still stores renderer-neutral data only: decoration payloads identify the
+source entity, not a Clay node pointer. The transition adapter resolves that
+entity back to the current snapshot node when it needs Clay `customData`.
+
+Per-node paint order is semantic visual order: box item first, then custom-like
+decorations (`nine-slice`, `custom`, `icon`) for nodes that lower to Clay
+`CUSTOM`, then bevel edges on top. Clay emits border commands after children on
+its unwind; paint keeps border in the box payload for now, and the adapter emits
+the border command with the box item before later decoration items. Bevel edges
+are floating Clay children with z-index 20, so their paint items come after the
+source node's box/custom item and visually sit above it.
+
+Bevel paint items use role `bevel-edge`, primitive `box`, and part indices
+0=top, 1=left, 2=bottom, 3=right. The rects are computed from the node's final
+logical layout rect using the same floating attach geometry as the bridge's
+1px edge elements: top `{x,y,w,1}`, left `{x,y,1,h}`, bottom `{x,y+h-1,w,1}`,
+right `{x+w-1,y,1,h}`. The top and left edges use
+`EcsUiStyleBevelTopLeftColor`; the bottom and right edges use
+`EcsUiStyleBevelBottomRightColor`; cumulative opacity is stored on the item and
+applied only by render adapters.
+
+Nine-slice, custom, and icon paint items use role `nine-slice`, `custom`, and
+`icon`, primitive `custom`, and part 0. A nine-slice item carries the source
+entity and resolved `EcsUiStyleNineSliceTint`; a custom item carries the source
+entity and the same resolved fallback background color that Clay passes through
+to custom render data; an icon item carries the source entity and
+`EcsUiStyleIconColor`. Clay elements with a `CUSTOM` config emit a `CUSTOM`
+command instead of a `RECTANGLE` command for their shared background; a border
+command can still be emitted from the box payload if the node has a border.
+
+The stage-7.4 adapter maps bevel-edge items to suffixed rectangle commands
+(`BevelTop`, `BevelLeft`, `BevelBottom`, `BevelRight`) and maps
+nine-slice/custom/icon items to Clay `CUSTOM` commands with `customData`
+resolved from the snapshot source entity. The command's background color is the
+payload color with cumulative opacity applied, matching Clay's custom render
+data and the raylib renderer's `backgroundColor.a / 255` opacity convention.
+
+The bootstrap diff now joins decoration commands too. Bevel edges join by their
+suffixed element ids and compare rect/color. Because bevel edges are floating,
+they do not increment the parent element's `children.length`, so a bordered
+beveled plain box remains inside the 7.3 border-id join scope. Custom,
+nine-slice, and icon items join by the source element id plus command type
+`CUSTOM`; the diff compares bounds, `customData` identity, and background color.
+The 7.3 border join still fails loudly for text-field pressables, bordered TEXT,
+ZStack floating children, and opacity-culled children until a later diff
+generalizes the exact Clay child-count model for those synthetic cases.
+
 ### Stage 6 scope
 
 6a in scope: ZStack containers, floating wrappers with attach-point

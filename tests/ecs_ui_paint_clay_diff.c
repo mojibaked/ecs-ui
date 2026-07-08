@@ -4,7 +4,6 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 
 static int Require(bool condition, const char *message)
 {
@@ -50,6 +49,22 @@ static int RequireColor(
     return result;
 }
 
+static Clay_Color DiffPaintColor(EcsUiColorF color, float opacity)
+{
+    float alpha = opacity;
+    if (alpha < 0.0f) {
+        alpha = 0.0f;
+    } else if (alpha > 1.0f) {
+        alpha = 1.0f;
+    }
+    return (Clay_Color){
+        .r = color.r,
+        .g = color.g,
+        .b = color.b,
+        .a = color.a * alpha,
+    };
+}
+
 static EcsUiSize TestMeasureText(
     const char *utf8,
     int32_t length,
@@ -80,6 +95,15 @@ static int BuildDiffTree(
     int result = 0;
     result |= Require(EcsUiSetScale(world, root, scale), "diff scale failed");
 
+    const EcsUiNineSliceStyle nine_slice_style = {
+        .image = "diff.frame",
+        .slice_left = 3u,
+        .slice_top = 4u,
+        .slice_right = 5u,
+        .slice_bottom = 6u,
+        .scale = 1.0f,
+        .tint = {180u, 190u, 200u, 210u},
+    };
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
     ecs_entity_t panel = EcsUiBeginHStack(
         &builder,
@@ -115,6 +139,37 @@ static int BuildDiffTree(
             .preferred_height = 9.5f,
         });
     EcsUiEnd(&builder);
+    ecs_entity_t custom = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "DiffCustom",
+            .kind = "diff.custom",
+            .preferred_width = 18.5f,
+            .preferred_height = 12.5f,
+        });
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "DiffIcon",
+            .name = "diff-icon",
+        });
+    ecs_entity_t nine_slice = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffNine",
+            .preferred_width = 19.25f,
+            .preferred_height = 11.75f,
+            .nine_slice_style = &nine_slice_style,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t bevel = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffBevel",
+            .preferred_width = 21.5f,
+            .preferred_height = 13.25f,
+        });
+    EcsUiEnd(&builder);
     EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
     result |= Require(EcsUiBuilderOk(&builder), "diff builder failed");
@@ -142,6 +197,19 @@ static int BuildDiffTree(
         .radius = 3.5f,
         .border_width = 0.3f,
         .border_color = {210u, 160u, 90u, 240u},
+    });
+    ecs_set(world, custom, EcsUiBoxStyle, {
+        .border_width = 2.0f,
+        .border_color = {70u, 80u, 90u, 230u},
+    });
+    ecs_set(world, nine_slice, EcsUiBoxStyle, {
+        .background = {77u, 88u, 99u, 255u},
+    });
+    ecs_set(world, bevel, EcsUiBoxStyle, {
+        .background = {30u, 40u, 50u, 220u},
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = {240u, 245u, 250u, 230u},
+        .bevel_dark = {20u, 25u, 30u, 210u},
     });
     return result;
 }
@@ -215,6 +283,22 @@ static int RequireBorderWidthEqual(
     result |= Require(actual.right == expected.right, message);
     result |= Require(actual.bottom == expected.bottom, message);
     return result;
+}
+
+static const char *DiffBevelSuffix(uint16_t part)
+{
+    switch (part) {
+    case ECS_UI_PAINT_BEVEL_EDGE_TOP:
+        return "BevelTop";
+    case ECS_UI_PAINT_BEVEL_EDGE_LEFT:
+        return "BevelLeft";
+    case ECS_UI_PAINT_BEVEL_EDGE_BOTTOM:
+        return "BevelBottom";
+    case ECS_UI_PAINT_BEVEL_EDGE_RIGHT:
+        return "BevelRight";
+    default:
+        return "";
+    }
 }
 
 static uint16_t DiffScaledU16(float value, float scale)
@@ -325,13 +409,20 @@ static int CompareBoxItem(
         }
     }
 
+    const bool rectangle_expected =
+        DiffPaintColor(item->payload.box.fill, item->opacity).a > 0.0f;
     const Clay_RenderCommand *adapter_rect =
         FindCommand(adapter, element_id.id, CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
     const Clay_RenderCommand *bridge_rect =
         FindCommand(bridge, element_id.id, CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
-    result |= Require(adapter_rect != NULL, "adapter rectangle missing");
-    result |= Require(bridge_rect != NULL, "bridge rectangle missing");
-    if (adapter_rect != NULL && bridge_rect != NULL) {
+    if (rectangle_expected) {
+        result |= Require(adapter_rect != NULL, "adapter rectangle missing");
+        result |= Require(bridge_rect != NULL, "bridge rectangle missing");
+    } else {
+        result |= Require(adapter_rect == NULL, "adapter unexpected rectangle");
+        result |= Require(bridge_rect == NULL, "bridge unexpected rectangle");
+    }
+    if (rectangle_expected && adapter_rect != NULL && bridge_rect != NULL) {
         result |= RequireBoundsEqual(
             adapter_rect->boundingBox,
             bridge_rect->boundingBox,
@@ -395,6 +486,99 @@ static int CompareBoxItem(
     return result;
 }
 
+static int CompareBevelItem(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiPaintItem *item,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter)
+{
+    if (tree == NULL || item == NULL) {
+        return Require(false, "missing bevel diff item inputs");
+    }
+    const EcsUiTreeNodeSnapshot *node =
+        FindNodeByEntity(tree, item->key.source);
+    Clay_ElementId bevel_id = {0};
+    int result = 0;
+    result |= Require(
+        EcsUiPaintClayElementId(node, DiffBevelSuffix(item->key.part), &bevel_id),
+        "bevel item should have a computable Clay id");
+    if (bevel_id.id == 0u) {
+        return result;
+    }
+
+    const Clay_RenderCommand *adapter_rect =
+        FindCommand(adapter, bevel_id.id, CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const Clay_RenderCommand *bridge_rect =
+        FindCommand(bridge, bevel_id.id, CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    result |= Require(adapter_rect != NULL, "adapter bevel edge missing");
+    result |= Require(bridge_rect != NULL, "bridge bevel edge missing");
+    if (adapter_rect != NULL && bridge_rect != NULL) {
+        result |= RequireBoundsEqual(
+            adapter_rect->boundingBox,
+            bridge_rect->boundingBox,
+            "bevel edge bounds mismatch");
+        result |= RequireColor(
+            adapter_rect->renderData.rectangle.backgroundColor,
+            bridge_rect->renderData.rectangle.backgroundColor,
+            "bevel edge color mismatch");
+        result |= RequireColor(
+            adapter_rect->renderData.rectangle.backgroundColor,
+            DiffPaintColor(item->payload.bevel_edge.color, item->opacity),
+            "bevel edge paint color mismatch");
+    }
+    return result;
+}
+
+static int CompareCustomItem(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiPaintItem *item,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter)
+{
+    if (tree == NULL || item == NULL) {
+        return Require(false, "missing custom diff item inputs");
+    }
+    const EcsUiTreeNodeSnapshot *node =
+        FindNodeByEntity(tree, item->key.source);
+    Clay_ElementId element_id = {0};
+    int result = 0;
+    result |= Require(
+        EcsUiPaintClayElementId(node, NULL, &element_id),
+        "custom item should have a computable Clay id");
+    if (element_id.id == 0u) {
+        return result;
+    }
+
+    const Clay_RenderCommand *adapter_custom =
+        FindCommand(adapter, element_id.id, CLAY_RENDER_COMMAND_TYPE_CUSTOM);
+    const Clay_RenderCommand *bridge_custom =
+        FindCommand(bridge, element_id.id, CLAY_RENDER_COMMAND_TYPE_CUSTOM);
+    result |= Require(adapter_custom != NULL, "adapter custom command missing");
+    result |= Require(bridge_custom != NULL, "bridge custom command missing");
+    if (adapter_custom != NULL && bridge_custom != NULL) {
+        result |= RequireBoundsEqual(
+            adapter_custom->boundingBox,
+            bridge_custom->boundingBox,
+            "custom bounds mismatch");
+        result |= RequireColor(
+            adapter_custom->renderData.custom.backgroundColor,
+            bridge_custom->renderData.custom.backgroundColor,
+            "custom background color mismatch");
+        result |= RequireColor(
+            adapter_custom->renderData.custom.backgroundColor,
+            DiffPaintColor(item->payload.custom.color, item->opacity),
+            "custom paint color mismatch");
+        result |= Require(
+            adapter_custom->renderData.custom.customData ==
+                bridge_custom->renderData.custom.customData,
+            "custom data identity mismatch");
+        result |= Require(
+            adapter_custom->renderData.custom.customData == node,
+            "custom data should point at source snapshot node");
+    }
+    return result;
+}
+
 static int RunDiffCase(float scale)
 {
     int result = 0;
@@ -451,11 +635,23 @@ static int RunDiffCase(float scale)
     if (paint != NULL && bridge != NULL && adapter.internalArray != NULL) {
         for (uint32_t i = 0u; i < paint->count; i += 1u) {
             const EcsUiPaintItem *item = &paint->items[i];
-            if (item->key.role != ECS_UI_PAINT_ROLE_BOX ||
-                    item->primitive != ECS_UI_PAINT_PRIMITIVE_BOX) {
+            if (item->key.role == ECS_UI_PAINT_ROLE_BOX &&
+                    item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX) {
+                result |= CompareBoxItem(&tree, item, bridge, &adapter);
                 continue;
             }
-            result |= CompareBoxItem(&tree, item, bridge, &adapter);
+            if (item->key.role == ECS_UI_PAINT_ROLE_BEVEL_EDGE &&
+                    item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX) {
+                result |= CompareBevelItem(&tree, item, bridge, &adapter);
+                continue;
+            }
+            if ((item->key.role == ECS_UI_PAINT_ROLE_NINE_SLICE ||
+                    item->key.role == ECS_UI_PAINT_ROLE_CUSTOM ||
+                    item->key.role == ECS_UI_PAINT_ROLE_ICON) &&
+                    item->primitive == ECS_UI_PAINT_PRIMITIVE_CUSTOM) {
+                result |= CompareCustomItem(&tree, item, bridge, &adapter);
+                continue;
+            }
         }
     }
 

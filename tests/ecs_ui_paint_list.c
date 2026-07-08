@@ -194,6 +194,15 @@ static int BuildPaintTree(
     int result = 0;
     result |= Require(EcsUiSetScale(world, root, scale), "failed to set paint scale");
 
+    const EcsUiNineSliceStyle nine_slice_style = {
+        .image = "paint.frame",
+        .slice_left = 3u,
+        .slice_top = 4u,
+        .slice_right = 5u,
+        .slice_bottom = 6u,
+        .scale = 1.0f,
+        .tint = {200u, 210u, 220u, 180u},
+    };
     EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
     ecs_entity_t fit = EcsUiBeginHStack(
         &builder,
@@ -219,6 +228,12 @@ static int BuildPaintTree(
             .preferred_height = 18.5f,
         });
     EcsUiEnd(&builder);
+    (void)EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "PaintIcon",
+            .name = "paint.icon",
+        });
     EcsUiEnd(&builder);
     (void)EcsUiBeginButton(
         &builder,
@@ -261,6 +276,23 @@ static int BuildPaintTree(
             .preferred_width = 11.5f,
             .preferred_height = 9.5f,
         });
+    ecs_entity_t nine_slice = EcsUiBeginHStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintNine",
+            .preferred_width = 17.25f,
+            .preferred_height = 10.75f,
+            .nine_slice_style = &nine_slice_style,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t bevel = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintBevel",
+            .preferred_width = 15.25f,
+            .preferred_height = 11.5f,
+        });
+    EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
     result |= Require(EcsUiBuilderOk(&builder), "paint builder failed");
 
@@ -288,18 +320,28 @@ static int BuildPaintTree(
     ecs_set(world, transparent_group, EcsUiVisual, {
         .opacity = 0.005f,
     });
+    ecs_set(world, nine_slice, EcsUiBoxStyle, {
+        .background = {77u, 88u, 99u, 255u},
+    });
+    ecs_set(world, bevel, EcsUiBoxStyle, {
+        .background = {90u, 100u, 110u, 255u},
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = {240u, 245u, 250u, 230u},
+        .bevel_dark = {20u, 25u, 30u, 210u},
+    });
     return result;
 }
 
-static int RequirePaintItem(
+static int RequirePaintItemCommon(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
     uint32_t index,
     const char *node_id,
-    EcsUiColorF expected_fill,
-    EcsUiPaintCornerRadius expected_radius,
-    EcsUiPaintBorder expected_border,
-    float expected_opacity)
+    uint16_t expected_role,
+    uint16_t expected_part,
+    uint16_t expected_primitive,
+    float expected_opacity,
+    const EcsUiTreeNodeSnapshot **out_node)
 {
     int result = 0;
     result |= Require(paint != NULL, "paint list missing");
@@ -319,6 +361,9 @@ static int RequirePaintItem(
     if (node == NULL) {
         return result;
     }
+    if (out_node != NULL) {
+        *out_node = node;
+    }
 
     const EcsUiPaintItem *item = &paint->items[index];
     (void)snprintf(
@@ -328,37 +373,72 @@ static int RequirePaintItem(
         node_id);
     result |= Require(item->key.source == node->entity, message);
     result |= Require(
-        item->key.role == ECS_UI_PAINT_ROLE_BOX,
-        "paint role should be box");
-    result |= Require(item->key.part == 0u, "paint part should be zero");
+        item->key.role == expected_role,
+        "paint role mismatch");
+    result |= Require(item->key.part == expected_part, "paint part mismatch");
     result |= Require(
         item->key.generation == paint->generation,
         "paint key generation should match list");
     result |= Require(
-        item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX,
-        "paint primitive should be box");
+        item->primitive == expected_primitive,
+        "paint primitive mismatch");
     result |= Require(item->order == index, "paint order should match index");
-    result |= Require(!item->clip.enabled, "7.2 paint clip should be disabled");
+    result |= Require(!item->clip.enabled, "paint clip should be disabled");
+    if (expected_role != ECS_UI_PAINT_ROLE_BEVEL_EDGE) {
+        result |= RequireNear(
+            item->rect.x,
+            node->layout_x,
+            0.001f,
+            "paint rect x should copy snapshot layout");
+        result |= RequireNear(
+            item->rect.y,
+            node->layout_y,
+            0.001f,
+            "paint rect y should copy snapshot layout");
+        result |= RequireNear(
+            item->rect.width,
+            node->layout_width,
+            0.001f,
+            "paint rect width should copy snapshot layout");
+        result |= RequireNear(
+            item->rect.height,
+            node->layout_height,
+            0.001f,
+            "paint rect height should copy snapshot layout");
+    }
     result |= RequireNear(
-        item->rect.x,
-        node->layout_x,
+        item->opacity,
+        expected_opacity,
         0.001f,
-        "paint rect x should copy snapshot layout");
-    result |= RequireNear(
-        item->rect.y,
-        node->layout_y,
-        0.001f,
-        "paint rect y should copy snapshot layout");
-    result |= RequireNear(
-        item->rect.width,
-        node->layout_width,
-        0.001f,
-        "paint rect width should copy snapshot layout");
-    result |= RequireNear(
-        item->rect.height,
-        node->layout_height,
-        0.001f,
-        "paint rect height should copy snapshot layout");
+        "paint opacity mismatch");
+    return result;
+}
+
+static int RequirePaintBoxItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    EcsUiColorF expected_fill,
+    EcsUiPaintCornerRadius expected_radius,
+    EcsUiPaintBorder expected_border,
+    float expected_opacity)
+{
+    const EcsUiTreeNodeSnapshot *node = NULL;
+    int result = RequirePaintItemCommon(
+        paint,
+        tree,
+        index,
+        node_id,
+        ECS_UI_PAINT_ROLE_BOX,
+        0u,
+        ECS_UI_PAINT_PRIMITIVE_BOX,
+        expected_opacity,
+        &node);
+    if (paint == NULL || index >= paint->count) {
+        return result;
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
     result |= RequireColor(
         item->payload.box.fill,
         expected_fill,
@@ -371,11 +451,124 @@ static int RequirePaintItem(
         item->payload.box.border,
         expected_border,
         "paint box border mismatch");
-    result |= RequireNear(
-        item->opacity,
+    return result;
+}
+
+static int RequirePaintCustomItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    uint16_t expected_role,
+    EcsUiColorF expected_color,
+    float expected_opacity)
+{
+    const EcsUiTreeNodeSnapshot *node = NULL;
+    int result = RequirePaintItemCommon(
+        paint,
+        tree,
+        index,
+        node_id,
+        expected_role,
+        0u,
+        ECS_UI_PAINT_PRIMITIVE_CUSTOM,
         expected_opacity,
+        &node);
+    if (paint == NULL || index >= paint->count || node == NULL) {
+        return result;
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
+    result |= Require(
+        item->payload.custom.source == node->entity,
+        "paint custom source mismatch");
+    result |= RequireColor(
+        item->payload.custom.color,
+        expected_color,
+        "paint custom color mismatch");
+    return result;
+}
+
+static EcsUiPaintRect TestBevelRect(
+    const EcsUiTreeNodeSnapshot *node,
+    uint16_t part)
+{
+    if (node == NULL) {
+        return (EcsUiPaintRect){0};
+    }
+    switch (part) {
+    case ECS_UI_PAINT_BEVEL_EDGE_TOP:
+        return (EcsUiPaintRect){
+            .x = node->layout_x,
+            .y = node->layout_y,
+            .width = node->layout_width,
+            .height = 1.0f,
+        };
+    case ECS_UI_PAINT_BEVEL_EDGE_LEFT:
+        return (EcsUiPaintRect){
+            .x = node->layout_x,
+            .y = node->layout_y,
+            .width = 1.0f,
+            .height = node->layout_height,
+        };
+    case ECS_UI_PAINT_BEVEL_EDGE_BOTTOM:
+        return (EcsUiPaintRect){
+            .x = node->layout_x,
+            .y = node->layout_y + node->layout_height - 1.0f,
+            .width = node->layout_width,
+            .height = 1.0f,
+        };
+    case ECS_UI_PAINT_BEVEL_EDGE_RIGHT:
+    default:
+        return (EcsUiPaintRect){
+            .x = node->layout_x + node->layout_width - 1.0f,
+            .y = node->layout_y,
+            .width = 1.0f,
+            .height = node->layout_height,
+        };
+    }
+}
+
+static int RequirePaintBevelItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    uint16_t part,
+    EcsUiColorF expected_color,
+    float expected_opacity)
+{
+    const EcsUiTreeNodeSnapshot *node = NULL;
+    int result = RequirePaintItemCommon(
+        paint,
+        tree,
+        index,
+        node_id,
+        ECS_UI_PAINT_ROLE_BEVEL_EDGE,
+        part,
+        ECS_UI_PAINT_PRIMITIVE_BOX,
+        expected_opacity,
+        &node);
+    if (paint == NULL || index >= paint->count || node == NULL) {
+        return result;
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
+    const EcsUiPaintRect expected_rect = TestBevelRect(node, part);
+    result |= RequireNear(item->rect.x, expected_rect.x, 0.001f, "bevel rect x mismatch");
+    result |= RequireNear(item->rect.y, expected_rect.y, 0.001f, "bevel rect y mismatch");
+    result |= RequireNear(
+        item->rect.width,
+        expected_rect.width,
         0.001f,
-        "paint opacity mismatch");
+        "bevel rect width mismatch");
+    result |= RequireNear(
+        item->rect.height,
+        expected_rect.height,
+        0.001f,
+        "bevel rect height mismatch");
+    result |= RequireColor(
+        item->payload.bevel_edge.color,
+        expected_color,
+        "paint bevel color mismatch");
     return result;
 }
 
@@ -427,8 +620,10 @@ static int RequirePaintList(
     result |= Require(
         paint->generation == tree->generation,
         "paint generation should match snapshot");
-    result |= Require(paint->count == 6u, "paint list should contain six boxes");
-    result |= RequirePaintItem(
+    result |= Require(
+        paint->count == 13u,
+        "paint list should contain stage 7.4 paint items");
+    result |= RequirePaintBoxItem(
         paint,
         tree,
         0u,
@@ -441,7 +636,7 @@ static int RequirePaintList(
         TestRadius(0.0f),
         TestNoBorder(),
         1.0f);
-    result |= RequirePaintItem(
+    result |= RequirePaintBoxItem(
         paint,
         tree,
         1u,
@@ -450,20 +645,19 @@ static int RequirePaintList(
         TestRadius(25.0f),
         TestBorder(TestColor(100u, 110u, 120u, 230u), 2.25f, 1.5f, 1.5f, 3.5f),
         0.75f);
-    result |= RequirePaintItem(
+    result |= RequirePaintCustomItem(
         paint,
         tree,
         2u,
         "PaintCustom",
+        ECS_UI_PAINT_ROLE_CUSTOM,
         TestColor(
             theme->surface_subtle.r,
             theme->surface_subtle.g,
             theme->surface_subtle.b,
             theme->surface_subtle.a),
-        TestRadius(theme->radius),
-        TestNoBorder(),
         0.75f);
-    result |= RequirePaintItem(
+    result |= RequirePaintBoxItem(
         paint,
         tree,
         3u,
@@ -472,10 +666,18 @@ static int RequirePaintList(
         TestRadius(6.25f),
         TestBorder(TestColor(130u, 140u, 150u, 240u), 2.0f, 2.5f, 2.0f, 2.0f),
         0.75f);
-    result |= RequirePaintItem(
+    result |= RequirePaintCustomItem(
         paint,
         tree,
         4u,
+        "PaintIcon",
+        ECS_UI_PAINT_ROLE_ICON,
+        TestColor(0u, 0u, 0u, 255u),
+        0.75f);
+    result |= RequirePaintBoxItem(
+        paint,
+        tree,
+        5u,
         "PaintButton",
         TestColor(
             theme->button_primary.r,
@@ -485,18 +687,66 @@ static int RequirePaintList(
         TestRadius(theme->radius),
         TestNoBorder(),
         1.0f);
-    result |= RequirePaintItem(
+    result |= RequirePaintCustomItem(
         paint,
         tree,
-        5u,
+        6u,
         "PaintAfter",
+        ECS_UI_PAINT_ROLE_CUSTOM,
         TestColor(
             theme->surface_subtle.r,
             theme->surface_subtle.g,
             theme->surface_subtle.b,
             theme->surface_subtle.a),
-        TestRadius(theme->radius),
+        1.0f);
+    result |= RequirePaintCustomItem(
+        paint,
+        tree,
+        7u,
+        "PaintNine",
+        ECS_UI_PAINT_ROLE_NINE_SLICE,
+        TestColor(200u, 210u, 220u, 180u),
+        1.0f);
+    result |= RequirePaintBoxItem(
+        paint,
+        tree,
+        8u,
+        "PaintBevel",
+        TestColor(90u, 100u, 110u, 255u),
+        TestRadius(0.0f),
         TestNoBorder(),
+        1.0f);
+    result |= RequirePaintBevelItem(
+        paint,
+        tree,
+        9u,
+        "PaintBevel",
+        ECS_UI_PAINT_BEVEL_EDGE_TOP,
+        TestColor(240u, 245u, 250u, 230u),
+        1.0f);
+    result |= RequirePaintBevelItem(
+        paint,
+        tree,
+        10u,
+        "PaintBevel",
+        ECS_UI_PAINT_BEVEL_EDGE_LEFT,
+        TestColor(240u, 245u, 250u, 230u),
+        1.0f);
+    result |= RequirePaintBevelItem(
+        paint,
+        tree,
+        11u,
+        "PaintBevel",
+        ECS_UI_PAINT_BEVEL_EDGE_BOTTOM,
+        TestColor(20u, 25u, 30u, 210u),
+        1.0f);
+    result |= RequirePaintBevelItem(
+        paint,
+        tree,
+        12u,
+        "PaintBevel",
+        ECS_UI_PAINT_BEVEL_EDGE_RIGHT,
+        TestColor(20u, 25u, 30u, 210u),
         1.0f);
     result |= RequireNoPaintSource(paint, tree, "PaintNoFill");
     result |= RequireNoPaintSource(paint, tree, "PaintTransparentGroup");

@@ -154,6 +154,33 @@ static bool EcsUiPaintClayBorderWidthAny(Clay_BorderWidth width)
         width.bottom != 0u;
 }
 
+static const char *EcsUiPaintClayBevelSuffix(uint16_t part)
+{
+    switch (part) {
+    case ECS_UI_PAINT_BEVEL_EDGE_TOP:
+        return "BevelTop";
+    case ECS_UI_PAINT_BEVEL_EDGE_LEFT:
+        return "BevelLeft";
+    case ECS_UI_PAINT_BEVEL_EDGE_BOTTOM:
+        return "BevelBottom";
+    case ECS_UI_PAINT_BEVEL_EDGE_RIGHT:
+        return "BevelRight";
+    default:
+        return "";
+    }
+}
+
+static bool EcsUiPaintClayColorVisible(EcsUiColorF color, float opacity)
+{
+    float alpha = opacity;
+    if (alpha < 0.0f) {
+        alpha = 0.0f;
+    } else if (alpha > 1.0f) {
+        alpha = 1.0f;
+    }
+    return color.a * alpha > 0.0f;
+}
+
 static bool EcsUiPaintClayPush(
     Clay_RenderCommandArray *out,
     Clay_RenderCommand command)
@@ -180,6 +207,59 @@ static Clay_BoundingBox EcsUiPaintClayBounds(
     };
 }
 
+static bool EcsUiPaintClayPushRectangle(
+    Clay_RenderCommandArray *out,
+    EcsUiPaintRect rect,
+    const EcsUiPaintClayAdapterOptions *options,
+    float scale,
+    uint32_t id,
+    EcsUiColorF color,
+    float opacity,
+    Clay_CornerRadius radius,
+    int16_t z_index)
+{
+    return EcsUiPaintClayPush(
+        out,
+        (Clay_RenderCommand){
+            .boundingBox = EcsUiPaintClayBounds(rect, options, scale),
+            .renderData = {
+                .rectangle = {
+                    .backgroundColor = EcsUiPaintClayColor(color, opacity),
+                    .cornerRadius = radius,
+                },
+            },
+            .id = id,
+            .zIndex = z_index,
+            .commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
+        });
+}
+
+static bool EcsUiPaintClayPushCustom(
+    Clay_RenderCommandArray *out,
+    EcsUiPaintRect rect,
+    const EcsUiPaintClayAdapterOptions *options,
+    float scale,
+    uint32_t id,
+    EcsUiColorF color,
+    float opacity,
+    const EcsUiTreeNodeSnapshot *node)
+{
+    return EcsUiPaintClayPush(
+        out,
+        (Clay_RenderCommand){
+            .boundingBox = EcsUiPaintClayBounds(rect, options, scale),
+            .renderData = {
+                .custom = {
+                    .backgroundColor = EcsUiPaintClayColor(color, opacity),
+                    .customData = (void *)node,
+                },
+            },
+            .id = id,
+            .zIndex = 0,
+            .commandType = CLAY_RENDER_COMMAND_TYPE_CUSTOM,
+        });
+}
+
 bool EcsUiPaintClayAdapterBuild(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
@@ -204,66 +284,102 @@ bool EcsUiPaintClayAdapterBuild(
     const float scale = EcsUiPaintClayScale(options);
     for (uint32_t i = 0u; i < paint->count; i += 1u) {
         const EcsUiPaintItem *item = &paint->items[i];
-        if (item->primitive != ECS_UI_PAINT_PRIMITIVE_BOX ||
-                item->key.role != ECS_UI_PAINT_ROLE_BOX) {
-            continue;
-        }
-
         const EcsUiTreeNodeSnapshot *node =
             EcsUiPaintClayFindNode(tree, item->key.source);
         Clay_ElementId element_id = {0};
         (void)EcsUiPaintClayElementId(node, NULL, &element_id);
-        const Clay_BoundingBox bounds =
-            EcsUiPaintClayBounds(item->rect, options, scale);
-        const Clay_CornerRadius radius =
-            EcsUiPaintClayRadius(item->payload.box.radius, scale);
-        if (!EcsUiPaintClayPush(
-                out,
-                (Clay_RenderCommand){
-                    .boundingBox = bounds,
-                    .renderData = {
-                        .rectangle = {
-                            .backgroundColor = EcsUiPaintClayColor(
-                                item->payload.box.fill,
-                                item->opacity),
-                            .cornerRadius = radius,
+
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX &&
+                item->key.role == ECS_UI_PAINT_ROLE_BOX) {
+            const Clay_BoundingBox bounds =
+                EcsUiPaintClayBounds(item->rect, options, scale);
+            const Clay_CornerRadius radius =
+                EcsUiPaintClayRadius(item->payload.box.radius, scale);
+            if (EcsUiPaintClayColorVisible(
+                    item->payload.box.fill,
+                    item->opacity) &&
+                    !EcsUiPaintClayPushRectangle(
+                        out,
+                        item->rect,
+                        options,
+                        scale,
+                        element_id.id,
+                        item->payload.box.fill,
+                        item->opacity,
+                        radius,
+                        0)) {
+                return false;
+            }
+
+            if (!item->payload.box.border.has_border) {
+                continue;
+            }
+            const Clay_BorderWidth width =
+                EcsUiPaintClayBorderWidth(item->payload.box.border, scale);
+            if (!EcsUiPaintClayBorderWidthAny(width)) {
+                continue;
+            }
+            Clay_ElementId border_id = {0};
+            (void)EcsUiPaintClayBorderCommandId(tree, node, &border_id);
+            if (!EcsUiPaintClayPush(
+                    out,
+                    (Clay_RenderCommand){
+                        .boundingBox = bounds,
+                        .renderData = {
+                            .border = {
+                                .color = EcsUiPaintClayColor(
+                                    item->payload.box.border.color,
+                                    item->opacity),
+                                .cornerRadius = radius,
+                                .width = width,
+                            },
                         },
-                    },
-                    .id = element_id.id,
-                    .zIndex = 0,
-                    .commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
-                })) {
-            return false;
+                        .id = border_id.id,
+                        .zIndex = 0,
+                        .commandType = CLAY_RENDER_COMMAND_TYPE_BORDER,
+                    })) {
+                return false;
+            }
+            continue;
         }
 
-        if (!item->payload.box.border.has_border) {
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX &&
+                item->key.role == ECS_UI_PAINT_ROLE_BEVEL_EDGE) {
+            Clay_ElementId bevel_id = {0};
+            (void)EcsUiPaintClayElementId(
+                node,
+                EcsUiPaintClayBevelSuffix(item->key.part),
+                &bevel_id);
+            if (!EcsUiPaintClayPushRectangle(
+                    out,
+                    item->rect,
+                    options,
+                    scale,
+                    bevel_id.id,
+                    item->payload.bevel_edge.color,
+                    item->opacity,
+                    (Clay_CornerRadius){0},
+                    20)) {
+                return false;
+            }
             continue;
         }
-        const Clay_BorderWidth width =
-            EcsUiPaintClayBorderWidth(item->payload.box.border, scale);
-        if (!EcsUiPaintClayBorderWidthAny(width)) {
-            continue;
-        }
-        Clay_ElementId border_id = {0};
-        (void)EcsUiPaintClayBorderCommandId(tree, node, &border_id);
-        if (!EcsUiPaintClayPush(
-                out,
-                (Clay_RenderCommand){
-                    .boundingBox = bounds,
-                    .renderData = {
-                        .border = {
-                            .color = EcsUiPaintClayColor(
-                                item->payload.box.border.color,
-                                item->opacity),
-                            .cornerRadius = radius,
-                            .width = width,
-                        },
-                    },
-                    .id = border_id.id,
-                    .zIndex = 0,
-                    .commandType = CLAY_RENDER_COMMAND_TYPE_BORDER,
-                })) {
-            return false;
+
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_CUSTOM &&
+                (item->key.role == ECS_UI_PAINT_ROLE_NINE_SLICE ||
+                    item->key.role == ECS_UI_PAINT_ROLE_CUSTOM ||
+                    item->key.role == ECS_UI_PAINT_ROLE_ICON)) {
+            if (!EcsUiPaintClayPushCustom(
+                    out,
+                    item->rect,
+                    options,
+                    scale,
+                    element_id.id,
+                    item->payload.custom.color,
+                    item->opacity,
+                    node)) {
+                return false;
+            }
         }
     }
     return true;

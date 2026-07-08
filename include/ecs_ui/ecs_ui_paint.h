@@ -40,7 +40,15 @@ typedef enum EcsUiPaintRole {
 typedef enum EcsUiPaintPrimitive {
     ECS_UI_PAINT_PRIMITIVE_NONE = 0,
     ECS_UI_PAINT_PRIMITIVE_BOX = 1,
+    ECS_UI_PAINT_PRIMITIVE_CUSTOM = 2,
 } EcsUiPaintPrimitive;
+
+typedef enum EcsUiPaintBevelEdgePart {
+    ECS_UI_PAINT_BEVEL_EDGE_TOP = 0,
+    ECS_UI_PAINT_BEVEL_EDGE_LEFT = 1,
+    ECS_UI_PAINT_BEVEL_EDGE_BOTTOM = 2,
+    ECS_UI_PAINT_BEVEL_EDGE_RIGHT = 3,
+} EcsUiPaintBevelEdgePart;
 
 typedef struct EcsUiPaintKey {
     ecs_entity_t source;
@@ -84,6 +92,15 @@ typedef struct EcsUiPaintBox {
     EcsUiPaintBorder border;
 } EcsUiPaintBox;
 
+typedef struct EcsUiPaintBevelEdge {
+    EcsUiColorF color;
+} EcsUiPaintBevelEdge;
+
+typedef struct EcsUiPaintCustom {
+    ecs_entity_t source;
+    EcsUiColorF color;
+} EcsUiPaintCustom;
+
 typedef struct EcsUiPaintItem {
     EcsUiPaintKey key;
     uint16_t primitive;
@@ -94,6 +111,8 @@ typedef struct EcsUiPaintItem {
     uint32_t order;
     union {
         EcsUiPaintBox box;
+        EcsUiPaintBevelEdge bevel_edge;
+        EcsUiPaintCustom custom;
     } payload;
 } EcsUiPaintItem;
 
