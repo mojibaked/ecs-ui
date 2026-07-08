@@ -103,11 +103,6 @@ static EcsUiPaintCornerRadius TestRadius(float radius)
     };
 }
 
-static EcsUiPaintBorder TestNoBorder(void)
-{
-    return (EcsUiPaintBorder){0};
-}
-
 static EcsUiPaintBorder TestBorder(
     EcsUiColorF color,
     float left,
@@ -146,7 +141,7 @@ static int RequireBorder(
     int result = 0;
     result |= Require(
         actual.has_border == expected.has_border,
-        "paint box border presence mismatch");
+        "paint border presence mismatch");
     if (!expected.has_border) {
         return result;
     }
@@ -925,7 +920,6 @@ static int RequirePaintBoxItem(
     const char *node_id,
     EcsUiColorF expected_fill,
     EcsUiPaintCornerRadius expected_radius,
-    EcsUiPaintBorder expected_border,
     float expected_opacity)
 {
     const EcsUiTreeNodeSnapshot *node = NULL;
@@ -951,10 +945,41 @@ static int RequirePaintBoxItem(
         item->payload.box.radius,
         expected_radius,
         "paint box radius mismatch");
+    return result;
+}
+
+static int RequirePaintBorderItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    EcsUiPaintBorder expected_border,
+    EcsUiPaintCornerRadius expected_radius,
+    float expected_opacity)
+{
+    const EcsUiTreeNodeSnapshot *node = NULL;
+    int result = RequirePaintItemCommon(
+        paint,
+        tree,
+        index,
+        node_id,
+        ECS_UI_PAINT_ROLE_BORDER,
+        0u,
+        ECS_UI_PAINT_PRIMITIVE_BORDER,
+        expected_opacity,
+        &node);
+    if (paint == NULL || index >= paint->count) {
+        return result;
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
     result |= RequireBorder(
-        item->payload.box.border,
+        item->payload.border,
         expected_border,
-        "paint box border mismatch");
+        "paint border mismatch");
+    result |= RequireRadius(
+        item->payload.border.radius,
+        expected_radius,
+        "paint border radius mismatch");
     return result;
 }
 
@@ -1417,8 +1442,8 @@ static int RequirePaintList(
         paint->generation == tree->generation,
         "paint generation should match snapshot");
     result |= Require(
-        paint->count == 16u,
-        "paint list should contain stage 7.5 paint items");
+        paint->count == 18u,
+        "paint list should contain stage 1 paint items");
     result |= RequirePaintBoxItem(
         paint,
         tree,
@@ -1430,7 +1455,6 @@ static int RequirePaintList(
             theme->root_background.b,
             theme->root_background.a),
         TestRadius(0.0f),
-        TestNoBorder(),
         1.0f);
     result |= RequirePaintBoxItem(
         paint,
@@ -1439,7 +1463,6 @@ static int RequirePaintList(
         "PaintFit",
         TestColor(10u, 20u, 30u, 255u),
         TestRadius(25.0f),
-        TestBorder(TestColor(100u, 110u, 120u, 230u), 2.25f, 1.5f, 1.5f, 3.5f),
         0.75f);
     result |= RequirePaintCustomItem(
         paint,
@@ -1547,20 +1570,35 @@ static int RequirePaintList(
         "PaintPress",
         TestColor(40u, 50u, 60u, 200u),
         TestRadius(6.25f),
+        0.75f);
+    result |= RequirePaintBorderItem(
+        paint,
+        tree,
+        7u,
+        "PaintPress",
         TestBorder(TestColor(130u, 140u, 150u, 240u), 2.0f, 2.5f, 2.0f, 2.0f),
+        TestRadius(6.25f),
         0.75f);
     result |= RequirePaintCustomItem(
         paint,
         tree,
-        7u,
+        8u,
         "PaintIcon",
         ECS_UI_PAINT_ROLE_ICON,
         TestColor(0u, 0u, 0u, 255u),
         0.75f);
+    result |= RequirePaintBorderItem(
+        paint,
+        tree,
+        9u,
+        "PaintFit",
+        TestBorder(TestColor(100u, 110u, 120u, 230u), 2.25f, 1.5f, 1.5f, 3.5f),
+        TestRadius(25.0f),
+        0.75f);
     result |= RequirePaintBoxItem(
         paint,
         tree,
-        8u,
+        10u,
         "PaintButton",
         TestColor(
             theme->button_primary.r,
@@ -1568,12 +1606,11 @@ static int RequirePaintList(
             theme->button_primary.b,
             theme->button_primary.a),
         TestRadius(theme->radius),
-        TestNoBorder(),
         1.0f);
     result |= RequirePaintCustomItem(
         paint,
         tree,
-        9u,
+        11u,
         "PaintAfter",
         ECS_UI_PAINT_ROLE_CUSTOM,
         TestColor(
@@ -1585,7 +1622,7 @@ static int RequirePaintList(
     result |= RequirePaintCustomItem(
         paint,
         tree,
-        10u,
+        12u,
         "PaintNine",
         ECS_UI_PAINT_ROLE_NINE_SLICE,
         TestColor(200u, 210u, 220u, 180u),
@@ -1593,16 +1630,15 @@ static int RequirePaintList(
     result |= RequirePaintBoxItem(
         paint,
         tree,
-        11u,
+        13u,
         "PaintBevel",
         TestColor(90u, 100u, 110u, 255u),
         TestRadius(0.0f),
-        TestNoBorder(),
         1.0f);
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        12u,
+        14u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_TOP,
         TestColor(240u, 245u, 250u, 230u),
@@ -1610,7 +1646,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        13u,
+        15u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_LEFT,
         TestColor(240u, 245u, 250u, 230u),
@@ -1618,7 +1654,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        14u,
+        16u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_BOTTOM,
         TestColor(20u, 25u, 30u, 210u),
@@ -1626,7 +1662,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        15u,
+        17u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_RIGHT,
         TestColor(20u, 25u, 30u, 210u),

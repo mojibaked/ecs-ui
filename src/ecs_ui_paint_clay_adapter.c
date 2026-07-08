@@ -505,8 +505,6 @@ bool EcsUiPaintClayAdapterBuild(
 
         if (item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX &&
                 item->key.role == ECS_UI_PAINT_ROLE_BOX) {
-            const Clay_BoundingBox bounds =
-                EcsUiPaintClayBounds(item->rect, options, scale);
             const Clay_CornerRadius radius =
                 EcsUiPaintClayRadius(item->payload.box.radius, scale);
             if (EcsUiPaintClayColorVisible(
@@ -524,12 +522,16 @@ bool EcsUiPaintClayAdapterBuild(
                         item->z_index)) {
                 return false;
             }
+            continue;
+        }
 
-            if (!item->payload.box.border.has_border) {
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_BORDER &&
+                item->key.role == ECS_UI_PAINT_ROLE_BORDER) {
+            if (!item->payload.border.has_border) {
                 continue;
             }
             const Clay_BorderWidth width =
-                EcsUiPaintClayBorderWidth(item->payload.box.border, scale);
+                EcsUiPaintClayBorderWidth(item->payload.border, scale);
             if (!EcsUiPaintClayBorderWidthAny(width)) {
                 continue;
             }
@@ -538,13 +540,16 @@ bool EcsUiPaintClayAdapterBuild(
             if (!EcsUiPaintClayPush(
                     out,
                     (Clay_RenderCommand){
-                        .boundingBox = bounds,
+                        .boundingBox =
+                            EcsUiPaintClayBounds(item->rect, options, scale),
                         .renderData = {
                             .border = {
                                 .color = EcsUiPaintClayColor(
-                                    item->payload.box.border.color,
+                                    item->payload.border.color,
                                     item->opacity),
-                                .cornerRadius = radius,
+                                .cornerRadius = EcsUiPaintClayRadius(
+                                    item->payload.border.radius,
+                                    scale),
                                 .width = width,
                             },
                         },

@@ -552,14 +552,16 @@ not part of the paint item; the Clay bridge and the transition adapter each do
 that at their own Clay boundary.
 
 The stage 7.3 Clay-command adapter is transition scaffolding, not a backend
-flip. It consumes `EcsUiPaintList` box items and produces a
+flip. It consumes `EcsUiPaintList` box and border items and produces a
 `Clay_RenderCommandArray` for tests and future A/B work only; the live frame
-still returns the bridge draw list. The adapter converts each box rect from
-logical root-relative space to physical window space exactly once using the
-tree scale and physical bounds origin. It emits a rectangle command for every
-box item and a border command only when the resolved paint border is present.
-It does not emit scissor commands, clip scopes, text, icons, nine-slice, bevels,
-or custom items in 7.3.
+still returns the bridge draw list. The adapter converts each rect from logical
+root-relative space to physical window space exactly once using the tree scale
+and physical bounds origin. It emits a rectangle command for every box item and
+emits a border command from explicit `ECS_UI_PAINT_ROLE_BORDER` items when the
+resolved paint border is present. Border items are emitted at node unwind, after
+children and before an enclosing clip-scope END, matching Clay's post-child
+border order. It does not emit scissor commands, clip scopes, text, icons,
+nine-slice, bevels, or custom items in 7.3.
 
 The temporary bootstrap diff joins values, not command streams. For each paint
 box item whose source node has a bridge-computable id, the harness recreates
@@ -597,11 +599,10 @@ entity back to the current snapshot node when it needs Clay `customData`.
 
 Per-node paint order is semantic visual order: box item first, then custom-like
 decorations (`nine-slice`, `custom`, `icon`) for nodes that lower to Clay
-`CUSTOM`, then bevel edges on top. Clay emits border commands after children on
-its unwind; paint keeps border in the box payload for now, and the adapter emits
-the border command with the box item before later decoration items. Bevel edges
-are floating Clay children with z-index 20, so their paint items come after the
-source node's box/custom item and visually sit above it.
+`CUSTOM`, then the node's explicit border item on unwind after its children, and
+then bevel edges on top. Bevel edges are floating Clay children with z-index 20,
+so their paint items come after the source node's box/custom/border items and
+visually sit above them.
 
 Bevel paint items use role `bevel-edge`, primitive `box`, and part indices
 0=top, 1=left, 2=bottom, 3=right. The rects are computed from the node's final
@@ -619,7 +620,8 @@ entity and the same resolved fallback background color that Clay passes through
 to custom render data; an icon item carries the source entity and
 `EcsUiStyleIconColor`. Clay elements with a `CUSTOM` config emit a `CUSTOM`
 command instead of a `RECTANGLE` command for their shared background; a border
-command can still be emitted from the box payload if the node has a border.
+command can still be emitted later from the node's explicit border item if the
+node has a border.
 
 The stage-7.4 adapter maps bevel-edge items to suffixed rectangle commands
 (`BevelTop`, `BevelLeft`, `BevelBottom`, `BevelRight`) and maps
@@ -929,14 +931,16 @@ PAINT MODEL: paint emits explicit `ECS_UI_PAINT_ROLE_CLIP_SCOPE` marker items in
 the sorted stream — a START marker (`part` encodes start) carrying the resolved
 clip rect (= container bbox, logical) placed right before the container's box
 item, and an END marker (`part` encodes end) placed after the whole clipped
-subtree (matching Clay's post-border END position; border folded in the box is
-fine, see divergences). Each DRAWABLE item also records `item->clip = {scope id,
-resolved rect, enabled}` for the nearest enclosing scope (strata lesson: resolved
-clips, not just markers; also seeds any future retained design). Scope id = the
-scroll container entity (or an ordinal); nested scopes carry the innermost. The
-resolved rect for the item field is the innermost container bbox (no intersection
-— the renderer's non-stacking scissor matches that; if a future renderer stacks,
-the retained design intersects, out of scope here).
+subtree. Borders are explicit `ECS_UI_PAINT_ROLE_BORDER` items emitted on node
+unwind, after children and before any enclosing clip END marker, matching Clay's
+post-child border order. Each DRAWABLE item also records
+`item->clip = {scope id, resolved rect, enabled}` for the nearest enclosing scope
+(strata lesson: resolved clips, not just markers; also seeds any future retained
+design). Scope id = the scroll container entity (or an ordinal); nested scopes
+carry the innermost. The resolved rect for the item field is the innermost
+container bbox (no intersection — the renderer's non-stacking scissor matches
+that; if a future renderer stacks, the retained design intersects, out of scope
+here).
 
 #### Adapter (scissor derivation + z)
 
@@ -972,16 +976,12 @@ acceptance. Include a scroll/clip screen and a z-overlap (ZStack) screen.
 
 #### Known divergences (documented, not conformed to)
 
-- BORDER ORDER: paint folds the border into the box item (drawn with the box,
-  before children); Clay draws borders on unwind AFTER children (clay.h ~3018).
-  Accepted since 7.3. It only affects pixels where a child overlaps the parent's
-  border band; the A/B will surface any such case. If it does, split the border
-  into its own late item at the node's unwind position; otherwise keep folded.
-  It does NOT affect clip correctness (the border is inside the container bbox =
-  scissor rect either way).
 - Non-stacking raylib scissor: reproduced, not fixed (a renderer property, on the
   adoption-time out-of-scope list). Nested clips deeper than the renderer supports
   are a renderer concern, not a paint-artifact one.
+
+Resolved in clay-cutover Stage 1: the earlier 7.3/7.6 border-fold divergence is
+gone; border is now a first-class late paint item at the unwind position.
 
 ### Stage 6 scope
 

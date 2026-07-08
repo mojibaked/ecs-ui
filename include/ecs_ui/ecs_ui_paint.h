@@ -44,6 +44,7 @@ typedef enum EcsUiPaintPrimitive {
     ECS_UI_PAINT_PRIMITIVE_CUSTOM = 2,
     ECS_UI_PAINT_PRIMITIVE_TEXT_RUN = 3,
     ECS_UI_PAINT_PRIMITIVE_CLIP_SCOPE = 4,
+    ECS_UI_PAINT_PRIMITIVE_BORDER = 5,
 } EcsUiPaintPrimitive;
 
 typedef enum EcsUiPaintBevelEdgePart {
@@ -87,6 +88,7 @@ typedef struct EcsUiPaintCornerRadius {
 
 typedef struct EcsUiPaintBorder {
     EcsUiColorF color;
+    EcsUiPaintCornerRadius radius;
     float left;
     float top;
     float right;
@@ -97,7 +99,6 @@ typedef struct EcsUiPaintBorder {
 typedef struct EcsUiPaintBox {
     EcsUiColorF fill;
     EcsUiPaintCornerRadius radius;
-    EcsUiPaintBorder border;
 } EcsUiPaintBox;
 
 typedef struct EcsUiPaintBevelEdge {
@@ -129,6 +130,7 @@ typedef struct EcsUiPaintItem {
     uint32_t order;
     union {
         EcsUiPaintBox box;
+        EcsUiPaintBorder border;
         EcsUiPaintBevelEdge bevel_edge;
         EcsUiPaintCustom custom;
         EcsUiPaintTextRun text_run;

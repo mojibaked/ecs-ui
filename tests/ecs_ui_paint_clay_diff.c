@@ -579,6 +579,54 @@ static int CompareCommandOrder(
     return result;
 }
 
+static int CompareCommandBeforeBorder(
+    const EcsUiTreeSnapshot *tree,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter,
+    const char *before_id,
+    const char *border_owner_id,
+    const char *message)
+{
+    const EcsUiTreeNodeSnapshot *before = EcsUiTreeSnapshotFindNodeById(
+        tree,
+        before_id);
+    const EcsUiTreeNodeSnapshot *border_owner = EcsUiTreeSnapshotFindNodeById(
+        tree,
+        border_owner_id);
+    Clay_ElementId before_clay = {0};
+    Clay_ElementId border_clay = {0};
+    int result = 0;
+    result |= Require(
+        EcsUiPaintClayElementId(before, NULL, &before_clay),
+        "border-order child command id missing");
+    result |= Require(
+        EcsUiPaintClayBorderCommandId(tree, border_owner, &border_clay),
+        "border-order border command id missing");
+    const int32_t bridge_before = FindCommandIndex(
+        bridge,
+        before_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const int32_t bridge_border = FindCommandIndex(
+        bridge,
+        border_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_BORDER);
+    const int32_t adapter_before = FindCommandIndex(
+        adapter,
+        before_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const int32_t adapter_border = FindCommandIndex(
+        adapter,
+        border_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_BORDER);
+    result |= Require(bridge_before >= 0, "bridge border-order child missing");
+    result |= Require(bridge_border >= 0, "bridge border-order border missing");
+    result |= Require(adapter_before >= 0, "adapter border-order child missing");
+    result |= Require(adapter_border >= 0, "adapter border-order border missing");
+    result |= Require(bridge_before < bridge_border, message);
+    result |= Require(adapter_before < adapter_border, message);
+    return result;
+}
+
 static int RequireRadiusEqual(
     Clay_CornerRadius actual,
     Clay_CornerRadius expected,
@@ -718,16 +766,6 @@ static int CompareBoxItem(
         return result;
     }
 
-    const bool border_command_expected =
-        item->payload.box.border.has_border &&
-        DiffBorderHasPhysicalWidth(item->payload.box.border, tree->scale);
-    if (border_command_expected) {
-        const int scope_result = RequireBorderJoinScope(tree, node);
-        if (scope_result != 0) {
-            return result | scope_result;
-        }
-    }
-
     const bool rectangle_expected =
         DiffPaintColor(item->payload.box.fill, item->opacity).a > 0.0f;
     const Clay_RenderCommand *adapter_rect =
@@ -756,52 +794,66 @@ static int CompareBoxItem(
             "rectangle radius mismatch");
     }
 
-    const Clay_RenderCommand *adapter_border =
-        NULL;
-    const Clay_RenderCommand *bridge_border =
-        NULL;
+    return result;
+}
+
+static int CompareBorderItem(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiPaintItem *item,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter)
+{
+    if (tree == NULL || item == NULL) {
+        return Require(false, "missing border diff item inputs");
+    }
+    const EcsUiTreeNodeSnapshot *node =
+        FindNodeByEntity(tree, item->key.source);
+    int result = 0;
+    const bool border_command_expected =
+        item->payload.border.has_border &&
+        DiffBorderHasPhysicalWidth(item->payload.border, tree->scale);
     if (border_command_expected) {
-        Clay_ElementId border_id = {0};
-        result |= Require(
-            EcsUiPaintClayBorderCommandId(tree, node, &border_id),
-            "diff item should have a computable Clay border command id");
-        adapter_border =
-            FindCommand(adapter, border_id.id, CLAY_RENDER_COMMAND_TYPE_BORDER);
-        bridge_border =
-            FindCommand(bridge, border_id.id, CLAY_RENDER_COMMAND_TYPE_BORDER);
-        result |= Require(adapter_border != NULL, "adapter border missing");
-        result |= Require(bridge_border != NULL, "bridge border missing");
-        if (adapter_border != NULL && bridge_border != NULL) {
-            result |= RequireBoundsEqual(
-                adapter_border->boundingBox,
-                bridge_border->boundingBox,
-                "border bounds mismatch");
-            result |= RequireColor(
-                adapter_border->renderData.border.color,
-                bridge_border->renderData.border.color,
-                "border color mismatch");
-            result |= RequireRadiusEqual(
-                adapter_border->renderData.border.cornerRadius,
-                bridge_border->renderData.border.cornerRadius,
-                "border radius mismatch");
-            result |= RequireBorderWidthEqual(
-                adapter_border->renderData.border.width,
-                bridge_border->renderData.border.width,
-                "border width mismatch");
+        const int scope_result = RequireBorderJoinScope(tree, node);
+        if (scope_result != 0) {
+            return result | scope_result;
         }
-    } else {
-        if (item->payload.box.border.has_border) {
-            Clay_ElementId border_id = {0};
-            if (EcsUiPaintClayBorderCommandId(tree, node, &border_id)) {
-                adapter_border =
-                    FindCommand(adapter, border_id.id, CLAY_RENDER_COMMAND_TYPE_BORDER);
-                bridge_border =
-                    FindCommand(bridge, border_id.id, CLAY_RENDER_COMMAND_TYPE_BORDER);
-            }
-        }
+    }
+
+    Clay_ElementId border_id = {0};
+    if (!EcsUiPaintClayBorderCommandId(tree, node, &border_id)) {
+        return result | Require(false, "border item should have a computable Clay id");
+    }
+    const Clay_RenderCommand *adapter_border =
+        FindCommand(adapter, border_id.id, CLAY_RENDER_COMMAND_TYPE_BORDER);
+    const Clay_RenderCommand *bridge_border =
+        FindCommand(bridge, border_id.id, CLAY_RENDER_COMMAND_TYPE_BORDER);
+    if (!border_command_expected) {
         result |= Require(adapter_border == NULL, "adapter unexpected border");
         result |= Require(bridge_border == NULL, "bridge unexpected border");
+        return result;
     }
+
+    result |= Require(adapter_border != NULL, "adapter border missing");
+    result |= Require(bridge_border != NULL, "bridge border missing");
+    if (adapter_border == NULL || bridge_border == NULL) {
+        return result;
+    }
+    result |= RequireBoundsEqual(
+        adapter_border->boundingBox,
+        bridge_border->boundingBox,
+        "border bounds mismatch");
+    result |= RequireColor(
+        adapter_border->renderData.border.color,
+        bridge_border->renderData.border.color,
+        "border color mismatch");
+    result |= RequireRadiusEqual(
+        adapter_border->renderData.border.cornerRadius,
+        bridge_border->renderData.border.cornerRadius,
+        "border radius mismatch");
+    result |= RequireBorderWidthEqual(
+        adapter_border->renderData.border.width,
+        bridge_border->renderData.border.width,
+        "border width mismatch");
     return result;
 }
 
@@ -1111,6 +1163,13 @@ static int RunDiffCase(float scale)
         "DiffZFloatA",
         "DiffZFloatB",
         "z-order floaters should preserve z ordinal order");
+    result |= CompareCommandBeforeBorder(
+        &tree,
+        bridge,
+        &adapter,
+        "DiffInner",
+        "DiffPanel",
+        "border command should draw after child content");
 
     bool bridge_text_claimed[256] = {0};
     bool adapter_text_claimed[256] = {0};
@@ -1120,6 +1179,11 @@ static int RunDiffCase(float scale)
             if (item->key.role == ECS_UI_PAINT_ROLE_BOX &&
                     item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX) {
                 result |= CompareBoxItem(&tree, item, bridge, &adapter);
+                continue;
+            }
+            if (item->key.role == ECS_UI_PAINT_ROLE_BORDER &&
+                    item->primitive == ECS_UI_PAINT_PRIMITIVE_BORDER) {
+                result |= CompareBorderItem(&tree, item, bridge, &adapter);
                 continue;
             }
             if (item->key.role == ECS_UI_PAINT_ROLE_BEVEL_EDGE &&

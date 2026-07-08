@@ -320,7 +320,6 @@ static bool EcsUiPaintPushBox(
     const EcsUiTreeNodeSnapshot *node,
     EcsUiColorF fill,
     EcsUiPaintCornerRadius radius,
-    EcsUiPaintBorder border,
     float opacity)
 {
     if (ctx == NULL || ctx->list == NULL || node == NULL) {
@@ -343,8 +342,37 @@ static bool EcsUiPaintPushBox(
     item->payload.box = (EcsUiPaintBox){
         .fill = fill,
         .radius = radius,
-        .border = border,
     };
+    return true;
+}
+
+static bool EcsUiPaintPushBorder(
+    EcsUiPaintBuildContext *ctx,
+    const EcsUiTreeNodeSnapshot *node,
+    EcsUiPaintBorder border,
+    EcsUiPaintCornerRadius radius,
+    float opacity)
+{
+    if (ctx == NULL || ctx->list == NULL || node == NULL ||
+            !border.has_border) {
+        return true;
+    }
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
+    if (item == NULL) {
+        return false;
+    }
+
+    border.radius = radius;
+    item->key = (EcsUiPaintKey){
+        .source = node->entity,
+        .role = ECS_UI_PAINT_ROLE_BORDER,
+        .part = 0u,
+        .generation = ctx->list->generation,
+    };
+    item->primitive = ECS_UI_PAINT_PRIMITIVE_BORDER;
+    item->rect = EcsUiPaintNodeRect(node);
+    item->opacity = opacity;
+    item->payload.border = border;
     return true;
 }
 
@@ -1134,18 +1162,14 @@ static bool EcsUiPaintEmitNodeContent(
 
     if (node->has_layout) {
         const EcsUiColorF fill = EcsUiPaintBoxFill(node, ctx->theme);
-        const EcsUiPaintBorder border = node->kind == ECS_UI_NODE_TEXT ?
-            (EcsUiPaintBorder){0} :
-            EcsUiStyleBorder(node);
-        if (fill.a != 0.0f || border.has_border) {
-            const EcsUiPaintCornerRadius radius =
-                EcsUiPaintBoxRadius(node, ctx->theme, fill);
+        const EcsUiPaintCornerRadius radius =
+            EcsUiPaintBoxRadius(node, ctx->theme, fill);
+        if (fill.a != 0.0f) {
             if (!EcsUiPaintPushBox(
                     ctx,
                     node,
                     fill,
                     radius,
-                    border,
                     opacity)) {
                 return false;
             }
@@ -1257,6 +1281,20 @@ static bool EcsUiPaintEmitNodeContent(
                         true)) {
                     return false;
                 }
+            }
+        }
+    }
+
+    if (node->has_layout) {
+        const EcsUiPaintBorder border = node->kind == ECS_UI_NODE_TEXT ?
+            (EcsUiPaintBorder){0} :
+            EcsUiStyleBorder(node);
+        if (border.has_border) {
+            const EcsUiColorF fill = EcsUiPaintBoxFill(node, ctx->theme);
+            const EcsUiPaintCornerRadius radius =
+                EcsUiPaintBoxRadius(node, ctx->theme, fill);
+            if (!EcsUiPaintPushBorder(ctx, node, border, radius, opacity)) {
+                return false;
             }
         }
     }

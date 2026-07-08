@@ -5,6 +5,7 @@
 
 #include "ecs_ui/ecs_ui.h"
 #include "ecs_ui/ecs_ui_frame.h"
+#include "ecs_ui/ecs_ui_paint.h"
 #include "ecs_ui/ecs_ui_runner.h"
 
 #ifdef __cplusplus
@@ -36,6 +37,8 @@ typedef struct EcsUiRaylibDrawOptions {
     void *user_data;
     EcsUiRaylibCustomDrawFn icon_draw;
     EcsUiRaylibCustomDrawFn nine_slice_draw;
+    bool culling_enabled;
+    Rectangle culling_bounds;
 } EcsUiRaylibDrawOptions;
 
 EcsUiSize EcsUiRaylibMeasureText(
@@ -45,6 +48,12 @@ EcsUiSize EcsUiRaylibMeasureText(
     void *user_data);
 void EcsUiRaylibRenderDrawList(
     const EcsUiDrawList *draw_list,
+    Font *fonts,
+    const EcsUiRaylibRenderContext *root_context,
+    const EcsUiRaylibDrawOptions *options);
+void EcsUiRaylibRenderPaintList(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
     Font *fonts,
     const EcsUiRaylibRenderContext *root_context,
     const EcsUiRaylibDrawOptions *options);
