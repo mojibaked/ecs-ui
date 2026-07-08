@@ -463,83 +463,6 @@ static ecs_world_t *CreateWorld(void)
     return world;
 }
 
-static int BuildRendererTree(ecs_world_t *world, ecs_entity_t root)
-{
-    const EcsUiNineSliceStyle nine_slice_style = {
-        .image = "renderer.frame",
-        .slice_left = 3u,
-        .slice_top = 3u,
-        .slice_right = 3u,
-        .slice_bottom = 3u,
-        .scale = 1.0f,
-        .tint = {200u, 210u, 220u, 255u},
-    };
-    const EcsUiBoxStyle box_style = {
-        .background = {45u, 55u, 65u, 255u},
-        .border_color = {10u, 20u, 30u, 255u},
-        .border_width = 1.0f,
-    };
-
-    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
-    (void)EcsUiBeginVStack(
-        &builder,
-        (EcsUiStackDesc){
-            .id = "RendererRootStack",
-            .gap = 4.0f,
-            .padding = 4.0f,
-            .preferred_width = 180.0f,
-        });
-    (void)EcsUiAddCustom(
-        &builder,
-        (EcsUiCustomDesc){
-            .id = "RendererCustom",
-            .kind = "renderer.custom",
-            .preferred_width = 60.0f,
-            .preferred_height = 24.0f,
-        });
-    (void)EcsUiAddIcon(
-        &builder,
-        (EcsUiIconDesc){
-            .id = "RendererIcon",
-            .name = "renderer-icon",
-        });
-    (void)EcsUiBeginHStack(
-        &builder,
-        (EcsUiStackDesc){
-            .id = "RendererNineSlice",
-            .preferred_width = 96.0f,
-            .preferred_height = 32.0f,
-            .style = &box_style,
-            .nine_slice_style = &nine_slice_style,
-        });
-    EcsUiEnd(&builder);
-    (void)EcsUiBeginVScrollView(
-        &builder,
-        (EcsUiScrollViewDesc){
-            .stack = {
-                .id = "RendererScroll",
-                .preferred_width = 96.0f,
-                .preferred_height = 36.0f,
-            },
-        });
-    for (int i = 0; i < 4; i += 1) {
-        char id[ECS_UI_ID_MAX] = {0};
-        (void)snprintf(id, sizeof(id), "RendererScrollRow%d", i);
-        (void)EcsUiAddCustom(
-            &builder,
-            (EcsUiCustomDesc){
-                .id = id,
-                .kind = "renderer.row",
-                .preferred_width = 72.0f,
-                .preferred_height = 18.0f,
-            });
-    }
-    EcsUiEnd(&builder);
-    EcsUiEnd(&builder);
-    EcsUiBuilderEnd(&builder);
-    return Require(EcsUiBuilderOk(&builder), "renderer tree builder failed");
-}
-
 static void TestSetPaintNode(
     EcsUiTreeSnapshot *tree,
     uint32_t index,
@@ -1129,65 +1052,6 @@ int main(void)
         return Require(false, "failed to create renderer world");
     }
 
-    ecs_entity_t root = EcsUiRootEntity(world, "RendererRoot");
-    result |= BuildRendererTree(world, root);
-    EcsUiTreeSnapshot tree = {0};
-    result |= Require(
-        EcsUiReadTree(world, root, &tree),
-        "failed to read renderer tree");
-
-    EcsUiTheme theme = EcsUiThemeDefault();
-    const EcsUiFrameLayoutOptions layout_options = {
-        .physical_bounds = {
-            .x = 0.0f,
-            .y = 0.0f,
-            .width = 320.0f,
-            .height = 220.0f,
-        },
-    };
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
-    const EcsUiDrawList *draw_list = EcsUiFrameRun(
-        &tree,
-        &theme,
-        &layout_options,
-        NULL,
-        NULL);
-    result |= Require(draw_list != NULL, "renderer draw list missing");
-
-    TestDrawCallbacks callbacks = {0};
-    g_raylib_counts = (TestRaylibStubCounts){0};
-    EcsUiRaylibRenderDrawList(
-        draw_list,
-        NULL,
-        &(EcsUiRaylibRenderContext){
-            .physical_root_bounds = {
-                .x = 0.0f,
-                .y = 0.0f,
-                .width = 320.0f,
-                .height = 220.0f,
-            },
-            .scale = 1.0f,
-        },
-        &(EcsUiRaylibDrawOptions){
-            .custom_draw = TestCustomDraw,
-            .user_data = &callbacks,
-            .icon_draw = TestIconDraw,
-            .nine_slice_draw = TestNineSliceDraw,
-        });
-
-    result |= Require(
-        callbacks.custom_count > 0u && callbacks.saw_custom_context,
-        "custom draw-list branch was not dispatched");
-    result |= Require(
-        callbacks.icon_count > 0u && callbacks.saw_icon_context,
-        "icon draw-list branch was not dispatched");
-    result |= Require(
-        callbacks.nine_slice_count > 0u && callbacks.saw_nine_slice_context,
-        "nine-slice draw-list branch was not dispatched");
-    result |= Require(
-        g_raylib_counts.scissor_start > 0u &&
-            g_raylib_counts.scissor_start == g_raylib_counts.scissor_end,
-        "scissor draw-list branch was not balanced");
     result |= Require(
         errors.count == 0u,
         "renderer frame backend emitted errors");
@@ -1196,7 +1060,6 @@ int main(void)
     result |= Require(
         null_spec_size.height == 11.0f,
         "raylib measure NULL spec should default spacing to 1");
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     if (errors.count != 0u) {
         (void)fprintf(
             stderr,
@@ -1213,7 +1076,7 @@ int main(void)
     result |= RunPaintGenerationMismatchCase();
 
     ecs_fini(world);
-    EcsUiRaylibReleaseDrawListRenderer();
+    EcsUiRaylibReleaseFrameRenderer();
     EcsUiFrameBackendShutdown();
     return result;
 }

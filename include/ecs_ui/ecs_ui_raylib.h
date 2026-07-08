@@ -46,18 +46,13 @@ EcsUiSize EcsUiRaylibMeasureText(
     int32_t length,
     const EcsUiTextMeasureSpec *spec,
     void *user_data);
-void EcsUiRaylibRenderDrawList(
-    const EcsUiDrawList *draw_list,
-    Font *fonts,
-    const EcsUiRaylibRenderContext *root_context,
-    const EcsUiRaylibDrawOptions *options);
 void EcsUiRaylibRenderPaintList(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
     Font *fonts,
     const EcsUiRaylibRenderContext *root_context,
     const EcsUiRaylibDrawOptions *options);
-void EcsUiRaylibReleaseDrawListRenderer(void);
+void EcsUiRaylibReleaseFrameRenderer(void);
 
 typedef enum EcsUiRaylibWakeReasonKind {
     ECS_UI_RAYLIB_WAKE_NONE = 0,

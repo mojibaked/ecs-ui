@@ -1730,7 +1730,6 @@ static int RequirePaintList(
 }
 
 static int RunPaintCase(
-    EcsUiFrameInternalBackend backend,
     float scale,
     TestFrameErrors *errors)
 {
@@ -1760,7 +1759,6 @@ static int RunPaintCase(
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.width,
         options.physical_bounds.height);
-    EcsUiFrameInternalSelectBackend(backend);
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
         "paint frame run failed");
@@ -1796,14 +1794,11 @@ static int RunPaintCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "paint case emitted unexpected frame errors");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
 
 static int RunOrderPaintCase(
-    EcsUiFrameInternalBackend backend,
     float scale,
     int16_t base_z,
     TestFrameErrors *errors)
@@ -1834,7 +1829,6 @@ static int RunOrderPaintCase(
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.width,
         options.physical_bounds.height);
-    EcsUiFrameInternalSelectBackend(backend);
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
         "order paint frame run failed");
@@ -2047,14 +2041,11 @@ static int RunOrderPaintCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "order paint emitted unexpected frame errors");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
 
 static int RunClipPaintCase(
-    EcsUiFrameInternalBackend backend,
     float scale,
     TestFrameErrors *errors)
 {
@@ -2084,7 +2075,6 @@ static int RunClipPaintCase(
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.width,
         options.physical_bounds.height);
-    EcsUiFrameInternalSelectBackend(backend);
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
         "clip paint frame run failed");
@@ -2256,8 +2246,6 @@ static int RunClipPaintCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "clip paint emitted unexpected frame errors");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2279,7 +2267,6 @@ static EcsUiPaintRect TestFieldSegmentRect(
 }
 
 static int RunTextFieldPaintCase(
-    EcsUiFrameInternalBackend backend,
     float scale,
     TestFrameErrors *errors)
 {
@@ -2308,7 +2295,6 @@ static int RunTextFieldPaintCase(
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.width,
         options.physical_bounds.height);
-    EcsUiFrameInternalSelectBackend(backend);
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
         "text-field paint frame run failed");
@@ -2575,14 +2561,11 @@ static int RunTextFieldPaintCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "text-field paint emitted unexpected frame errors");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
 
 static int RunTextFieldOrphanValueCase(
-    EcsUiFrameInternalBackend backend,
     float scale,
     TestFrameErrors *errors)
 {
@@ -2635,7 +2618,6 @@ static int RunTextFieldOrphanValueCase(
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.width,
         options.physical_bounds.height);
-    EcsUiFrameInternalSelectBackend(backend);
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
         "orphan text-field frame run failed");
@@ -2677,14 +2659,11 @@ static int RunTextFieldOrphanValueCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "orphan text-field emitted unexpected frame errors");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
 
 static int RunPlacedTextPaintCase(
-    EcsUiFrameInternalBackend backend,
     float scale,
     TestFrameErrors *errors)
 {
@@ -2713,7 +2692,6 @@ static int RunPlacedTextPaintCase(
     EcsUiFrameBackendSetSurfaceSize(
         options.physical_bounds.width,
         options.physical_bounds.height);
-    EcsUiFrameInternalSelectBackend(backend);
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
         "placed text frame run failed");
@@ -2753,8 +2731,6 @@ static int RunPlacedTextPaintCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "placed text emitted unexpected frame errors");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2864,7 +2840,6 @@ static int TestGenerationHeldOnSolverFailure(TestFrameErrors *errors)
         },
     };
     EcsUiFrameBackendSetSurfaceSize(240.0f, 160.0f);
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     *errors = (TestFrameErrors){0};
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
@@ -2911,8 +2886,6 @@ static int TestGenerationHeldOnSolverFailure(TestFrameErrors *errors)
         artifacts != NULL && artifacts->generation == last_generation &&
             last_good->generation == last_generation,
         "artifact generation should stay at last good value after failure");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2947,7 +2920,6 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
         },
     };
     EcsUiFrameBackendSetSurfaceSize(240.0f, 160.0f);
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     EcsUiFrameInternalSetPaintItemCapacity(0u);
     *errors = (TestFrameErrors){0};
     result |= Require(
@@ -2977,8 +2949,8 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
     EcsUiFrameInternalSetPaintItemCapacity(2u);
     *errors = (TestFrameErrors){0};
     result |= Require(
-        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
-        "paint capacity overflow should keep frame draw list alive");
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) == NULL,
+        "paint capacity overflow should fail the current paint frame");
     result |= Require(
         errors->count == 1u &&
             errors->last_kind == ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY,
@@ -3065,11 +3037,10 @@ static int TestTextFieldScopeGuard(TestFrameErrors *errors)
         },
     };
     EcsUiFrameBackendSetSurfaceSize(180.0f, 80.0f);
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     *errors = (TestFrameErrors){0};
     result |= Require(
-        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
-        "text-field guard should not abort live draw list");
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) == NULL,
+        "text-field guard should fail the current paint frame");
     result |= Require(
         errors->count == 1u &&
             errors->last_kind == ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY,
@@ -3080,8 +3051,6 @@ static int TestTextFieldScopeGuard(TestFrameErrors *errors)
     result |= Require(
         EcsUiFramePaintList() == NULL,
         "text-field guard should expose no renderable paint list");
-
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     ecs_fini(world);
     return result;
 }
@@ -3102,114 +3071,20 @@ int main(void)
         "failed to initialize paint frame backend");
     EcsUiFrameBackendSetCullingEnabled(false);
 
-    result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY, 1.0f, &errors);
-    result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY, 2.0f, &errors);
-    result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 1.0f, &errors);
-    result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 2.0f, &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        0,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        2.0f,
-        37,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        32760,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        32767,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        0,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        2.0f,
-        37,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        32760,
-        &errors);
-    result |= RunOrderPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        32767,
-        &errors);
-    result |= RunClipPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        &errors);
-    result |= RunClipPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        2.0f,
-        &errors);
-    result |= RunClipPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        &errors);
-    result |= RunClipPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        2.0f,
-        &errors);
-    result |= RunTextFieldPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        &errors);
-    result |= RunTextFieldPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        2.0f,
-        &errors);
-    result |= RunTextFieldPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        &errors);
-    result |= RunTextFieldPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        2.0f,
-        &errors);
-    result |= RunTextFieldOrphanValueCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        &errors);
-    result |= RunTextFieldOrphanValueCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        2.0f,
-        &errors);
-    result |= RunTextFieldOrphanValueCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        &errors);
-    result |= RunTextFieldOrphanValueCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        2.0f,
-        &errors);
-    result |= RunPlacedTextPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        1.0f,
-        &errors);
-    result |= RunPlacedTextPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
-        2.0f,
-        &errors);
-    result |= RunPlacedTextPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        1.0f,
-        &errors);
-    result |= RunPlacedTextPaintCase(
-        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
-        2.0f,
-        &errors);
+    result |= RunPaintCase(1.0f, &errors);
+    result |= RunPaintCase(2.0f, &errors);
+    result |= RunOrderPaintCase(1.0f, 0, &errors);
+    result |= RunOrderPaintCase(2.0f, 37, &errors);
+    result |= RunOrderPaintCase(1.0f, 32760, &errors);
+    result |= RunOrderPaintCase(1.0f, 32767, &errors);
+    result |= RunClipPaintCase(1.0f, &errors);
+    result |= RunClipPaintCase(2.0f, &errors);
+    result |= RunTextFieldPaintCase(1.0f, &errors);
+    result |= RunTextFieldPaintCase(2.0f, &errors);
+    result |= RunTextFieldOrphanValueCase(1.0f, &errors);
+    result |= RunTextFieldOrphanValueCase(2.0f, &errors);
+    result |= RunPlacedTextPaintCase(1.0f, &errors);
+    result |= RunPlacedTextPaintCase(2.0f, &errors);
     result |= TestSourceTruncationPropagates();
     result |= TestOpacityCullDirect();
     result |= TestGenerationHeldOnSolverFailure(&errors);

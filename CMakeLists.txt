@@ -8,7 +8,6 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ECS_UI_BUILD_TESTS "Build ecs-ui tests" ON)
-option(ECS_UI_BUILD_CLAY_ADAPTER "Build the optional Clay adapter" ON)
 option(ECS_UI_BUILD_RAYLIB_RENDERER "Build the optional raylib renderer" OFF)
 option(ECS_UI_BUILD_RAYLIB_DEMO "Build the raylib demo executable" OFF)
 option(ECS_UI_FETCH_RAYLIB "Fetch raylib with CMake FetchContent when needed" ON)
@@ -17,18 +16,10 @@ set(ECS_UI_FLECS_SOURCE
     ""
     CACHE PATH
     "Path to a Flecs single-file distribution directory containing flecs.c and flecs.h")
-set(ECS_UI_CLAY_SOURCE
-    ""
-    CACHE PATH
-    "Path to a Clay header directory containing clay.h")
 set(ECS_UI_RAYLIB_SOURCE
     ""
     CACHE PATH
     "Path to a raylib source checkout containing CMakeLists.txt")
-
-if(NOT ECS_UI_CLAY_SOURCE AND EXISTS "$ENV{HOME}/source/clay/clay.h")
-    set(ECS_UI_CLAY_SOURCE "$ENV{HOME}/source/clay")
-endif()
 
 if(NOT ECS_UI_FLECS_SOURCE AND
         EXISTS "$ENV{HOME}/source/flecs/distr/flecs.c")
@@ -112,68 +103,6 @@ add_library(ecs_ui::frame ALIAS ecs_ui_frame)
 target_link_libraries(ecs_ui_frame
     PUBLIC ecs_ui)
 ecs_ui_enable_warnings(ecs_ui_frame)
-set(ECS_UI_FRAME_HAS_CLAY OFF)
-
-if(ECS_UI_BUILD_CLAY_ADAPTER)
-    if(TARGET clay)
-        set(ECS_UI_CLAY_TARGET clay)
-    elseif(ECS_UI_CLAY_SOURCE AND EXISTS "${ECS_UI_CLAY_SOURCE}/clay.h")
-        add_library(ecs_ui_clay_headers INTERFACE)
-        target_include_directories(ecs_ui_clay_headers
-            INTERFACE "${ECS_UI_CLAY_SOURCE}")
-        set(ECS_UI_CLAY_TARGET ecs_ui_clay_headers)
-    else()
-        message(STATUS
-            "Clay not found; skipping ecs_ui_clay. "
-            "Pass -DECS_UI_CLAY_SOURCE=/path/to/clay to build it.")
-        set(ECS_UI_CLAY_TARGET "")
-    endif()
-
-    if(ECS_UI_CLAY_TARGET)
-        add_library(ecs_ui_clay_objects OBJECT
-            src/ecs_ui_clay.c)
-        target_link_libraries(ecs_ui_clay_objects
-            PUBLIC ecs_ui ${ECS_UI_CLAY_TARGET})
-        ecs_ui_enable_warnings(ecs_ui_clay_objects)
-
-        add_library(ecs_ui_clay STATIC
-            $<TARGET_OBJECTS:ecs_ui_clay_objects>)
-        add_library(ecs_ui::clay ALIAS ecs_ui_clay)
-        target_link_libraries(ecs_ui_clay
-            PUBLIC ecs_ui ${ECS_UI_CLAY_TARGET})
-        ecs_ui_enable_warnings(ecs_ui_clay)
-
-        target_sources(ecs_ui_frame
-            PRIVATE
-                $<TARGET_OBJECTS:ecs_ui_clay_objects>
-                src/ecs_ui_paint_clay_adapter.c)
-        target_compile_definitions(ecs_ui_frame
-            PUBLIC ECS_UI_FRAME_ENABLE_CLAY=1)
-        if(ECS_UI_CLAY_SOURCE AND EXISTS "${ECS_UI_CLAY_SOURCE}/clay.h")
-            target_include_directories(ecs_ui_frame
-                PUBLIC "${ECS_UI_CLAY_SOURCE}")
-        else()
-            get_target_property(
-                ECS_UI_CLAY_INCLUDE_DIRS
-                ${ECS_UI_CLAY_TARGET}
-                INTERFACE_INCLUDE_DIRECTORIES)
-            if(ECS_UI_CLAY_INCLUDE_DIRS)
-                target_include_directories(ecs_ui_frame
-                    PUBLIC ${ECS_UI_CLAY_INCLUDE_DIRS})
-            endif()
-        endif()
-        set(ECS_UI_FRAME_HAS_CLAY ON)
-    endif()
-endif()
-
-if(ECS_UI_BUILD_CLAY_ADAPTER AND NOT ECS_UI_FRAME_HAS_CLAY)
-    message(WARNING
-        "ECS_UI_BUILD_CLAY_ADAPTER=ON but Clay was not found. "
-        "ecs_ui_frame and ecs_ui_raylib will build native-only; "
-        "the legacy draw-list renderer is a no-op until the native cutover "
-        "stages make paint rendering live. Pass "
-        "-DECS_UI_CLAY_SOURCE=/path/to/clay for the transition Clay backend.")
-endif()
 
 if(ECS_UI_BUILD_RAYLIB_DEMO)
     set(ECS_UI_BUILD_RAYLIB_RENDERER ON)
@@ -257,22 +186,6 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
                 ecs_ui_navigation
                 ecs_ui_text_input)
         ecs_ui_enable_warnings(ecs_ui_raylib_demo)
-
-        if(ECS_UI_FRAME_HAS_CLAY)
-            add_executable(ecs_ui_clay_raylib_demo
-                ${ECS_UI_RAYLIB_DEMO_COMMON_SOURCES}
-                examples/raylib_demo/clay_main.c)
-            target_link_libraries(ecs_ui_clay_raylib_demo
-                PRIVATE
-                    ecs_ui_frame
-                    ecs_ui_raylib
-                    ecs_ui_animation
-                    ecs_ui_navigation
-                    ecs_ui_text_input)
-        else()
-            message(STATUS
-                "Clay frame backend not found; skipping ecs_ui_clay_raylib_demo.")
-        endif()
     endif()
 endif()
 
@@ -354,40 +267,29 @@ if(ECS_UI_BUILD_TESTS)
             NAME ecs_ui_frame_header_compile
             COMMAND ecs_ui_frame_header_compile)
 
-        if(ECS_UI_FRAME_HAS_CLAY)
-            add_executable(ecs_ui_raylib_draw_list
-                tests/ecs_ui_raylib_draw_list.c)
-            target_link_libraries(ecs_ui_raylib_draw_list
-                PRIVATE ecs_ui_raylib ecs_ui_frame)
-            ecs_ui_enable_warnings(ecs_ui_raylib_draw_list)
-            add_test(
-                NAME ecs_ui_raylib_draw_list
-                COMMAND ecs_ui_raylib_draw_list)
+        add_executable(ecs_ui_raylib_paint_renderer
+            tests/ecs_ui_raylib_paint_renderer.c)
+        target_link_libraries(ecs_ui_raylib_paint_renderer
+            PRIVATE ecs_ui_raylib ecs_ui_frame)
+        ecs_ui_enable_warnings(ecs_ui_raylib_paint_renderer)
+        add_test(
+            NAME ecs_ui_raylib_paint_renderer
+            COMMAND ecs_ui_raylib_paint_renderer)
 
-            add_executable(ecs_ui_raylib_pixel_ab
-                tests/ecs_ui_raylib_pixel_ab.c)
-            target_link_libraries(ecs_ui_raylib_pixel_ab
-                PRIVATE ecs_ui_raylib ecs_ui_frame)
-            ecs_ui_enable_warnings(ecs_ui_raylib_pixel_ab)
-            add_test(
-                NAME ecs_ui_raylib_pixel_ab
-                COMMAND ecs_ui_raylib_pixel_ab)
-            set_tests_properties(
-                ecs_ui_raylib_pixel_ab
-                PROPERTIES SKIP_RETURN_CODE 77)
-        endif()
+        add_executable(ecs_ui_raylib_pixel_ab
+            tests/ecs_ui_raylib_pixel_ab.c)
+        target_link_libraries(ecs_ui_raylib_pixel_ab
+            PRIVATE ecs_ui_raylib ecs_ui_frame)
+        ecs_ui_enable_warnings(ecs_ui_raylib_pixel_ab)
+        add_test(
+            NAME ecs_ui_raylib_pixel_ab
+            COMMAND ecs_ui_raylib_pixel_ab)
+        set_tests_properties(
+            ecs_ui_raylib_pixel_ab
+            PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
-    if(TARGET ecs_ui_clay)
-        add_executable(ecs_ui_clay_parity
-            tests/ecs_ui_clay_parity.c)
-        target_link_libraries(ecs_ui_clay_parity
-            PRIVATE ecs_ui_clay)
-        ecs_ui_enable_warnings(ecs_ui_clay_parity)
-        add_test(NAME ecs_ui_clay_parity COMMAND ecs_ui_clay_parity)
-    endif()
-
-    if(ECS_UI_FRAME_HAS_CLAY)
+    if(TARGET ecs_ui_frame)
         add_executable(ecs_ui_frame_containment
             tests/ecs_ui_frame_containment.c)
         target_link_libraries(ecs_ui_frame_containment
@@ -414,23 +316,5 @@ if(ECS_UI_BUILD_TESTS)
         add_test(
             NAME ecs_ui_paint_list
             COMMAND ecs_ui_paint_list)
-
-        add_executable(ecs_ui_paint_clay_diff
-            tests/ecs_ui_paint_clay_diff.c)
-        target_link_libraries(ecs_ui_paint_clay_diff
-            PRIVATE ecs_ui_frame)
-        ecs_ui_enable_warnings(ecs_ui_paint_clay_diff)
-        add_test(
-            NAME ecs_ui_paint_clay_diff
-            COMMAND ecs_ui_paint_clay_diff)
-
-        add_executable(ecs_ui_clay_command_inventory
-            tests/ecs_ui_clay_command_inventory.c)
-        target_link_libraries(ecs_ui_clay_command_inventory
-            PRIVATE ecs_ui_frame)
-        ecs_ui_enable_warnings(ecs_ui_clay_command_inventory)
-        add_test(
-            NAME ecs_ui_clay_command_inventory
-            COMMAND ecs_ui_clay_command_inventory)
     endif()
 endif()

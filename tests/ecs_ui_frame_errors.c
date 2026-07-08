@@ -191,7 +191,6 @@ static int TestBackendErrors(TestFrameErrors *errors)
 static int TestNativeSolverErrors(TestFrameErrors *errors)
 {
     int result = 0;
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     EcsUiFrameBackendSetSurfaceSize(160.0f, 100.0f);
 
     EcsUiTreeSnapshot duplicate = TestRootTree("Duplicate");
@@ -312,12 +311,15 @@ static int TestRuntimeFrameErrors(TestFrameErrors *errors)
     EcsUiFrameInternalSetPaintItemCapacity(1u);
     *errors = (TestFrameErrors){0};
     result |= Require(
-        EcsUiFrameRun(&paint_capacity, &theme, &options, NULL, NULL) != NULL,
-        "paint capacity overflow should not abort frame run");
+        EcsUiFrameRun(&paint_capacity, &theme, &options, NULL, NULL) == NULL,
+        "paint capacity overflow should fail the current paint frame");
     result |= Require(
         errors->count == 1u &&
             errors->last_kind == ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY,
         "paint capacity overflow should report element capacity");
+    result |= Require(
+        EcsUiFramePaintList() == NULL,
+        "paint capacity overflow should not expose stale paint for rendering");
     EcsUiFrameInternalSetPaintItemCapacity(0u);
 
     return result | TestNativeSolverErrors(errors);

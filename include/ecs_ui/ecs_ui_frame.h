@@ -9,7 +9,6 @@ extern "C" {
 
 #define ECS_UI_INTERACTION_TARGET_MAX 4096u
 
-typedef struct EcsUiDrawList EcsUiDrawList;
 typedef struct EcsUiPaintList EcsUiPaintList;
 
 typedef struct EcsUiSize {
@@ -213,7 +212,7 @@ void EcsUiFrameBackendSetSurfaceSize(float width, float height);
 void EcsUiFrameBackendSetCullingEnabled(bool enabled);
 
 /*
- * Run one frame through the active backend. The returned draw list is owned by
+ * Run one frame through the active backend. The returned paint list is owned by
  * the backend and remains valid only until the next frame run or shutdown, and
  * only while the source snapshot remains alive and unmodified.
  *
@@ -221,7 +220,7 @@ void EcsUiFrameBackendSetCullingEnabled(bool enabled);
  * needed, call EcsUiFrameCollectEvents for the frame produced by this run
  * before any other EcsUiFrameRun call, including headless NULL/NULL runs.
  */
-const EcsUiDrawList *EcsUiFrameRun(
+const EcsUiPaintList *EcsUiFrameRun(
     EcsUiTreeSnapshot *tree,
     const EcsUiTheme *theme,
     const EcsUiFrameLayoutOptions *options,
