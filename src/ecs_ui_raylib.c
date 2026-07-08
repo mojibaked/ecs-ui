@@ -481,7 +481,7 @@ static float EcsUiRaylibPreferredWidth(
     const EcsUiTreeSnapshot *tree,
     uint32_t index)
 {
-    /* Explicit GROW/FIT sizing is currently honored by the Clay adapter only. */
+    /* Explicit GROW/FIT sizing is resolved by the frame layout path. */
     if (tree == NULL || index >= tree->count) {
         return 0.0f;
     }

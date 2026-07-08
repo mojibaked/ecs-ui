@@ -181,20 +181,20 @@ Definition of done:
 - [x] The API shape suggests how `glowfish-mobile` would host terminal viewport and
   soft keyboard widgets.
 
-## Phase 9: Clay Adapter Compatibility
+## Phase 9: legacy bridge Adapter Compatibility
 
 The raylib demo should not become a renderer-only design.
 
-- [x] Keep the UI tree snapshot expressive enough for the Clay adapter.
-- [x] Add a Clay raylib executable that emits from the same ECS UI tree.
-- [x] Collect Clay pointer events at the adapter edge and feed the existing demo
+- [x] Keep the UI tree snapshot expressive enough for the legacy bridge adapter.
+- [x] Add a legacy bridge raylib executable that emits from the same ECS UI tree.
+- [x] Collect legacy bridge pointer events at the adapter edge and feed the existing demo
   event bridge.
-- [x] Represent custom nodes in Clay without leaking renderer-only state into
+- [x] Represent custom nodes in legacy bridge without leaking renderer-only state into
   core components.
 
 Definition of done:
 
-- [x] A retained ECS UI tree can be read by both raylib and Clay-oriented code.
+- [x] A retained ECS UI tree can be read by both raylib and legacy bridge-oriented code.
 - [x] Renderer-specific event data stays at the edge.
 - [x] Core `ecs-ui` remains reusable by Glowfish and other projects.
 
@@ -229,7 +229,7 @@ Move proven demo concepts into focused `ecs-ui` libraries only where the shape i
 general enough for Glowfish and other projects.
 
 - [x] Extract animation primitives into an `ecs-ui-animation` layer that can
-  drive `EcsUiVisual` without depending on raylib or Clay.
+  drive `EcsUiVisual` without depending on raylib or legacy bridge.
 - [x] Extract navigation primitives into an `ecs-ui-navigation` layer for route
   definitions, active presentations, presentation hosts, and present/dismiss
   requests.
@@ -329,7 +329,7 @@ Make cursor position reusable text-input state before adding selection.
 - [x] Insert text at the cursor and advance the cursor.
 - [x] Delete backward from the cursor instead of always deleting the final
   character.
-- [x] Emit cursor movement events from raylib and Clay keyboard adapters.
+- [x] Emit cursor movement events from raylib and legacy bridge keyboard adapters.
 
 Definition of done:
 
@@ -348,7 +348,7 @@ Build selection on top of cursor/edit state before adding clipboard support.
 - [x] Collapse selection on normal cursor movement.
 - [x] Delete selected text as a range.
 - [x] Replace selected text on insert.
-- [x] Emit selection movement events from raylib and Clay keyboard adapters.
+- [x] Emit selection movement events from raylib and legacy bridge keyboard adapters.
 
 Definition of done:
 
@@ -367,7 +367,7 @@ APIs into core `ecs-ui`.
 - [x] Add clipboard-write request entities emitted by copy/cut systems.
 - [x] Keep OS clipboard reads/writes at the raylib/demo edge.
 - [x] Replace selected text on paste and delete selected text on cut.
-- [x] Emit Ctrl+C, Ctrl+X, and Ctrl+V events from raylib and Clay keyboard
+- [x] Emit Ctrl+C, Ctrl+X, and Ctrl+V events from raylib and legacy bridge keyboard
   adapters.
 
 Definition of done:
@@ -386,7 +386,7 @@ Separate low-level interaction from semantic button authoring.
 - [x] Keep `Button` for compatibility while future widgets migrate to lower
   level primitives.
 - [x] Render and hit-test pressables in the raylib adapter.
-- [x] Emit pressables in the Clay adapter.
+- [x] Emit pressables in the legacy bridge adapter.
 - [x] Migrate demo text fields from `Button` to `Pressable`.
 
 Definition of done:
@@ -404,7 +404,7 @@ Move the first visual styling data into renderer-agnostic ECS components.
 - [x] Include box style data in tree snapshots for renderer adapters.
 - [x] Let raylib pressables resolve background, hover, highlight, radius, and
   padding from `EcsUiBoxStyle`.
-- [x] Let Clay pressables resolve background and padding from `EcsUiBoxStyle`.
+- [x] Let legacy bridge pressables resolve background and padding from `EcsUiBoxStyle`.
 - [x] Style demo text fields with `EcsUiBoxStyle` instead of renderer button
   theme colors.
 
@@ -453,7 +453,7 @@ Definition of done:
 
 - [x] Unit tests cover active theme registration, token updates after theme
   switch, and direct-style precedence.
-- [x] The raylib and Clay demos can toggle light/dark mode without recreating
+- [x] The raylib and legacy bridge demos can toggle light/dark mode without recreating
   the retained UI tree.
 - [x] Theme switching remains token-based so widgets can opt into semantic
   styles instead of hard-coded colors.
@@ -468,7 +468,7 @@ demo rule.
   query live ECS state during event collection.
 - [x] Update raylib hit testing to respect topmost ZStack order and captured
   surfaces.
-- [x] Update Clay event collection to use Clay floating pointer capture when an
+- [x] Update legacy bridge event collection to use legacy bridge floating pointer capture when an
   ECS layer explicitly captures pointer input.
 - [x] Opt demo presentation and viewport surfaces into capture so blank overlay
   clicks do not fall through to background buttons.
@@ -478,7 +478,7 @@ demo rule.
 Definition of done:
 
 - [x] Unit tests cover hit-test component registration and snapshot readback.
-- [x] Raylib and Clay event paths share the same ECS hit policy.
+- [x] Raylib and legacy bridge event paths share the same ECS hit policy.
 - [x] Background actions cannot fire through a captured presentation layer.
 
 ## Phase 23: Text Input Event Routing
@@ -491,7 +491,7 @@ text-input layer.
   click action token.
 - [x] Keep outside-click blur non-consuming so app actions can still handle the
   same click.
-- [x] Let raylib and Clay hit-test actionless text-field pressables.
+- [x] Let raylib and legacy bridge hit-test actionless text-field pressables.
 - [x] Remove demo text-input forwarding wrappers for insert, delete, cursor,
   selection, focus traversal, clipboard, and blur requests.
 
@@ -502,13 +502,13 @@ Definition of done:
   text-input routing.
 - [x] Text-field nodes no longer need app-owned focus action tokens.
 
-## Phase 24: Clay Parity Regression Coverage
+## Phase 24: legacy bridge Parity Regression Coverage
 
-Move Clay adapter parity from manual-only validation into non-GUI tests.
+Move legacy bridge adapter parity from manual-only validation into non-GUI tests.
 
-- [x] Add a Clay parity test target when the Clay adapter is available.
+- [x] Add a legacy bridge parity test target when the legacy bridge adapter is available.
 - [x] Cover duplicate authored UI ids by emitting repeated row-like children
-  without Clay duplicate-id errors.
+  without legacy bridge duplicate-id errors.
 - [x] Cover visual opacity skipping pointer events.
 - [x] Cover visual offsets affecting pointer hit testing.
 - [x] Cover pointer capture drag lifecycle events.
@@ -516,7 +516,7 @@ Move Clay adapter parity from manual-only validation into non-GUI tests.
 
 Definition of done:
 
-- [x] Clay parity behavior can be verified without launching raylib windows.
+- [x] legacy bridge parity behavior can be verified without launching raylib windows.
 - [x] The tests exercise the adapter through snapshots and synthetic pointer
   state rather than private demo assumptions.
 - [x] The existing raylib demo remains the manual visual parity surface.
@@ -617,7 +617,7 @@ Definition of done:
 
 Turn the demo findings into a concrete `glowfish-mobile` adoption plan.
 
-- [x] Inspect the current Glowfish UI boundary, Clay runtime, core Flecs world,
+- [x] Inspect the current Glowfish UI boundary, legacy bridge runtime, core Flecs world,
   navigation plan, text-input flow, terminal viewport widget, and soft keyboard
   widget.
 - [x] Document the recommended two-world integration shape: Glowfish core world
@@ -640,7 +640,7 @@ legacy button variants for foreground color.
   `EcsUiThemeSetTextStyle`.
 - [x] Include resolved text style in `EcsUiTreeNodeSnapshot`, with direct
   component precedence over token-provided style.
-- [x] Update raylib and Clay adapters so text/icon children inherit text style
+- [x] Update raylib and legacy bridge adapters so text/icon children inherit text style
   from styled parents such as action pressables.
 - [x] Give demo action tokens foreground colors for dark and light themes.
 

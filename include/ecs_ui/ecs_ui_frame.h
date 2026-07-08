@@ -209,6 +209,10 @@ typedef struct EcsUiInteractionFrame {
 bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc);
 void EcsUiFrameBackendShutdown(void);
 void EcsUiFrameBackendSetSurfaceSize(float width, float height);
+/*
+ * Optional frame-level culling hint. Culling is a renderer performance
+ * optimization and must not change visible pixels.
+ */
 void EcsUiFrameBackendSetCullingEnabled(bool enabled);
 
 /*

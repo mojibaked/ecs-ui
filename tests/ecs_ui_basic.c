@@ -93,7 +93,7 @@ static int TestThemeDefaultHierarchy(void)
         "default theme subtle surface should separate from surface");
     result |= Require(
         theme.radius >= 0.04f && theme.radius <= 0.06f,
-        "default theme radius should map to roughly 2-3px in Clay");
+        "default theme radius should map to roughly 2-3px in native paint");
     result |= Require(
         TestChannelDistance(theme.button_primary, theme.button_danger) >= 120u,
         "default theme warm accent should differ from primary accent");

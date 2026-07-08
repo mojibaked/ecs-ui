@@ -139,9 +139,8 @@ typedef struct EcsUiPaintItem {
 } EcsUiPaintItem;
 
 /*
- * Renderer-neutral frame artifact. Clay render commands are a transition-only
- * adapter format; renderers should consume EcsUiPaintList as the durable
- * semantic paint surface.
+ * Renderer-neutral frame artifact. Renderers should consume EcsUiPaintList as
+ * the durable semantic paint surface.
  */
 typedef struct EcsUiPaintList {
     ecs_entity_t tree;

@@ -1589,9 +1589,8 @@ static void EcsUiSolverCompressResizable(
     uint32_t iteration_limit =
         active_count > 0u ? (active_count * active_count * 8u) + 8u : 0u;
 
-    /* Stage 3 min dimensions equal content for supported node kinds, so this
-     * path usually cannot shrink yet. Keep the loop shaped like Clay so text
-     * and scroll stages inherit the same compression/dropout behavior. */
+    /* Keep dropout order stable so text and scroll stages share the same
+     * compression behavior. */
     while (free_space < -epsilon && active_count > 0u) {
         if (iteration_limit == 0u) {
             EcsUiSolverSetError(

@@ -33,9 +33,7 @@ typedef struct EcsUiSolverRunOptions {
     EcsUiMeasureTextFn measure_text;
     void *measure_user_data;
     /*
-     * Scroll offsets are logical units. The Clay parity harness writes the
-     * same values scaled to physical pixels into Clay's retained scroll state.
-     * Reported content dimensions are logical units.
+     * Scroll offsets and reported content dimensions are logical units.
      */
     const EcsUiSolverScrollOffset *scroll_offsets;
     uint32_t scroll_offset_count;

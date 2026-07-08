@@ -1,5 +1,10 @@
 # Clay Cutover Stage 8 Verification Gate
 
+> Historical artifact: this note records the one-time pre-deletion verification
+> gate. It depended on the temporary comparison build that existed before the
+> native-only cutover. It is kept for audit history and is not a runnable
+> current verification procedure.
+
 Date: 2026-07-08
 
 This note records the hard verification gate run for Stage 8 of

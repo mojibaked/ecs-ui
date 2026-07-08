@@ -2,6 +2,10 @@
 """
 Stage 8 texelotl native-vs-clay screenshot gate.
 
+Historical artifact: this helper depended on the temporary comparison build
+that existed before the native-only cutover. It is kept for audit history and is
+not a runnable current verification tool.
+
 This is a verification helper, not product code. It launches texelotl desktop
 under Xvfb, drives the attach socket through representative UI states, captures
 native-layout and clay-layout screenshots at scale 1 and 2, then exact-compares
