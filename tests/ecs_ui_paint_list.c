@@ -1423,6 +1423,58 @@ static int RequirePaintClipScopeItem(
     return result;
 }
 
+static bool PaintItemUsesCurrentPrimitive(
+    const EcsUiPaintItem *item)
+{
+    if (item == NULL) {
+        return false;
+    }
+    switch ((EcsUiPaintRole)item->key.role) {
+    case ECS_UI_PAINT_ROLE_BOX:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX;
+    case ECS_UI_PAINT_ROLE_BORDER:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_BORDER;
+    case ECS_UI_PAINT_ROLE_TEXT_RUN:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_TEXT_RUN;
+    case ECS_UI_PAINT_ROLE_BEVEL_EDGE:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX;
+    case ECS_UI_PAINT_ROLE_CARET:
+    case ECS_UI_PAINT_ROLE_SELECTION:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX;
+    case ECS_UI_PAINT_ROLE_NINE_SLICE:
+    case ECS_UI_PAINT_ROLE_CUSTOM:
+    case ECS_UI_PAINT_ROLE_ICON:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_CUSTOM;
+    case ECS_UI_PAINT_ROLE_CLIP_SCOPE:
+        return item->primitive == ECS_UI_PAINT_PRIMITIVE_CLIP_SCOPE;
+    case ECS_UI_PAINT_ROLE_NONE:
+    default:
+        return false;
+    }
+}
+
+static int RequireNoImagePaintItems(const EcsUiPaintList *paint)
+{
+    int result = 0;
+    result |= Require(paint != NULL, "paint no-image list missing");
+    if (paint == NULL) {
+        return result;
+    }
+    for (uint32_t i = 0u; i < paint->count; i += 1u) {
+        if (!PaintItemUsesCurrentPrimitive(&paint->items[i])) {
+            char message[160] = {0};
+            (void)snprintf(
+                message,
+                sizeof(message),
+                "paint path emitted unsupported/image-like item role=%u primitive=%u",
+                (unsigned)paint->items[i].key.role,
+                (unsigned)paint->items[i].primitive);
+            result |= Require(false, message);
+        }
+    }
+    return result;
+}
+
 static int RequirePaintList(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
@@ -1441,6 +1493,7 @@ static int RequirePaintList(
     result |= Require(
         paint->generation == tree->generation,
         "paint generation should match snapshot");
+    result |= RequireNoImagePaintItems(paint);
     result |= Require(
         paint->count == 18u,
         "paint list should contain stage 1 paint items");

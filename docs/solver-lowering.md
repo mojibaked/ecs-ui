@@ -1060,6 +1060,20 @@ future real screen needs image data, add a neutral paint item carrying source
 entity plus renderer-owned image handle/tint data before rendering it; do not
 carry Clay image data through paint.
 
+Stage 2 of the clay cut keeps this as a paint-path contract: representative
+current paint trees must emit only the existing roles/primitives (`box`,
+`border`, `text-run`, `bevel-edge`, `caret`, `selection`, `nine-slice`,
+`custom`, `icon`, `clip-scope`). Any new image need must add a neutral paint
+item deliberately; it must not reuse Clay `IMAGE` command data. The existing
+bootstrap command diff remains the Stage 2 equivalence guard; in-repo
+bridge-vs-paint pixel verification is deferred to the Stage 3 harness.
+
+Current accepted CLAY-ONLY visual divergence at this checkpoint: the raylib
+scissor API is non-stacking, documented in the 7.6 clip section below and
+reproduced rather than hidden behind a shim. The earlier border-fold divergence
+is resolved by explicit late border items; no additional CLAY-ONLY visual
+differences are accepted in Stage 2.
+
 Renderer culling is an optimization only. Layout and paint truth are the full
 placed snapshot plus full paint list. Pixel-diff gates run with culling disabled;
 any culling-enabled path must prove identical visible pixels against the
