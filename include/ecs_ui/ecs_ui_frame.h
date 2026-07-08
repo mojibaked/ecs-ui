@@ -10,6 +10,7 @@ extern "C" {
 #define ECS_UI_INTERACTION_TARGET_MAX 4096u
 
 typedef struct EcsUiDrawList EcsUiDrawList;
+typedef struct EcsUiPaintList EcsUiPaintList;
 
 typedef struct EcsUiSize {
     float width;
@@ -229,6 +230,14 @@ const EcsUiDrawList *EcsUiFrameRun(
     const EcsUiFrameLayoutOptions *options,
     const EcsUiPointerState *pointer_or_null,
     EcsUiInteractionFrame *frame_or_null);
+
+/*
+ * Return the paint list produced by the most recent successful frame run.
+ * Returns NULL when the most recent run did not produce paint, including paint
+ * emission failures. The returned list must be rendered only with the snapshot
+ * whose generation matches paint->generation.
+ */
+const EcsUiPaintList *EcsUiFramePaintList(void);
 
 /*
  * Advance backend scroll housekeeping and reconcile ECS scroll components from

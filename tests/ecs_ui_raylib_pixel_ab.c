@@ -791,7 +791,7 @@ static void TestPrintOverlappingCommands(
         return;
     }
     const Clay_RenderCommandArray *commands =
-        EcsUiFrameDrawListClayCommands(draw_list);
+        EcsUiFrameInternalClayCommands();
     if (commands != NULL) {
         for (int32_t i = 0; i < commands->length; i += 1) {
             Clay_RenderCommand *command =
@@ -895,11 +895,12 @@ static void TestForceLetterSpacing(
     const EcsUiPaintList *paint,
     uint16_t letter_spacing)
 {
+    (void)draw_list;
     if (letter_spacing == 0u) {
         return;
     }
     const Clay_RenderCommandArray *commands =
-        EcsUiFrameDrawListClayCommands(draw_list);
+        EcsUiFrameInternalClayCommands();
     if (commands != NULL) {
         Clay_RenderCommandArray *mutable_commands =
             (Clay_RenderCommandArray *)commands;

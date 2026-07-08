@@ -1135,8 +1135,7 @@ static int RunDiffCase(float scale)
     const EcsUiDrawList *draw_list =
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL);
     result |= Require(draw_list != NULL, "diff frame run failed");
-    const Clay_RenderCommandArray *bridge =
-        EcsUiFrameDrawListClayCommands(draw_list);
+    const Clay_RenderCommandArray *bridge = EcsUiFrameInternalClayCommands();
     const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
     result |= Require(bridge != NULL, "diff bridge command list missing");
     result |= Require(paint != NULL, "diff paint list missing");

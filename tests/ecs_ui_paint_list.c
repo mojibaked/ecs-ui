@@ -2898,6 +2898,9 @@ static int TestGenerationHeldOnSolverFailure(TestFrameErrors *errors)
         EcsUiFrameInternalPaintList() == last_good,
         "failed run should keep last-good paint list active");
     result |= Require(
+        EcsUiFramePaintList() == NULL,
+        "failed current run should expose no renderable paint list");
+    result |= Require(
         EcsUiFrameApply(world, NULL),
         "failed-run artifact apply should keep last-good handle");
     artifacts = ecs_singleton_get(world, EcsUiFrameArtifacts);
@@ -2983,6 +2986,9 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
     result |= Require(
         EcsUiFrameInternalPaintList() == last_good,
         "paint capacity overflow should keep last-good paint list active");
+    result |= Require(
+        EcsUiFramePaintList() == NULL,
+        "paint capacity overflow should expose no renderable paint list");
     result |= Require(
         tree.generation == last_generation,
         "paint capacity overflow should restore last-good snapshot generation");
@@ -3071,6 +3077,9 @@ static int TestTextFieldScopeGuard(TestFrameErrors *errors)
     result |= Require(
         strstr(errors->last_message, "text-field scope") != NULL,
         "text-field guard should report clear scope message");
+    result |= Require(
+        EcsUiFramePaintList() == NULL,
+        "text-field guard should expose no renderable paint list");
 
     EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     ecs_fini(world);

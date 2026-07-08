@@ -31,6 +31,7 @@ struct EcsUiDrawList {
 #if ECS_UI_FRAME_ENABLE_CLAY
 const Clay_RenderCommandArray *EcsUiFrameDrawListClayCommands(
     const EcsUiDrawList *draw_list);
+const Clay_RenderCommandArray *EcsUiFrameInternalClayCommands(void);
 EcsUiClayLayoutOptions EcsUiFrameInternalClayLayoutOptions(
     const EcsUiFrameLayoutOptions *options);
 #endif

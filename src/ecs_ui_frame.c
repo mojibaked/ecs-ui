@@ -63,6 +63,7 @@ typedef struct EcsUiFrameBackend {
     uint32_t active_paint_list;
     uint32_t paint_item_capacity;
     uint32_t generation;
+    bool current_paint_valid;
 } EcsUiFrameBackend;
 
 static EcsUiFrameBackend g_ecs_ui_frame_backend;
@@ -79,8 +80,17 @@ EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void)
 
 const EcsUiPaintList *EcsUiFrameInternalPaintList(void)
 {
-    return &g_ecs_ui_frame_backend
+    const EcsUiPaintList *paint = &g_ecs_ui_frame_backend
         .paint_lists[g_ecs_ui_frame_backend.active_paint_list];
+    return paint->generation != 0u ? paint : NULL;
+}
+
+const EcsUiPaintList *EcsUiFramePaintList(void)
+{
+    if (!g_ecs_ui_frame_backend.current_paint_valid) {
+        return NULL;
+    }
+    return EcsUiFrameInternalPaintList();
 }
 
 void EcsUiFrameInternalSetPaintItemCapacity(uint32_t capacity)
@@ -379,6 +389,7 @@ static bool EcsUiFramePaint(
     if (backend == NULL || tree == NULL || theme == NULL) {
         return false;
     }
+    backend->current_paint_valid = false;
     uint32_t next_generation = backend->generation + 1u;
     if (next_generation == 0u) {
         next_generation += 1u;
@@ -421,6 +432,7 @@ static bool EcsUiFramePaint(
 
     backend->generation = next_generation;
     backend->active_paint_list = scratch_index;
+    backend->current_paint_valid = true;
     return true;
 }
 
@@ -673,6 +685,7 @@ const EcsUiDrawList *EcsUiFrameRun(
     EcsUiInteractionFrame *frame_or_null)
 {
     EcsUiFrameBackend *backend = &g_ecs_ui_frame_backend;
+    backend->current_paint_valid = false;
     if (!backend->initialized) {
         EcsUiFrameReportError(
             &backend->desc,
@@ -738,7 +751,8 @@ const EcsUiDrawList *EcsUiFrameRun(
                 solver_message[0] != '\0' ?
                     solver_message :
                     "native layout solver failed");
-            tree->generation = EcsUiFrameInternalPaintList()->generation;
+            const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+            tree->generation = paint != NULL ? paint->generation : 0u;
             return NULL;
         }
         EcsUiFrameCopyNativeScrollContents(
@@ -950,5 +964,10 @@ const Clay_RenderCommandArray *EcsUiFrameDrawListClayCommands(
     const EcsUiDrawList *draw_list)
 {
     return draw_list != NULL ? &draw_list->commands : NULL;
+}
+
+const Clay_RenderCommandArray *EcsUiFrameInternalClayCommands(void)
+{
+    return &g_ecs_ui_frame_backend.draw_list.commands;
 }
 #endif

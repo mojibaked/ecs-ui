@@ -1071,6 +1071,41 @@ static int RunOffscreenClipCullingCase(float scale)
         "offscreen clip scope should remain balanced under culling");
 }
 
+static int RunPaintGenerationMismatchCase(void)
+{
+    static EcsUiTreeSnapshot tree;
+    static EcsUiPaintList paint;
+    BuildDirectPaintFixture(&tree, &paint, 1.0f);
+    tree.generation = paint.generation + 1u;
+
+    TestDrawCallbacks callbacks = {0};
+    g_raylib_counts = (TestRaylibStubCounts){0};
+    g_draw_log_count = 0u;
+    EcsUiRaylibRenderPaintList(
+        &paint,
+        &tree,
+        NULL,
+        &(EcsUiRaylibRenderContext){
+            .physical_root_bounds = {
+                .width = 320.0f,
+                .height = 220.0f,
+            },
+            .scale = 1.0f,
+        },
+        &(EcsUiRaylibDrawOptions){
+            .custom_draw = TestCustomDraw,
+            .icon_draw = TestIconDraw,
+            .nine_slice_draw = TestNineSliceDraw,
+            .user_data = &callbacks,
+        });
+    return Require(
+        g_draw_log_count == 0u &&
+            callbacks.custom_count == 0u &&
+            callbacks.icon_count == 0u &&
+            callbacks.nine_slice_count == 0u,
+        "generation-mismatched paint should not render");
+}
+
 int main(void)
 {
     int result = 0;
@@ -1172,6 +1207,7 @@ int main(void)
     result |= RunCustomFallbackPaintCase(2.0f);
     result |= RunOffscreenClipCullingCase(1.0f);
     result |= RunOffscreenClipCullingCase(2.0f);
+    result |= RunPaintGenerationMismatchCase();
 
     ecs_fini(world);
     EcsUiRaylibReleaseDrawListRenderer();

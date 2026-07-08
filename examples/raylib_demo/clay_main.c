@@ -28,7 +28,7 @@ typedef struct DemoClayRunCtx {
     EcsUiTheme theme;
     EcsUiFrameLayoutOptions layout_options;
     EcsUiInteractionFrame interaction_frame;
-    const EcsUiDrawList *draw_list;
+    const EcsUiPaintList *paint_list;
     EcsUiEventList events;
     EcsUiRaylibRenderContext render_context;
     EcsUiRaylibDrawOptions render_options;
@@ -372,12 +372,13 @@ static bool DemoClayTick(double dt, void *user_data)
     }
 
     ctx->theme = DemoClayTheme(ctx->ui_world);
-    ctx->draw_list = EcsUiFrameRun(
+    (void)EcsUiFrameRun(
         &ctx->tree,
         &ctx->theme,
         &ctx->layout_options,
         NULL,
         NULL);
+    ctx->paint_list = EcsUiFramePaintList();
     DemoClayBuildRenderOptions(ctx);
 
     const bool animation_active = EcsUiAnimationHasActive(ctx->ui_world);
@@ -399,11 +400,14 @@ static void DemoClayDrawCurrent(DemoClayRunCtx *ctx)
     BeginDrawing();
     ctx->drawing = true;
     ClearBackground(DemoClayClearColor(&ctx->theme));
-    EcsUiRaylibRenderDrawList(
-        ctx->draw_list,
-        ctx->fonts,
-        &ctx->render_context,
-        &ctx->render_options);
+    if (ctx->paint_list != NULL) {
+        EcsUiRaylibRenderPaintList(
+            ctx->paint_list,
+            &ctx->tree,
+            ctx->fonts,
+            &ctx->render_context,
+            &ctx->render_options);
+    }
 }
 
 static bool DemoClayRender(void *user_data)

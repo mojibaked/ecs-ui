@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -631,6 +632,14 @@ void EcsUiRaylibRenderPaintList(
     const EcsUiRaylibDrawOptions *options)
 {
     if (paint == NULL || tree == NULL) {
+        return;
+    }
+    if (paint->generation != tree->generation) {
+        (void)fprintf(
+            stderr,
+            "ecs-ui paint generation mismatch: paint=%u tree=%u\n",
+            (unsigned int)paint->generation,
+            (unsigned int)tree->generation);
         return;
     }
     /*

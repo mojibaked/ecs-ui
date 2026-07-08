@@ -185,7 +185,8 @@ int main(void)
     result |= Require(draw_list != NULL, "inventory frame failed");
 
     CommandInventory inventory = {0};
-    ReadInventory(EcsUiFrameDrawListClayCommands(draw_list), &inventory);
+    (void)draw_list;
+    ReadInventory(EcsUiFrameInternalClayCommands(), &inventory);
     result |= Require(inventory.rectangle, "inventory missing rectangle command");
     result |= Require(inventory.border, "inventory missing border command");
     result |= Require(inventory.text, "inventory missing text command");
