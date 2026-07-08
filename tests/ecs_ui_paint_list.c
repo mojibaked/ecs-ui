@@ -1075,6 +1075,9 @@ static int RequirePaintTextRunItem(
             item->payload.text_run.byte_end == expected_end,
         "paint text byte range mismatch");
     result |= Require(
+        item->payload.text_run.font_id == 0u,
+        "paint text font id mismatch");
+    result |= Require(
         item->payload.text_run.font_size == expected_font_size,
         "paint text font size mismatch");
     result |= RequireColor(

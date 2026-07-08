@@ -1044,3 +1044,27 @@ Text-field pressables lower to the synthetic segment flow above; the loud
 failure is removed. After 6c no emitted feature fails loudly; the adoption-
 time non-coverage list (z/paint order, pointer-over, capture, scissor,
 retained offset mutation) is unchanged.
+
+## Native cut prep: renderer artifact and inventory
+
+`EcsUiPaintList` is the durable renderer artifact. Clay render commands are a
+transition-only adapter format used for bridge parity, bootstrap diffs, and the
+temporary live renderer until the hard cut. New renderer work consumes paint
+items directly; it must not add new dependence on `Clay_RenderCommand` or
+`Clay_RenderCommandArray`.
+
+The current emitted visual primitive inventory is rectangle, border, text,
+custom, and scissor start/end. No current ecs-ui bridge path emits raw Clay
+`IMAGE` commands, so v1 native paint intentionally has no image primitive. If a
+future real screen needs image data, add a neutral paint item carrying source
+entity plus renderer-owned image handle/tint data before rendering it; do not
+carry Clay image data through paint.
+
+Renderer culling is an optimization only. Layout and paint truth are the full
+placed snapshot plus full paint list. Pixel-diff gates run with culling disabled;
+any culling-enabled path must prove identical visible pixels against the
+culling-disabled path.
+
+Text-run paint items carry `font_id` even though current bridge output and the
+raylib demo use font 0. This preserves today's behavior while making font
+identity explicit for the direct renderer boundary.

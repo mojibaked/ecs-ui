@@ -402,7 +402,7 @@ static bool EcsUiPaintClayPushText(
                     .textColor = EcsUiPaintClayColor(
                         item->payload.text_run.color,
                         item->opacity),
-                    .fontId = 0u,
+                    .fontId = item->payload.text_run.font_id,
                     .fontSize = item->payload.text_run.font_size,
                     .letterSpacing = 0u,
                     .lineHeight = 0u,

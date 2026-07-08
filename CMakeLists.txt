@@ -104,6 +104,15 @@ target_link_libraries(ecs_ui_text_input
     PUBLIC ecs_ui)
 ecs_ui_enable_warnings(ecs_ui_text_input)
 
+add_library(ecs_ui_frame STATIC
+    src/ecs_ui_frame.c
+    src/ecs_ui_solver.c)
+add_library(ecs_ui::frame ALIAS ecs_ui_frame)
+target_link_libraries(ecs_ui_frame
+    PUBLIC ecs_ui)
+ecs_ui_enable_warnings(ecs_ui_frame)
+set(ECS_UI_FRAME_HAS_CLAY OFF)
+
 if(ECS_UI_BUILD_CLAY_ADAPTER)
     if(TARGET clay)
         set(ECS_UI_CLAY_TARGET clay)
@@ -120,23 +129,49 @@ if(ECS_UI_BUILD_CLAY_ADAPTER)
     endif()
 
     if(ECS_UI_CLAY_TARGET)
-        add_library(ecs_ui_clay STATIC
+        add_library(ecs_ui_clay_objects OBJECT
             src/ecs_ui_clay.c)
+        target_link_libraries(ecs_ui_clay_objects
+            PUBLIC ecs_ui ${ECS_UI_CLAY_TARGET})
+        ecs_ui_enable_warnings(ecs_ui_clay_objects)
+
+        add_library(ecs_ui_clay STATIC
+            $<TARGET_OBJECTS:ecs_ui_clay_objects>)
         add_library(ecs_ui::clay ALIAS ecs_ui_clay)
         target_link_libraries(ecs_ui_clay
             PUBLIC ecs_ui ${ECS_UI_CLAY_TARGET})
         ecs_ui_enable_warnings(ecs_ui_clay)
 
-        add_library(ecs_ui_frame STATIC
-            src/ecs_ui_frame.c
-            src/ecs_ui_paint_clay_adapter.c
-            src/ecs_ui_solver.c)
-        add_library(ecs_ui::frame ALIAS ecs_ui_frame)
-        target_link_libraries(ecs_ui_frame
-            PUBLIC ecs_ui
-            PRIVATE ecs_ui_clay)
-        ecs_ui_enable_warnings(ecs_ui_frame)
+        target_sources(ecs_ui_frame
+            PRIVATE
+                $<TARGET_OBJECTS:ecs_ui_clay_objects>
+                src/ecs_ui_paint_clay_adapter.c)
+        target_compile_definitions(ecs_ui_frame
+            PUBLIC ECS_UI_FRAME_ENABLE_CLAY=1)
+        if(ECS_UI_CLAY_SOURCE AND EXISTS "${ECS_UI_CLAY_SOURCE}/clay.h")
+            target_include_directories(ecs_ui_frame
+                PUBLIC "${ECS_UI_CLAY_SOURCE}")
+        else()
+            get_target_property(
+                ECS_UI_CLAY_INCLUDE_DIRS
+                ${ECS_UI_CLAY_TARGET}
+                INTERFACE_INCLUDE_DIRECTORIES)
+            if(ECS_UI_CLAY_INCLUDE_DIRS)
+                target_include_directories(ecs_ui_frame
+                    PUBLIC ${ECS_UI_CLAY_INCLUDE_DIRS})
+            endif()
+        endif()
+        set(ECS_UI_FRAME_HAS_CLAY ON)
     endif()
+endif()
+
+if(ECS_UI_BUILD_CLAY_ADAPTER AND NOT ECS_UI_FRAME_HAS_CLAY)
+    message(WARNING
+        "ECS_UI_BUILD_CLAY_ADAPTER=ON but Clay was not found. "
+        "ecs_ui_frame and ecs_ui_raylib will build native-only; "
+        "the legacy draw-list renderer is a no-op until the native cutover "
+        "stages make paint rendering live. Pass "
+        "-DECS_UI_CLAY_SOURCE=/path/to/clay for the transition Clay backend.")
 endif()
 
 if(ECS_UI_BUILD_RAYLIB_DEMO)
@@ -183,12 +218,10 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
     target_link_libraries(ecs_ui_raylib
         PUBLIC ecs_ui ${ECS_UI_RAYLIB_TARGET}
         PRIVATE Threads::Threads)
-    if(TARGET ecs_ui_frame)
-        target_sources(ecs_ui_raylib
-            PRIVATE src/ecs_ui_raylib_frame.c)
-        target_link_libraries(ecs_ui_raylib
-            PRIVATE ecs_ui_frame ecs_ui_clay)
-    endif()
+    target_sources(ecs_ui_raylib
+        PRIVATE src/ecs_ui_raylib_frame.c)
+    target_link_libraries(ecs_ui_raylib
+        PRIVATE ecs_ui_frame)
     if(TARGET glfw)
         # The bounded park shim wakes raylib's glfwWaitEvents path by posting an
         # empty GLFW event from its watcher thread when vendored GLFW is exposed.
@@ -224,7 +257,7 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
                 ecs_ui_text_input)
         ecs_ui_enable_warnings(ecs_ui_raylib_demo)
 
-        if(TARGET ecs_ui_frame)
+        if(ECS_UI_FRAME_HAS_CLAY)
             add_executable(ecs_ui_clay_raylib_demo
                 ${ECS_UI_RAYLIB_DEMO_COMMON_SOURCES}
                 examples/raylib_demo/clay_main.c)
@@ -237,7 +270,7 @@ if(ECS_UI_BUILD_RAYLIB_RENDERER)
                     ecs_ui_text_input)
         else()
             message(STATUS
-                "ecs_ui_frame not found; skipping ecs_ui_clay_raylib_demo.")
+                "Clay frame backend not found; skipping ecs_ui_clay_raylib_demo.")
         endif()
     endif()
 endif()
@@ -300,16 +333,16 @@ if(ECS_UI_BUILD_TESTS)
             NAME ecs_ui_raylib_presentation_cache
             COMMAND ecs_ui_raylib_presentation_cache)
 
-        if(TARGET ecs_ui_frame)
-            add_executable(ecs_ui_frame_header_compile
-                tests/ecs_ui_frame_header_compile.c)
-            target_link_libraries(ecs_ui_frame_header_compile
-                PRIVATE ecs_ui_raylib)
-            ecs_ui_enable_warnings(ecs_ui_frame_header_compile)
-            add_test(
-                NAME ecs_ui_frame_header_compile
-                COMMAND ecs_ui_frame_header_compile)
+        add_executable(ecs_ui_frame_header_compile
+            tests/ecs_ui_frame_header_compile.c)
+        target_link_libraries(ecs_ui_frame_header_compile
+            PRIVATE ecs_ui_raylib)
+        ecs_ui_enable_warnings(ecs_ui_frame_header_compile)
+        add_test(
+            NAME ecs_ui_frame_header_compile
+            COMMAND ecs_ui_frame_header_compile)
 
+        if(ECS_UI_FRAME_HAS_CLAY)
             add_executable(ecs_ui_raylib_draw_list
                 tests/ecs_ui_raylib_draw_list.c)
             target_link_libraries(ecs_ui_raylib_draw_list
@@ -330,11 +363,11 @@ if(ECS_UI_BUILD_TESTS)
         add_test(NAME ecs_ui_clay_parity COMMAND ecs_ui_clay_parity)
     endif()
 
-    if(TARGET ecs_ui_frame)
+    if(ECS_UI_FRAME_HAS_CLAY)
         add_executable(ecs_ui_frame_containment
             tests/ecs_ui_frame_containment.c)
         target_link_libraries(ecs_ui_frame_containment
-            PRIVATE ecs_ui_frame ecs_ui_clay)
+            PRIVATE ecs_ui_frame)
         ecs_ui_enable_warnings(ecs_ui_frame_containment)
         add_test(
             NAME ecs_ui_frame_containment
@@ -343,7 +376,7 @@ if(ECS_UI_BUILD_TESTS)
         add_executable(ecs_ui_solver_parity
             tests/ecs_ui_solver_parity.c)
         target_link_libraries(ecs_ui_solver_parity
-            PRIVATE ecs_ui_frame ecs_ui_clay)
+            PRIVATE ecs_ui_frame)
         ecs_ui_enable_warnings(ecs_ui_solver_parity)
         add_test(
             NAME ecs_ui_solver_parity
@@ -352,7 +385,7 @@ if(ECS_UI_BUILD_TESTS)
         add_executable(ecs_ui_paint_list
             tests/ecs_ui_paint_list.c)
         target_link_libraries(ecs_ui_paint_list
-            PRIVATE ecs_ui_frame ecs_ui_clay)
+            PRIVATE ecs_ui_frame)
         ecs_ui_enable_warnings(ecs_ui_paint_list)
         add_test(
             NAME ecs_ui_paint_list
@@ -361,10 +394,19 @@ if(ECS_UI_BUILD_TESTS)
         add_executable(ecs_ui_paint_clay_diff
             tests/ecs_ui_paint_clay_diff.c)
         target_link_libraries(ecs_ui_paint_clay_diff
-            PRIVATE ecs_ui_frame ecs_ui_clay)
+            PRIVATE ecs_ui_frame)
         ecs_ui_enable_warnings(ecs_ui_paint_clay_diff)
         add_test(
             NAME ecs_ui_paint_clay_diff
             COMMAND ecs_ui_paint_clay_diff)
+
+        add_executable(ecs_ui_clay_command_inventory
+            tests/ecs_ui_clay_command_inventory.c)
+        target_link_libraries(ecs_ui_clay_command_inventory
+            PRIVATE ecs_ui_frame)
+        ecs_ui_enable_warnings(ecs_ui_clay_command_inventory)
+        add_test(
+            NAME ecs_ui_clay_command_inventory
+            COMMAND ecs_ui_clay_command_inventory)
     endif()
 endif()

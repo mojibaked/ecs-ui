@@ -113,6 +113,7 @@ typedef struct EcsUiPaintTextRun {
     const char *text;
     uint32_t byte_start;
     uint32_t byte_end;
+    uint16_t font_id;
     uint16_t font_size;
     EcsUiColorF color;
 } EcsUiPaintTextRun;
@@ -134,6 +135,11 @@ typedef struct EcsUiPaintItem {
     } payload;
 } EcsUiPaintItem;
 
+/*
+ * Renderer-neutral frame artifact. Clay render commands are a transition-only
+ * adapter format; renderers should consume EcsUiPaintList as the durable
+ * semantic paint surface.
+ */
 typedef struct EcsUiPaintList {
     ecs_entity_t tree;
     uint32_t generation;

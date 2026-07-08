@@ -413,6 +413,7 @@ static bool EcsUiPaintPushTextRun(
         .text = text != NULL ? text : "",
         .byte_start = byte_start,
         .byte_end = byte_end,
+        .font_id = 0u,
         .font_size = font_size,
         .color = color,
     };

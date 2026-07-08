@@ -987,6 +987,10 @@ static int CompareTextItem(
                 bridge_text->renderData.text.fontSize,
             "text font size mismatch");
         result |= Require(
+            adapter_text->renderData.text.fontId ==
+                item->payload.text_run.font_id,
+            "adapter text font id mismatch");
+        result |= Require(
             adapter_text->renderData.text.stringContents.chars ==
                 bridge_text->renderData.text.stringContents.chars &&
                 adapter_text->renderData.text.stringContents.length ==
@@ -1154,6 +1158,79 @@ static int RunDiffCase(float scale)
     return result;
 }
 
+static int RunFontIdAdapterCase(void)
+{
+    static const char text[] = "font";
+    EcsUiTreeSnapshot tree = {
+        .root = 1001u,
+        .count = 1u,
+        .scale = 1.0f,
+    };
+    tree.nodes[0] = (EcsUiTreeNodeSnapshot){
+        .entity = 1002u,
+        .kind = ECS_UI_NODE_TEXT,
+        .has_layout = true,
+    };
+    (void)snprintf(tree.nodes[0].id, sizeof(tree.nodes[0].id), "%s", "FontNode");
+
+    EcsUiPaintList paint = {
+        .tree = tree.root,
+        .generation = 17u,
+        .count = 1u,
+    };
+    paint.items[0] = (EcsUiPaintItem){
+        .key = {
+            .source = tree.nodes[0].entity,
+            .role = ECS_UI_PAINT_ROLE_TEXT_RUN,
+            .part = 0u,
+            .generation = paint.generation,
+        },
+        .primitive = ECS_UI_PAINT_PRIMITIVE_TEXT_RUN,
+        .rect = {
+            .x = 1.0f,
+            .y = 2.0f,
+            .width = 30.0f,
+            .height = 12.0f,
+        },
+        .opacity = 1.0f,
+        .payload = {
+            .text_run = {
+                .text = text,
+                .byte_start = 0u,
+                .byte_end = 4u,
+                .font_id = 7u,
+                .font_size = 18u,
+                .color = {10.0f, 20.0f, 30.0f, 255.0f},
+            },
+        },
+    };
+
+    Clay_RenderCommand storage[4] = {0};
+    Clay_RenderCommandArray commands = {0};
+    int result = 0;
+    result |= Require(
+        EcsUiPaintClayAdapterBuild(
+            &paint,
+            &tree,
+            &(EcsUiPaintClayAdapterOptions){.scale = 1.0f},
+            storage,
+            (int32_t)(sizeof(storage) / sizeof(storage[0])),
+            &commands),
+        "font-id adapter build failed");
+    result |= Require(commands.length == 1, "font-id adapter command count mismatch");
+    Clay_RenderCommand *command = Clay_RenderCommandArray_Get(&commands, 0);
+    result |= Require(command != NULL, "font-id adapter command missing");
+    if (command != NULL) {
+        result |= Require(
+            command->commandType == CLAY_RENDER_COMMAND_TYPE_TEXT,
+            "font-id adapter command type mismatch");
+        result |= Require(
+            command->renderData.text.fontId == 7u,
+            "font-id adapter did not preserve paint font id");
+    }
+    return result;
+}
+
 int main(void)
 {
     int result = 0;
@@ -1169,6 +1246,7 @@ int main(void)
 
     result |= RunDiffCase(1.0f);
     result |= RunDiffCase(2.0f);
+    result |= RunFontIdAdapterCase();
 
     EcsUiFrameBackendShutdown();
     return result;

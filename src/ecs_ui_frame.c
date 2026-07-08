@@ -1,3 +1,8 @@
+#ifndef ECS_UI_FRAME_ENABLE_CLAY
+#define ECS_UI_FRAME_ENABLE_CLAY 0
+#endif
+
+#if ECS_UI_FRAME_ENABLE_CLAY
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
@@ -13,6 +18,7 @@
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
+#endif
 
 #include "ecs_ui_frame_internal.h"
 #include "ecs_ui/ecs_ui_paint.h"
@@ -24,19 +30,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if ECS_UI_FRAME_ENABLE_CLAY
 _Static_assert(
     ECS_UI_INTERACTION_TARGET_MAX == ECS_UI_CLAY_INTERACTION_TARGET_MAX,
     "neutral and clay interaction target capacities must match");
+#endif
 
 typedef struct EcsUiFrameBackend {
     bool initialized;
+#if ECS_UI_FRAME_ENABLE_CLAY
     void *arena_memory;
     size_t arena_size;
+#endif
     EcsUiFrameBackendDesc desc;
     EcsUiDrawList draw_list;
     EcsUiSolverArena solver_arena;
+#if ECS_UI_FRAME_ENABLE_CLAY
     EcsUiClayInteractionState clay_state;
     EcsUiClayInteractionFrame clay_frame;
+#endif
     EcsUiInteractionFrame *active_frame;
     EcsUiFrameInternalBackend selected_backend;
     const EcsUiSolverScrollOffset *solver_scroll_offsets;
@@ -104,6 +116,7 @@ static void EcsUiFrameReportError(
     desc->error(kind, message != NULL ? message : "", desc->error_user_data);
 }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
 static EcsUiFrameErrorKind EcsUiFrameClayErrorKind(Clay_ErrorType type)
 {
     switch (type) {
@@ -424,6 +437,7 @@ static void EcsUiFrameCopyPublicFrame(
         "%s",
         frame->capture_missed_release_node_id);
 }
+#endif
 
 static bool EcsUiFrameApplyPendingScrolls(
     ecs_world_t *world,
@@ -550,6 +564,7 @@ static bool EcsUiFramePaint(
     return true;
 }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
 static void EcsUiFrameApplyClayScrollReports(
     ecs_world_t *world,
     const EcsUiClayInteractionFrame *frame)
@@ -605,6 +620,7 @@ static void EcsUiFramePrimeClayState(EcsUiInteractionFrame *frame)
     backend->clay_state.capture =
         EcsUiFrameClayCapture(frame->state->capture);
 }
+#endif
 
 bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
 {
@@ -627,6 +643,10 @@ bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
         return false;
     }
 
+    backend->desc = *desc;
+    backend->draw_list = (EcsUiDrawList){0};
+    backend->solver_arena = (EcsUiSolverArena){0};
+#if ECS_UI_FRAME_ENABLE_CLAY
     const uint32_t clay_memory_size = Clay_MinMemorySize();
     void *memory = malloc((size_t)clay_memory_size);
     if (memory == NULL) {
@@ -634,18 +654,21 @@ bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
             desc,
             ECS_UI_FRAME_ERROR_ALLOCATION_FAILED,
             "failed to allocate frame backend arena");
+        *backend = (EcsUiFrameBackend){0};
         return false;
     }
 
     backend->arena_memory = memory;
     backend->arena_size = (size_t)clay_memory_size;
-    backend->desc = *desc;
-    backend->draw_list = (EcsUiDrawList){0};
-    backend->solver_arena = (EcsUiSolverArena){0};
     backend->clay_state = (EcsUiClayInteractionState){0};
     backend->clay_frame = (EcsUiClayInteractionFrame){0};
+#endif
     backend->active_frame = NULL;
+#if ECS_UI_FRAME_ENABLE_CLAY
     backend->selected_backend = ECS_UI_FRAME_INTERNAL_BACKEND_CLAY;
+#else
+    backend->selected_backend = ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE;
+#endif
 
     const float surface_width =
         desc->surface_width > 0.0f ? desc->surface_width : 1.0f;
@@ -654,6 +677,7 @@ bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
     backend->desc.surface_width = surface_width;
     backend->desc.surface_height = surface_height;
 
+#if ECS_UI_FRAME_ENABLE_CLAY
     Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(
         backend->arena_size,
         backend->arena_memory);
@@ -679,6 +703,7 @@ bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
 
     Clay_SetMeasureTextFunction(EcsUiFrameClayMeasureText, backend);
     Clay_SetDebugModeEnabled(false);
+#endif
     backend->initialized = true;
     return true;
 }
@@ -690,7 +715,9 @@ void EcsUiFrameBackendShutdown(void)
         return;
     }
     EcsUiSolverArenaRelease(&backend->solver_arena);
+#if ECS_UI_FRAME_ENABLE_CLAY
     free(backend->arena_memory);
+#endif
     *backend = (EcsUiFrameBackend){0};
 }
 
@@ -703,10 +730,12 @@ void EcsUiFrameBackendSetSurfaceSize(float width, float height)
 
     backend->desc.surface_width = width > 0.0f ? width : 1.0f;
     backend->desc.surface_height = height > 0.0f ? height : 1.0f;
+#if ECS_UI_FRAME_ENABLE_CLAY
     Clay_SetLayoutDimensions((Clay_Dimensions){
         .width = backend->desc.surface_width,
         .height = backend->desc.surface_height,
     });
+#endif
 }
 
 void EcsUiFrameBackendSetCullingEnabled(bool enabled)
@@ -714,7 +743,11 @@ void EcsUiFrameBackendSetCullingEnabled(bool enabled)
     if (!g_ecs_ui_frame_backend.initialized) {
         return;
     }
+#if ECS_UI_FRAME_ENABLE_CLAY
     Clay_SetCullingEnabled(enabled);
+#else
+    (void)enabled;
+#endif
 }
 
 const EcsUiDrawList *EcsUiFrameRun(
@@ -740,11 +773,17 @@ const EcsUiDrawList *EcsUiFrameRun(
         return NULL;
     }
     backend->native_scroll_report_count = 0u;
-    if (backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE ||
+#if ECS_UI_FRAME_ENABLE_CLAY
+    const bool use_native =
+        backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE ||
             backend->selected_backend ==
                 ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE ||
             backend->selected_backend ==
-                ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE) {
+                ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE;
+#else
+    const bool use_native = true;
+#endif
+    if (use_native) {
         backend->active_frame = NULL;
         backend->draw_list = (EcsUiDrawList){0};
         char solver_message[256] = {0};
@@ -806,6 +845,7 @@ const EcsUiDrawList *EcsUiFrameRun(
         return &backend->draw_list;
     }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
     EcsUiClayLayoutOptions clay_options =
         EcsUiFrameInternalClayLayoutOptions(options);
     EcsUiFramePrimeClayState(frame_or_null);
@@ -852,6 +892,13 @@ const EcsUiDrawList *EcsUiFrameRun(
     }
 
     return &backend->draw_list;
+#else
+    EcsUiFrameReportError(
+        &backend->desc,
+        ECS_UI_FRAME_ERROR_INTERNAL,
+        "requested clay frame backend is not available in this build");
+    return NULL;
+#endif
 }
 
 void EcsUiFrameSettleScroll(ecs_world_t *world, double dt)
@@ -859,6 +906,7 @@ void EcsUiFrameSettleScroll(ecs_world_t *world, double dt)
     if (!g_ecs_ui_frame_backend.initialized) {
         return;
     }
+#if ECS_UI_FRAME_ENABLE_CLAY
     Clay_UpdateScrollContainers(
         false,
         (Clay_Vector2){.x = 0.0f, .y = 0.0f},
@@ -870,6 +918,9 @@ void EcsUiFrameSettleScroll(ecs_world_t *world, double dt)
     EcsUiFrameApplyClayScrollReports(
         world,
         &g_ecs_ui_frame_backend.clay_frame);
+#else
+    (void)dt;
+#endif
     (void)EcsUiFrameApplyPendingScrolls(
         world,
         g_ecs_ui_frame_backend.native_scroll_reports,
@@ -905,11 +956,15 @@ void EcsUiFrameCollectEvents(
         return;
     }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
     EcsUiClayCollectFrameEvents(
         &backend->clay_frame,
         EcsUiFrameClayPointer(pointer),
         events);
     EcsUiFrameCopyPublicFrame(frame, &backend->clay_frame);
+#else
+    (void)pointer;
+#endif
 }
 
 bool EcsUiFrameApply(
@@ -927,9 +982,11 @@ bool EcsUiFrameApply(
             frame->pending_scroll_count) && ok;
     }
     if (frame != NULL && frame == backend->active_frame) {
+#if ECS_UI_FRAME_ENABLE_CLAY
         EcsUiFrameApplyClayScrollReports(
             world,
             &backend->clay_frame);
+#endif
     }
     if (world != NULL && backend->initialized) {
         const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
@@ -960,8 +1017,10 @@ bool EcsUiFrameTreePointerInside(
     return false;
 }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
 const Clay_RenderCommandArray *EcsUiFrameDrawListClayCommands(
     const EcsUiDrawList *draw_list)
 {
     return draw_list != NULL ? &draw_list->commands : NULL;
 }
+#endif

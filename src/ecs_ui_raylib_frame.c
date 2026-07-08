@@ -52,6 +52,7 @@ static float EcsUiRaylibDrawListFontSize(Font font, float requested_size)
     return font.baseSize > 0 ? (float)font.baseSize : 1.0f;
 }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
 static Color EcsUiRaylibDrawListColor(Clay_Color color)
 {
     return (Color){
@@ -92,6 +93,7 @@ static EcsUiRaylibRenderContext EcsUiRaylibDrawListContext(
     }
     return context;
 }
+#endif
 
 EcsUiSize EcsUiRaylibMeasureText(
     const char *utf8,
@@ -114,6 +116,7 @@ EcsUiSize EcsUiRaylibMeasureText(
     };
 }
 
+#if ECS_UI_FRAME_ENABLE_CLAY
 static void EcsUiRaylibDrawListRenderRectangle(
     Rectangle bounds,
     Clay_RectangleRenderData *config)
@@ -348,6 +351,19 @@ void EcsUiRaylibRenderDrawList(
         }
     }
 }
+#else
+void EcsUiRaylibRenderDrawList(
+    const EcsUiDrawList *draw_list,
+    Font *fonts,
+    const EcsUiRaylibRenderContext *root_context,
+    const EcsUiRaylibDrawOptions *options)
+{
+    (void)draw_list;
+    (void)fonts;
+    (void)root_context;
+    (void)options;
+}
+#endif
 
 void EcsUiRaylibReleaseDrawListRenderer(void)
 {
