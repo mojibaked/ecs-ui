@@ -211,6 +211,57 @@ static int BuildDiffTree(
             .preferred_height = 13.25f,
         });
     EcsUiEnd(&builder);
+    ecs_entity_t clip = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "DiffClip",
+                .preferred_width = 54.5f,
+                .preferred_height = 28.5f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    ecs_entity_t clip_child = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffClipChild",
+            .preferred_width = 48.5f,
+            .preferred_height = 64.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    ecs_entity_t z = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffZOrder",
+            .preferred_width = 46.5f,
+            .preferred_height = 26.5f,
+        });
+    ecs_entity_t z_flow = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffZFlow",
+            .preferred_width = 22.5f,
+            .preferred_height = 14.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t z_float_a = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffZFloatA",
+            .preferred_width = 20.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t z_float_b = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "DiffZFloatB",
+            .preferred_width = 18.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
     EcsUiEnd(&builder);
     EcsUiBuilderEnd(&builder);
     result |= Require(EcsUiBuilderOk(&builder), "diff builder failed");
@@ -274,6 +325,42 @@ static int BuildDiffTree(
         .bevel_light = {240u, 245u, 250u, 230u},
         .bevel_dark = {20u, 25u, 30u, 210u},
     });
+    ecs_set(world, clip, EcsUiBoxStyle, {
+        .background = {88u, 98u, 108u, 220u},
+    });
+    ecs_set(world, clip_child, EcsUiBoxStyle, {
+        .background = {98u, 108u, 118u, 220u},
+    });
+    ecs_set(world, z, EcsUiBoxStyle, {
+        .background = {108u, 118u, 128u, 220u},
+    });
+    ecs_set(world, z_flow, EcsUiBoxStyle, {
+        .background = {118u, 128u, 138u, 220u},
+    });
+    ecs_set(world, z_float_a, EcsUiBoxStyle, {
+        .background = {128u, 138u, 148u, 220u},
+    });
+    ecs_set(world, z_float_b, EcsUiBoxStyle, {
+        .background = {138u, 148u, 158u, 220u},
+    });
+    ecs_set(world, z_float_a, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_START,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_START,
+        .child_y = ECS_UI_ALIGN_START,
+        .width = 20.5f,
+        .height = 12.5f,
+    });
+    ecs_set(world, z_float_b, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_END,
+        .width = 18.5f,
+        .height = 10.5f,
+    });
     return result;
 }
 
@@ -307,6 +394,23 @@ static const Clay_RenderCommand *FindCommand(
         }
     }
     return NULL;
+}
+
+static int32_t FindCommandIndex(
+    const Clay_RenderCommandArray *commands,
+    uint32_t id,
+    Clay_RenderCommandType type)
+{
+    if (commands == NULL || commands->internalArray == NULL || id == 0u) {
+        return -1;
+    }
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        const Clay_RenderCommand *command = &commands->internalArray[i];
+        if (command->id == id && command->commandType == type) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 static const Clay_RenderCommand *FindTextCommandByRun(
@@ -363,6 +467,115 @@ static int RequireBoundsEqual(
     result |= RequireNear(actual.y, expected.y, 0.001f, message);
     result |= RequireNear(actual.width, expected.width, 0.001f, message);
     result |= RequireNear(actual.height, expected.height, 0.001f, message);
+    return result;
+}
+
+static int CompareScissorSequence(
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter)
+{
+    int result = 0;
+    int32_t bridge_seen = 0;
+    int32_t adapter_seen = 0;
+    int32_t adapter_cursor = 0;
+    for (int32_t i = 0; bridge != NULL && i < bridge->length; i += 1) {
+        const Clay_RenderCommand *bridge_command = &bridge->internalArray[i];
+        if (bridge_command->commandType != CLAY_RENDER_COMMAND_TYPE_SCISSOR_START &&
+                bridge_command->commandType != CLAY_RENDER_COMMAND_TYPE_SCISSOR_END) {
+            continue;
+        }
+        bridge_seen += 1;
+        const Clay_RenderCommand *adapter_command = NULL;
+        while (adapter != NULL && adapter_cursor < adapter->length) {
+            const Clay_RenderCommand *candidate =
+                &adapter->internalArray[adapter_cursor];
+            adapter_cursor += 1;
+            if (candidate->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START ||
+                    candidate->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_END) {
+                adapter_command = candidate;
+                adapter_seen += 1;
+                break;
+            }
+        }
+        result |= Require(
+            adapter_command != NULL,
+            "adapter scissor command missing");
+        if (adapter_command == NULL) {
+            continue;
+        }
+        result |= Require(
+            adapter_command->commandType == bridge_command->commandType,
+            "scissor command type/order mismatch");
+        if (bridge_command->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START) {
+            result |= RequireBoundsEqual(
+                adapter_command->boundingBox,
+                bridge_command->boundingBox,
+                "scissor start bounds mismatch");
+        }
+    }
+    while (adapter != NULL && adapter_cursor < adapter->length) {
+        const Clay_RenderCommand *candidate =
+            &adapter->internalArray[adapter_cursor];
+        adapter_cursor += 1;
+        if (candidate->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_START ||
+                candidate->commandType == CLAY_RENDER_COMMAND_TYPE_SCISSOR_END) {
+            adapter_seen += 1;
+        }
+    }
+    result |= Require(
+        bridge_seen > 0,
+        "scissor sequence should be non-vacuous");
+    result |= Require(
+        adapter_seen == bridge_seen,
+        "scissor command count mismatch");
+    return result;
+}
+
+static int CompareCommandOrder(
+    const EcsUiTreeSnapshot *tree,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter,
+    const char *before_id,
+    const char *after_id,
+    const char *message)
+{
+    const EcsUiTreeNodeSnapshot *before = EcsUiTreeSnapshotFindNodeById(
+        tree,
+        before_id);
+    const EcsUiTreeNodeSnapshot *after = EcsUiTreeSnapshotFindNodeById(
+        tree,
+        after_id);
+    Clay_ElementId before_clay = {0};
+    Clay_ElementId after_clay = {0};
+    int result = 0;
+    result |= Require(
+        EcsUiPaintClayElementId(before, NULL, &before_clay),
+        "before command id missing");
+    result |= Require(
+        EcsUiPaintClayElementId(after, NULL, &after_clay),
+        "after command id missing");
+    const int32_t bridge_before = FindCommandIndex(
+        bridge,
+        before_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const int32_t bridge_after = FindCommandIndex(
+        bridge,
+        after_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const int32_t adapter_before = FindCommandIndex(
+        adapter,
+        before_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const int32_t adapter_after = FindCommandIndex(
+        adapter,
+        after_clay.id,
+        CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    result |= Require(bridge_before >= 0, "bridge before command missing");
+    result |= Require(bridge_after >= 0, "bridge after command missing");
+    result |= Require(adapter_before >= 0, "adapter before command missing");
+    result |= Require(adapter_after >= 0, "adapter after command missing");
+    result |= Require(bridge_before < bridge_after, message);
+    result |= Require(adapter_before < adapter_after, message);
     return result;
 }
 
@@ -879,6 +1092,21 @@ static int RunDiffCase(float scale)
             (int32_t)(sizeof(adapter_storage) / sizeof(adapter_storage[0])),
             &adapter),
         "paint clay adapter build failed");
+    result |= CompareScissorSequence(bridge, &adapter);
+    result |= CompareCommandOrder(
+        &tree,
+        bridge,
+        &adapter,
+        "DiffZFlow",
+        "DiffZFloatA",
+        "z-order flow should draw before first floater");
+    result |= CompareCommandOrder(
+        &tree,
+        bridge,
+        &adapter,
+        "DiffZFloatA",
+        "DiffZFloatB",
+        "z-order floaters should preserve z ordinal order");
 
     bool bridge_text_claimed[256] = {0};
     bool adapter_text_claimed[256] = {0};

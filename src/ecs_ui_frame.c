@@ -499,7 +499,8 @@ static void EcsUiFrameStoreNativeScrollReports(
 static bool EcsUiFramePaint(
     EcsUiFrameBackend *backend,
     EcsUiTreeSnapshot *tree,
-    const EcsUiTheme *theme)
+    const EcsUiTheme *theme,
+    int16_t base_z_index)
 {
     if (backend == NULL || tree == NULL || theme == NULL) {
         return false;
@@ -525,6 +526,7 @@ static bool EcsUiFramePaint(
             theme,
             backend->desc.measure_text,
             backend->desc.measure_user_data,
+            base_z_index,
             item_capacity)) {
         const EcsUiPaintList *scratch = &backend->paint_lists[scratch_index];
         const bool capacity_exceeded =
@@ -794,7 +796,11 @@ const EcsUiDrawList *EcsUiFrameRun(
             tree,
             backend->native_scroll_contents,
             native_content_count);
-        (void)EcsUiFramePaint(backend, tree, theme);
+        (void)EcsUiFramePaint(
+            backend,
+            tree,
+            theme,
+            options != NULL ? options->z_index : 0);
         (void)pointer_or_null;
         (void)frame_or_null;
         return &backend->draw_list;
@@ -827,7 +833,11 @@ const EcsUiDrawList *EcsUiFrameRun(
     (void)EcsUiClayEnrichSnapshotLayout(
         tree,
         options != NULL ? &clay_options : NULL);
-    (void)EcsUiFramePaint(backend, tree, theme);
+    (void)EcsUiFramePaint(
+        backend,
+        tree,
+        theme,
+        options != NULL ? options->z_index : 0);
 
     if (pointer_or_null != NULL) {
         Clay_SetPointerState(

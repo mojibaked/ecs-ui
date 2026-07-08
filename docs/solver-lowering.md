@@ -838,6 +838,151 @@ culling bridge emits fewer text lines than paint): the diff/adapter goldens
 already set `EcsUiFrameBackendSetCullingEnabled(false)`; keep it — paint never
 culls (a demoted clay quirk, on the adoption-time out-of-scope list).
 
+### Paint pass (stage 7.6 order + clip) — FINAL paint stage
+
+7.6 gives the paint list its real draw order (z-sorted) and clip scopes, and the
+adapter its scissor derivation, then the live A/B smoke gate closes the pass. THEN
+STOP: the backend flip stays behind the direction doc's pain-signal rule;
+retiring the bootstrap diff and clay itself are post-adoption. Because the raylib
+renderer draws the command array naively in order and ignores `Clay_RenderCommand
+.id`, the ADAPTER output must match the bridge in (order, scissor sequence,
+bounds, colors) to produce identical pixels; the paint LIST owns a clean native
+order that is semantically equivalent, not clay's command-buffer mechanics.
+
+#### Draw order (z-sorted roots, then depth-first)
+
+Clay builds a layout-element tree ROOT per floating element plus the base tree,
+bubble-sorts roots ASCENDING by z-index (STABLE for equal z), and emits each root
+fully in depth-first pre-order, stamping every command with `root->zIndex`
+(clay.h ~2657-2760). The bridge's z sources (all relative to
+`base = options.z_index`, via `EcsUiClayZIndex`):
+- base viewport wrapper and all non-floating content: z = base.
+- ZStack FLOATING children: z = base + n, n = 1,2,3… incrementing per floating
+  child in ZStack child order (clay.c ~1851/1942; includes point-anchored
+  floaters — same counter). The first non-placed ZStack child is NOT floating
+  (z = base).
+- bevel edge floaters: z = base + 20 (clay.c ~1678), uniformly (a floater's own
+  bevel still uses the GLOBAL base, so base+20).
+- visual-offset Visual wrappers: z = LITERAL 0 — the wrapper's `.floating` config
+  sets no `.zIndex` so it defaults to 0, NOT `EcsUiClayZIndex(0)`/base (clay.c
+  EcsUiClayEmitOffsetNode ~2012). It is its OWN floating root (attachTo PARENT), so
+  it draws as a CONTIGUOUS unit at z=0 — NOT interleaved into base flow. At base==0
+  it ties the base root at z=0 but the base root is created FIRST, so the visual
+  node's whole subtree draws AFTER all base content (it can appear above later base
+  siblings). At base>0 it sorts BELOW base content (0 < base). Paint replicates the
+  literal-0 (bridge is the frozen reference; native design may revisit post-
+  adoption). Its node rect is already offset-shifted (baked by both backends).
+
+BASE Z IS NEEDED: because visual wrappers use absolute 0 while base content uses
+`options.z_index`, paint CANNOT assume base==0 — thread `options.z_index` (the
+frame layout options, tests exercise 23/37) into the paint build as the base, the
+same way the measure callback is threaded. `EcsUiFramePaint` must reach the
+options. All other roots are `base + relative`; the visual wrapper is the one
+absolute-0 exception.
+
+PAINT MODEL (root-based — a naive global `(z, dfs_index)` sort is WRONG for nested
+equal-z roots: Clay emits each ROOT's ENTIRE subtree contiguously, equal-z roots
+ordered by CREATION order, so a nested root at the same z as its ancestor draws
+AFTER the ancestor's whole subtree, not interleaved at its dfs position — this
+bites the visual-wrapper-in-base case at base==0 and nested ZStack floaters both at
+base+1). Correct model: partition items into ROOTS (base tree; each ZStack
+floating child subtree; each visual-offset Visual-wrapper subtree; each bevel edge
+group), giving each root `(z, creation_index)` where creation_index = the order the
+root's floating element is ENCOUNTERED in the tree DFS (base root = 0, first).
+STABLE-sort ROOTS by `(z, creation_index)`, then concatenate each root's items in
+their within-root DFS pre-order. Equivalent single-key form: item key =
+`(root_z, root_creation_index, within_root_dfs_index)`, stable-sorted — this keeps
+each root's items contiguous (unlike a global dfs index). Implement by bucketing
+during the recursive DFS: on entering a floating context (ZStack floater base+n,
+visual wrapper 0, bevel group base+20) open a new root bucket with the next
+creation_index and its z; emit items into the current bucket; at the end sort
+buckets and flatten into the list `order`. BEHAVIOR CHANGE vs 7.4: bevels are no
+longer appended per-node in place — each node's bevel group is a base+20 root and
+sorts ABOVE all base content, so 7.4/earlier bevel-order goldens must be updated to
+the sorted positions.
+
+#### Clip scopes (scroll containers)
+
+A `has_scroll_view` stack is a clip. Clay emits (clay.h ~2853, ~3078):
+- `SCISSOR_START` with boundingBox = the clip element's OWN bbox, sorted BEFORE
+  the container's own rectangle (clip config bubbles first), so the container's
+  own bg/border and all descendants render inside it.
+- `SCISSOR_END` on the DFS unwind, AFTER the container's border command — i.e. the
+  scope's last command.
+Scroll offset (childOffset) is already baked into descendant rects by both
+backends (stage 6b), so paint clips already-shifted content to the UNSHIFTED
+container bbox; no offset math in paint. Nested scroll containers → nested
+scopes; the raylib renderer's scissor does NOT stack (BeginScissorMode replaces,
+EndScissorMode disables entirely), so paint/adapter simply reproduce Clay's exact
+START/END nesting sequence and pixels match. A FLOATING descendant inside a clip
+(e.g. a ZStack floater) is a SEPARATE root at its own z, emitted OUTSIDE the
+clip's SCISSOR_START/END (which live in the base root) — so it is NOT clipped;
+paint must not put floating-subtree items under the clip scope. INVARIANT this
+relies on: Clay re-emits a scissor around a floating root only when
+`root->clipElementId != 0`, gated on `floating.clipTo != CLAY_CLIP_TO_NONE`
+(clay.h ~2748, ~2136); ecs-ui NEVER sets `clipTo` (default NONE), so that path
+never fires. If a future ecs-ui feature sets `clipTo`, this rule changes. After the
+`(z, dfs)` sort a clip scope's non-floating items stay contiguous (same z as the
+container, dfs-contiguous; floating descendants sort away by their higher z).
+
+PAINT MODEL: paint emits explicit `ECS_UI_PAINT_ROLE_CLIP_SCOPE` marker items in
+the sorted stream — a START marker (`part` encodes start) carrying the resolved
+clip rect (= container bbox, logical) placed right before the container's box
+item, and an END marker (`part` encodes end) placed after the whole clipped
+subtree (matching Clay's post-border END position; border folded in the box is
+fine, see divergences). Each DRAWABLE item also records `item->clip = {scope id,
+resolved rect, enabled}` for the nearest enclosing scope (strata lesson: resolved
+clips, not just markers; also seeds any future retained design). Scope id = the
+scroll container entity (or an ordinal); nested scopes carry the innermost. The
+resolved rect for the item field is the innermost container bbox (no intersection
+— the renderer's non-stacking scissor matches that; if a future renderer stacks,
+the retained design intersects, out of scope here).
+
+#### Adapter (scissor derivation + z)
+
+The 7.6 adapter: converts each drawable item once (logical→physical) as before,
+now stamps `.zIndex` on every command from the item's z (needed only if a consumer
+re-sorts; the list is already ordered), and maps `CLIP_SCOPE` START/END markers to
+`CLAY_RENDER_COMMAND_TYPE_SCISSOR_START` (boundingBox = resolved clip rect,
+physical) / `SCISSOR_END`. The scissor command `.id` is DIFF-only (renderer
+ignores it); reproduce Clay's derivations only if the value-diff needs them to
+join — otherwise join scissors by type + bounds + order. NOTE Clay only stamps
+`root->zIndex` on RECTANGLE and root-clip SCISSOR_START commands; BORDER,
+per-element SCISSOR_START, and all SCISSOR_END carry `zIndex = 0` (clay.h ~2836/
+3026/3079). The renderer draws by emission order, not this field, so the value-
+diff must NOT compare the `.zIndex` field on commands (join/compare order, bounds,
+type, colors) — a naive zIndex-field comparison would spuriously mismatch. The optional viewport
+cull stays OFF for diffing (matches the bridge under culling-off) and MAY be on
+for live use; on-screen pixels are unaffected either way.
+
+#### Bootstrap diff (7.6) + live A/B gate
+
+The value-diff now INCLUDES scroll/clip trees (excluded by construction in
+7.3-7.5). Compare, in ORDER: scissor START/END sequence (bounds + nesting; join
+by type + bounds + ordinal since ids are renderer-ignored), z-ordering of
+overlapping content (the whole point of 7.6 — a wrong z surfaces as a
+mis-ordered command), and the existing per-item value comparisons under each
+scope. Then the LIVE A/B SMOKE GATE (plan verification step 3): drive texelotl
+screens through the clay-command ADAPTER vs the live bridge at scale 1 AND 2 under
+Xvfb (the menus-cleanup live-acceptance recipe: Xvfb :99, texelotl-eval,
+settle-with-ticks, pkill self-match trap — in texelotl project memory), capture
+both, and attribute EVERY pixel delta (SEMANTIC → fix paint; CLAY-ONLY → document).
+Zero unattributed deltas with scroll state ECS-owned end to end is the plan-level
+acceptance. Include a scroll/clip screen and a z-overlap (ZStack) screen.
+
+#### Known divergences (documented, not conformed to)
+
+- BORDER ORDER: paint folds the border into the box item (drawn with the box,
+  before children); Clay draws borders on unwind AFTER children (clay.h ~3018).
+  Accepted since 7.3. It only affects pixels where a child overlaps the parent's
+  border band; the A/B will surface any such case. If it does, split the border
+  into its own late item at the node's unwind position; otherwise keep folded.
+  It does NOT affect clip correctness (the border is inside the container bbox =
+  scissor rect either way).
+- Non-stacking raylib scissor: reproduced, not fixed (a renderer property, on the
+  adoption-time out-of-scope list). Nested clips deeper than the renderer supports
+  are a renderer concern, not a paint-artifact one.
+
 ### Stage 6 scope
 
 6a in scope: ZStack containers, floating wrappers with attach-point

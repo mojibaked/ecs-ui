@@ -365,7 +365,8 @@ static bool EcsUiPaintClayPushCustom(
     uint32_t id,
     EcsUiColorF color,
     float opacity,
-    const EcsUiTreeNodeSnapshot *node)
+    const EcsUiTreeNodeSnapshot *node,
+    int16_t z_index)
 {
     return EcsUiPaintClayPush(
         out,
@@ -378,7 +379,7 @@ static bool EcsUiPaintClayPushCustom(
                 },
             },
             .id = id,
-            .zIndex = 0,
+            .zIndex = z_index,
             .commandType = CLAY_RENDER_COMMAND_TYPE_CUSTOM,
         });
 }
@@ -408,7 +409,7 @@ static bool EcsUiPaintClayPushText(
                 },
             },
             .id = id,
-            .zIndex = 0,
+            .zIndex = item->z_index,
             .commandType = CLAY_RENDER_COMMAND_TYPE_TEXT,
         });
 }
@@ -441,6 +442,25 @@ bool EcsUiPaintClayAdapterBuild(
             EcsUiPaintClayFindNode(tree, item->key.source);
         Clay_ElementId element_id = {0};
         (void)EcsUiPaintClayElementId(node, NULL, &element_id);
+
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_CLIP_SCOPE &&
+                item->key.role == ECS_UI_PAINT_ROLE_CLIP_SCOPE) {
+            if (!EcsUiPaintClayPush(
+                    out,
+                    (Clay_RenderCommand){
+                        .boundingBox =
+                            EcsUiPaintClayBounds(item->rect, options, scale),
+                        .id = element_id.id,
+                        .zIndex = item->z_index,
+                        .commandType =
+                            item->key.part == ECS_UI_PAINT_CLIP_SCOPE_START ?
+                                CLAY_RENDER_COMMAND_TYPE_SCISSOR_START :
+                                CLAY_RENDER_COMMAND_TYPE_SCISSOR_END,
+                    })) {
+                return false;
+            }
+            continue;
+        }
 
         if (item->primitive == ECS_UI_PAINT_PRIMITIVE_TEXT_RUN &&
                 item->key.role == ECS_UI_PAINT_ROLE_TEXT_RUN) {
@@ -477,7 +497,7 @@ bool EcsUiPaintClayAdapterBuild(
                     item->payload.box.fill,
                     item->opacity,
                     (Clay_CornerRadius){0},
-                    0)) {
+                    item->z_index)) {
                 return false;
             }
             continue;
@@ -501,7 +521,7 @@ bool EcsUiPaintClayAdapterBuild(
                         item->payload.box.fill,
                         item->opacity,
                         radius,
-                        0)) {
+                        item->z_index)) {
                 return false;
             }
 
@@ -529,7 +549,7 @@ bool EcsUiPaintClayAdapterBuild(
                             },
                         },
                         .id = border_id.id,
-                        .zIndex = 0,
+                        .zIndex = item->z_index,
                         .commandType = CLAY_RENDER_COMMAND_TYPE_BORDER,
                     })) {
                 return false;
@@ -553,7 +573,7 @@ bool EcsUiPaintClayAdapterBuild(
                     item->payload.bevel_edge.color,
                     item->opacity,
                     (Clay_CornerRadius){0},
-                    20)) {
+                    item->z_index)) {
                 return false;
             }
             continue;
@@ -571,7 +591,8 @@ bool EcsUiPaintClayAdapterBuild(
                     element_id.id,
                     item->payload.custom.color,
                     item->opacity,
-                    node)) {
+                    node,
+                    item->z_index)) {
                 return false;
             }
         }

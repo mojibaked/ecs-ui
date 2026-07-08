@@ -3,6 +3,7 @@
 #include "../src/ecs_ui_frame_internal.h"
 #include "../src/ecs_ui_paint_internal.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -561,6 +562,280 @@ static int BuildPlacedTextPaintTree(
     return result;
 }
 
+static void SetPaintBox(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    EcsUiColor color)
+{
+    ecs_set(world, entity, EcsUiBoxStyle, {
+        .background = color,
+    });
+}
+
+static int BuildOrderPaintTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set order scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t before = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderBefore",
+            .preferred_width = 18.5f,
+            .preferred_height = 14.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t offset = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderOffset",
+            .preferred_width = 18.5f,
+            .preferred_height = 14.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t after = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderAfter",
+            .preferred_width = 18.5f,
+            .preferred_height = 14.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t zstack = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderZ",
+            .preferred_width = 42.5f,
+            .preferred_height = 26.5f,
+        });
+    ecs_entity_t z_flow = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderZFlow",
+            .preferred_width = 16.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t z_float_a = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderZFloatA",
+            .preferred_width = 24.5f,
+            .preferred_height = 18.5f,
+        });
+    ecs_entity_t nested_z = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderNestedZ",
+            .preferred_width = 20.5f,
+            .preferred_height = 14.5f,
+        });
+    ecs_entity_t nested_flow = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderNestedFlow",
+            .preferred_width = 10.5f,
+            .preferred_height = 8.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t nested_float = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderNestedFloat",
+            .preferred_width = 10.5f,
+            .preferred_height = 8.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    ecs_entity_t outer_later = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderOuterLater",
+            .preferred_width = 11.5f,
+            .preferred_height = 9.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    ecs_entity_t z_float_b = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderZFloatB",
+            .preferred_width = 14.5f,
+            .preferred_height = 10.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    ecs_entity_t bevel = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderBevel",
+            .preferred_width = 20.5f,
+            .preferred_height = 16.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t later_base = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintOrderLaterBase",
+            .preferred_width = 19.5f,
+            .preferred_height = 15.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "order paint builder failed");
+
+    SetPaintBox(world, before, (EcsUiColor){20u, 30u, 40u, 255u});
+    SetPaintBox(world, offset, (EcsUiColor){30u, 40u, 50u, 255u});
+    SetPaintBox(world, after, (EcsUiColor){40u, 50u, 60u, 255u});
+    SetPaintBox(world, zstack, (EcsUiColor){50u, 60u, 70u, 255u});
+    SetPaintBox(world, z_flow, (EcsUiColor){60u, 70u, 80u, 255u});
+    SetPaintBox(world, z_float_a, (EcsUiColor){70u, 80u, 90u, 255u});
+    SetPaintBox(world, nested_z, (EcsUiColor){80u, 90u, 100u, 255u});
+    SetPaintBox(world, nested_flow, (EcsUiColor){90u, 100u, 110u, 255u});
+    SetPaintBox(world, nested_float, (EcsUiColor){100u, 110u, 120u, 255u});
+    SetPaintBox(world, outer_later, (EcsUiColor){105u, 115u, 125u, 255u});
+    SetPaintBox(world, z_float_b, (EcsUiColor){110u, 120u, 130u, 255u});
+    ecs_set(world, bevel, EcsUiBoxStyle, {
+        .background = {120u, 130u, 140u, 255u},
+        .bevel = ECS_UI_BEVEL_RAISED,
+        .bevel_light = {240u, 245u, 250u, 230u},
+        .bevel_dark = {20u, 25u, 30u, 210u},
+    });
+    SetPaintBox(world, later_base, (EcsUiColor){130u, 140u, 150u, 255u});
+    ecs_set(world, offset, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 3.5f,
+        .offset_y = 1.5f,
+    });
+    ecs_set(world, z_float_a, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_START,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_START,
+        .child_y = ECS_UI_ALIGN_START,
+        .width = 24.5f,
+        .height = 18.5f,
+    });
+    ecs_set(world, nested_float, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_START,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_START,
+        .child_y = ECS_UI_ALIGN_START,
+        .width = 10.5f,
+        .height = 8.5f,
+    });
+    ecs_set(world, z_float_b, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_END,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_END,
+        .width = 14.5f,
+        .height = 10.5f,
+    });
+    return result;
+}
+
+static int BuildClipPaintTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set clip scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t outer = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "PaintClipOuter",
+                .preferred_width = 82.5f,
+                .preferred_height = 44.5f,
+                .padding = 2.5f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    ecs_entity_t child = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintClipChild",
+            .preferred_width = 70.5f,
+            .preferred_height = 64.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t inner = EcsUiBeginVScrollView(
+        &builder,
+        (EcsUiScrollViewDesc){
+            .stack = {
+                .id = "PaintClipInner",
+                .preferred_width = 52.5f,
+                .preferred_height = 24.5f,
+                .padding = 1.5f,
+            },
+            .axes = ECS_UI_SCROLL_AXIS_Y,
+        });
+    ecs_entity_t inner_child = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintClipInnerChild",
+            .preferred_width = 44.5f,
+            .preferred_height = 38.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    ecs_entity_t zstack = EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintClipZ",
+            .preferred_width = 56.5f,
+            .preferred_height = 28.5f,
+        });
+    ecs_entity_t z_flow = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintClipZFlow",
+            .preferred_width = 32.5f,
+            .preferred_height = 20.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t z_float = EcsUiBeginVStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintClipZFloat",
+            .preferred_width = 20.5f,
+            .preferred_height = 12.5f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "clip paint builder failed");
+
+    SetPaintBox(world, outer, (EcsUiColor){30u, 40u, 50u, 255u});
+    SetPaintBox(world, child, (EcsUiColor){40u, 50u, 60u, 255u});
+    SetPaintBox(world, inner, (EcsUiColor){50u, 60u, 70u, 255u});
+    SetPaintBox(world, inner_child, (EcsUiColor){60u, 70u, 80u, 255u});
+    SetPaintBox(world, zstack, (EcsUiColor){70u, 80u, 90u, 255u});
+    SetPaintBox(world, z_flow, (EcsUiColor){80u, 90u, 100u, 255u});
+    SetPaintBox(world, z_float, (EcsUiColor){90u, 100u, 110u, 255u});
+    ecs_set(world, z_float, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_END,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_END,
+        .child_y = ECS_UI_ALIGN_START,
+        .width = 20.5f,
+        .height = 12.5f,
+    });
+    return result;
+}
+
 static int RequirePaintItemCommon(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
@@ -972,6 +1247,154 @@ static int RequireNoPaintSource(
     return result;
 }
 
+static uint32_t FindPaintItemIndex(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    const char *node_id,
+    uint16_t role,
+    uint16_t part)
+{
+    const EcsUiTreeNodeSnapshot *node = FindNode(tree, node_id);
+    if (paint == NULL || node == NULL) {
+        return UINT32_MAX;
+    }
+    for (uint32_t i = 0u; i < paint->count; i += 1u) {
+        const EcsUiPaintItem *item = &paint->items[i];
+        if (item->key.source == node->entity &&
+                item->key.role == role &&
+                item->key.part == part) {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
+static int RequirePaintIndexFound(uint32_t index, const char *message)
+{
+    return Require(index != UINT32_MAX, message);
+}
+
+static int RequirePaintIndexBefore(
+    uint32_t before,
+    uint32_t after,
+    const char *message)
+{
+    return Require(
+        before != UINT32_MAX && after != UINT32_MAX && before < after,
+        message);
+}
+
+static int16_t TestClampZ(int16_t base, int relative)
+{
+    const int value = (int)base + relative;
+    if (value > INT16_MAX) {
+        return INT16_MAX;
+    }
+    if (value < INT16_MIN) {
+        return INT16_MIN;
+    }
+    return (int16_t)value;
+}
+
+static int RequirePaintItemZ(
+    const EcsUiPaintList *paint,
+    uint32_t index,
+    int16_t expected_z,
+    const char *message)
+{
+    if (paint == NULL || index >= paint->count) {
+        return Require(false, message);
+    }
+    return Require(paint->items[index].z_index == expected_z, message);
+}
+
+static int RequirePaintItemClip(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *scope_id,
+    bool enabled,
+    const char *message)
+{
+    if (paint == NULL || tree == NULL || index >= paint->count) {
+        return Require(false, message);
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
+    if (!enabled) {
+        return Require(!item->clip.enabled, message);
+    }
+    const EcsUiTreeNodeSnapshot *scope = FindNode(tree, scope_id);
+    int result = Require(scope != NULL, "paint clip scope node missing");
+    if (scope == NULL) {
+        return result;
+    }
+    result |= Require(item->clip.enabled, message);
+    result |= Require(
+        item->clip.scope == (uint32_t)scope->entity,
+        "paint clip scope id mismatch");
+    result |= RequireNear(
+        item->clip.rect.x,
+        scope->layout_x,
+        0.001f,
+        "paint clip x mismatch");
+    result |= RequireNear(
+        item->clip.rect.y,
+        scope->layout_y,
+        0.001f,
+        "paint clip y mismatch");
+    result |= RequireNear(
+        item->clip.rect.width,
+        scope->layout_width,
+        0.001f,
+        "paint clip width mismatch");
+    result |= RequireNear(
+        item->clip.rect.height,
+        scope->layout_height,
+        0.001f,
+        "paint clip height mismatch");
+    return result;
+}
+
+static int RequirePaintClipScopeItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    uint16_t part,
+    int16_t expected_z)
+{
+    const EcsUiTreeNodeSnapshot *node = FindNode(tree, node_id);
+    int result = Require(node != NULL, "clip scope node missing");
+    if (paint == NULL || node == NULL || index >= paint->count) {
+        return result | Require(false, "clip scope item missing");
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
+    result |= Require(
+        item->key.source == node->entity,
+        "clip scope source mismatch");
+    result |= Require(
+        item->key.role == ECS_UI_PAINT_ROLE_CLIP_SCOPE,
+        "clip scope role mismatch");
+    result |= Require(item->key.part == part, "clip scope part mismatch");
+    result |= Require(
+        item->primitive == ECS_UI_PAINT_PRIMITIVE_CLIP_SCOPE,
+        "clip scope primitive mismatch");
+    result |= Require(item->z_index == expected_z, "clip scope z mismatch");
+    result |= RequireNear(item->rect.x, node->layout_x, 0.001f, "clip scope x mismatch");
+    result |= RequireNear(item->rect.y, node->layout_y, 0.001f, "clip scope y mismatch");
+    result |= RequireNear(
+        item->rect.width,
+        node->layout_width,
+        0.001f,
+        "clip scope width mismatch");
+    result |= RequireNear(
+        item->rect.height,
+        node->layout_height,
+        0.001f,
+        "clip scope height mismatch");
+    return result;
+}
+
 static int RequirePaintList(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
@@ -1278,6 +1701,466 @@ static int RunPaintCase(
     result |= Require(
         errors == NULL || errors->count == start_error_count,
         "paint case emitted unexpected frame errors");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
+static int RunOrderPaintCase(
+    EcsUiFrameInternalBackend backend,
+    float scale,
+    int16_t base_z,
+    TestFrameErrors *errors)
+{
+    int result = 0;
+    const uint32_t start_error_count = errors != NULL ? errors->count : 0u;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create order paint world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PaintOrderRoot");
+    result |= Require(root != 0, "order paint root missing");
+    result |= BuildOrderPaintTree(world, root, scale);
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "order tree read failed");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 320.0f * scale,
+            .height = 220.0f * scale,
+        },
+        .z_index = base_z,
+    };
+    EcsUiFrameBackendSetSurfaceSize(
+        options.physical_bounds.width,
+        options.physical_bounds.height);
+    EcsUiFrameInternalSelectBackend(backend);
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
+        "order paint frame run failed");
+    const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+    result |= Require(paint != NULL, "order paint list missing");
+
+    const uint32_t root_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderRoot",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t before_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderBefore",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t offset_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderOffset",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t after_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderAfter",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t z_flow_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderZFlow",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t z_float_a_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderZFloatA",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t nested_flow_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderNestedFlow",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t nested_float_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderNestedFloat",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t outer_later_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderOuterLater",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t z_float_b_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderZFloatB",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t bevel_box_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderBevel",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t bevel_top_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderBevel",
+        ECS_UI_PAINT_ROLE_BEVEL_EDGE,
+        ECS_UI_PAINT_BEVEL_EDGE_TOP);
+    const uint32_t later_base_i = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintOrderLaterBase",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+
+    result |= RequirePaintIndexFound(root_i, "order root item missing");
+    result |= RequirePaintIndexFound(before_i, "order before item missing");
+    result |= RequirePaintIndexFound(offset_i, "order offset item missing");
+    result |= RequirePaintIndexFound(after_i, "order after item missing");
+    result |= RequirePaintIndexFound(z_flow_i, "order z flow item missing");
+    result |= RequirePaintIndexFound(z_float_a_i, "order z float A item missing");
+    result |= RequirePaintIndexFound(nested_flow_i, "order nested flow item missing");
+    result |= RequirePaintIndexFound(nested_float_i, "order nested float item missing");
+    result |= RequirePaintIndexFound(outer_later_i, "order outer later item missing");
+    result |= RequirePaintIndexFound(z_float_b_i, "order z float B item missing");
+    result |= RequirePaintIndexFound(bevel_box_i, "order bevel box item missing");
+    result |= RequirePaintIndexFound(bevel_top_i, "order bevel item missing");
+    result |= RequirePaintIndexFound(later_base_i, "order later base item missing");
+
+    if (base_z == 0) {
+        result |= RequirePaintIndexBefore(
+            before_i,
+            offset_i,
+            "base z=0 visual root should draw after base subtree");
+        result |= RequirePaintIndexBefore(
+            after_i,
+            offset_i,
+            "base z=0 visual root should not interleave at dfs position");
+    } else {
+        result |= RequirePaintIndexBefore(
+            offset_i,
+            root_i,
+            "base z>0 visual root should sort below base root");
+        result |= RequirePaintIndexBefore(
+            offset_i,
+            before_i,
+            "base z>0 visual root should sort below base content");
+    }
+    result |= RequirePaintIndexBefore(
+        z_flow_i,
+        z_float_a_i,
+        "zstack floater should draw above flow child");
+    result |= RequirePaintIndexBefore(
+        z_float_a_i,
+        nested_flow_i,
+        "outer floating root should stay contiguous before nested flow");
+    result |= RequirePaintIndexBefore(
+        nested_flow_i,
+        outer_later_i,
+        "outer floating root should include later sibling before nested floater");
+    result |= RequirePaintIndexBefore(
+        outer_later_i,
+        nested_float_i,
+        "nested equal-z floating root should draw after outer root subtree");
+    result |= RequirePaintIndexBefore(
+        nested_float_i,
+        z_float_b_i,
+        "base+1 nested floater should draw before base+2 sibling");
+    result |= RequirePaintIndexBefore(
+        bevel_box_i,
+        later_base_i,
+        "later base sibling should draw after beveled box fill");
+    result |= RequirePaintIndexBefore(
+        later_base_i,
+        bevel_top_i,
+        "bevel root should sort after later base sibling");
+    result |= RequirePaintIndexBefore(
+        z_float_b_i,
+        bevel_top_i,
+        "bevel root should sort above zstack floaters");
+
+    result |= RequirePaintItemZ(
+        paint,
+        root_i,
+        TestClampZ(base_z, 0),
+        "root z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        z_flow_i,
+        TestClampZ(base_z, 0),
+        "z flow z mismatch");
+    result |= RequirePaintItemZ(paint, offset_i, 0, "visual offset z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        z_float_a_i,
+        TestClampZ(base_z, 1),
+        "z float A z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        nested_flow_i,
+        TestClampZ(base_z, 1),
+        "nested flow should stay in outer floating root");
+    result |= RequirePaintItemZ(
+        paint,
+        outer_later_i,
+        TestClampZ(base_z, 1),
+        "outer later should stay in outer floating root");
+    result |= RequirePaintItemZ(
+        paint,
+        nested_float_i,
+        TestClampZ(base_z, 1),
+        "nested floater z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        z_float_b_i,
+        TestClampZ(base_z, 2),
+        "z float B z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        bevel_box_i,
+        TestClampZ(base_z, 0),
+        "bevel box z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        later_base_i,
+        TestClampZ(base_z, 0),
+        "later base z mismatch");
+    result |= RequirePaintItemZ(
+        paint,
+        bevel_top_i,
+        TestClampZ(base_z, 20),
+        "bevel z mismatch");
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        z_float_a_i,
+        NULL,
+        false,
+        "order floater should not be clipped");
+    result |= Require(
+        errors == NULL || errors->count == start_error_count,
+        "order paint emitted unexpected frame errors");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
+static int RunClipPaintCase(
+    EcsUiFrameInternalBackend backend,
+    float scale,
+    TestFrameErrors *errors)
+{
+    int result = 0;
+    const uint32_t start_error_count = errors != NULL ? errors->count : 0u;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create clip paint world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PaintClipRoot");
+    result |= Require(root != 0, "clip paint root missing");
+    result |= BuildClipPaintTree(world, root, scale);
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "clip tree read failed");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 220.0f * scale,
+            .height = 160.0f * scale,
+        },
+        .z_index = 23,
+    };
+    EcsUiFrameBackendSetSurfaceSize(
+        options.physical_bounds.width,
+        options.physical_bounds.height);
+    EcsUiFrameInternalSelectBackend(backend);
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
+        "clip paint frame run failed");
+    const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+    result |= Require(paint != NULL, "clip paint list missing");
+
+    const uint32_t outer_start = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipOuter",
+        ECS_UI_PAINT_ROLE_CLIP_SCOPE,
+        ECS_UI_PAINT_CLIP_SCOPE_START);
+    const uint32_t outer_end = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipOuter",
+        ECS_UI_PAINT_ROLE_CLIP_SCOPE,
+        ECS_UI_PAINT_CLIP_SCOPE_END);
+    const uint32_t outer_box = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipOuter",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t child_box = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipChild",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t inner_start = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipInner",
+        ECS_UI_PAINT_ROLE_CLIP_SCOPE,
+        ECS_UI_PAINT_CLIP_SCOPE_START);
+    const uint32_t inner_end = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipInner",
+        ECS_UI_PAINT_ROLE_CLIP_SCOPE,
+        ECS_UI_PAINT_CLIP_SCOPE_END);
+    const uint32_t inner_box = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipInner",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t inner_child = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipInnerChild",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t z_flow = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipZFlow",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+    const uint32_t z_float = FindPaintItemIndex(
+        paint,
+        &tree,
+        "PaintClipZFloat",
+        ECS_UI_PAINT_ROLE_BOX,
+        0u);
+
+    result |= RequirePaintClipScopeItem(
+        paint,
+        &tree,
+        outer_start,
+        "PaintClipOuter",
+        ECS_UI_PAINT_CLIP_SCOPE_START,
+        23);
+    result |= RequirePaintClipScopeItem(
+        paint,
+        &tree,
+        outer_end,
+        "PaintClipOuter",
+        ECS_UI_PAINT_CLIP_SCOPE_END,
+        23);
+    result |= RequirePaintClipScopeItem(
+        paint,
+        &tree,
+        inner_start,
+        "PaintClipInner",
+        ECS_UI_PAINT_CLIP_SCOPE_START,
+        23);
+    result |= RequirePaintClipScopeItem(
+        paint,
+        &tree,
+        inner_end,
+        "PaintClipInner",
+        ECS_UI_PAINT_CLIP_SCOPE_END,
+        23);
+
+    result |= RequirePaintIndexBefore(
+        outer_start,
+        outer_box,
+        "outer clip start should precede outer box");
+    result |= RequirePaintIndexBefore(
+        outer_box,
+        child_box,
+        "outer box should precede clipped child");
+    result |= RequirePaintIndexBefore(
+        inner_start,
+        inner_box,
+        "inner clip start should precede inner box");
+    result |= RequirePaintIndexBefore(
+        inner_child,
+        inner_end,
+        "inner clip end should follow inner subtree");
+    result |= RequirePaintIndexBefore(
+        z_flow,
+        outer_end,
+        "outer clip end should follow non-floating zstack flow");
+    result |= RequirePaintIndexBefore(
+        outer_end,
+        z_float,
+        "floating descendant should sort outside clip scope");
+
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        outer_box,
+        "PaintClipOuter",
+        true,
+        "outer box should carry outer clip");
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        child_box,
+        "PaintClipOuter",
+        true,
+        "outer child should carry outer clip");
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        inner_box,
+        "PaintClipInner",
+        true,
+        "inner box should carry inner clip");
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        inner_child,
+        "PaintClipInner",
+        true,
+        "inner child should carry inner clip");
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        z_flow,
+        "PaintClipOuter",
+        true,
+        "zstack flow child should carry outer clip");
+    result |= RequirePaintItemClip(
+        paint,
+        &tree,
+        z_float,
+        NULL,
+        false,
+        "zstack floating child should not carry outer clip");
+    result |= RequirePaintItemZ(
+        paint,
+        z_float,
+        24,
+        "zstack floating child under clip should sort at base+1");
+    result |= Require(
+        errors == NULL || errors->count == start_error_count,
+        "clip paint emitted unexpected frame errors");
 
     EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     ecs_fini(world);
@@ -1807,7 +2690,7 @@ static int TestSourceTruncationPropagates(void)
     EcsUiTheme theme = EcsUiThemeDefault();
     int result = 0;
     result |= Require(
-        EcsUiPaintListBuild(&paint, &tree, &theme, TestMeasureText, NULL),
+        EcsUiPaintListBuild(&paint, &tree, &theme, TestMeasureText, NULL, 0),
         "source-truncated paint build should fit paint capacity");
     result |= Require(
         paint.truncated,
@@ -1845,7 +2728,7 @@ static int TestOpacityCullDirect(void)
     EcsUiTheme theme = EcsUiThemeDefault();
     int result = 0;
     result |= Require(
-        EcsUiPaintListBuild(&paint, &tree, &theme, TestMeasureText, NULL),
+        EcsUiPaintListBuild(&paint, &tree, &theme, TestMeasureText, NULL, 0),
         "direct opacity-cull paint build should fit paint capacity");
     result |= Require(
         paint.count == 0u,
@@ -1986,6 +2869,7 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
             &theme,
             TestMeasureText,
             NULL,
+            0,
             2u),
         "direct paint build should fail a tiny item capacity");
     result |= Require(
@@ -2118,6 +3002,62 @@ int main(void)
     result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY, 2.0f, &errors);
     result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 1.0f, &errors);
     result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 2.0f, &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        0,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        2.0f,
+        37,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        32760,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        32767,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        0,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        2.0f,
+        37,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        32760,
+        &errors);
+    result |= RunOrderPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        32767,
+        &errors);
+    result |= RunClipPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        &errors);
+    result |= RunClipPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        2.0f,
+        &errors);
+    result |= RunClipPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        &errors);
+    result |= RunClipPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        2.0f,
+        &errors);
     result |= RunTextFieldPaintCase(
         ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
         1.0f,

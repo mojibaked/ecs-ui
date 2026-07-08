@@ -9,6 +9,7 @@ bool EcsUiPaintListBuildWithCapacity(
     const EcsUiTheme *theme,
     EcsUiMeasureTextFn measure_text,
     void *measure_user_data,
+    int16_t base_z_index,
     uint32_t item_capacity);
 
 #endif

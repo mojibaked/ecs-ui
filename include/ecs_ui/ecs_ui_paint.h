@@ -43,6 +43,7 @@ typedef enum EcsUiPaintPrimitive {
     ECS_UI_PAINT_PRIMITIVE_BOX = 1,
     ECS_UI_PAINT_PRIMITIVE_CUSTOM = 2,
     ECS_UI_PAINT_PRIMITIVE_TEXT_RUN = 3,
+    ECS_UI_PAINT_PRIMITIVE_CLIP_SCOPE = 4,
 } EcsUiPaintPrimitive;
 
 typedef enum EcsUiPaintBevelEdgePart {
@@ -51,6 +52,11 @@ typedef enum EcsUiPaintBevelEdgePart {
     ECS_UI_PAINT_BEVEL_EDGE_BOTTOM = 2,
     ECS_UI_PAINT_BEVEL_EDGE_RIGHT = 3,
 } EcsUiPaintBevelEdgePart;
+
+typedef enum EcsUiPaintClipScopePart {
+    ECS_UI_PAINT_CLIP_SCOPE_START = 0,
+    ECS_UI_PAINT_CLIP_SCOPE_END = 1,
+} EcsUiPaintClipScopePart;
 
 typedef struct EcsUiPaintKey {
     ecs_entity_t source;
@@ -114,10 +120,11 @@ typedef struct EcsUiPaintTextRun {
 typedef struct EcsUiPaintItem {
     EcsUiPaintKey key;
     uint16_t primitive;
-    uint16_t reserved;
+    int16_t z_index;
     EcsUiPaintRect rect;
     EcsUiPaintClip clip;
     float opacity;
+    uint32_t root_order;
     uint32_t order;
     union {
         EcsUiPaintBox box;
@@ -149,7 +156,8 @@ bool EcsUiPaintListBuild(
     EcsUiTreeSnapshot *tree,
     const EcsUiTheme *theme,
     EcsUiMeasureTextFn measure_text,
-    void *measure_user_data);
+    void *measure_user_data,
+    int16_t base_z_index);
 
 extern ECS_COMPONENT_DECLARE(EcsUiFrameArtifacts);
 

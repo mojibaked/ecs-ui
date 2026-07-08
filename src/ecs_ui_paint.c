@@ -2,6 +2,10 @@
 #include "ecs_ui_paint_internal.h"
 #include "ecs_ui_style.h"
 
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
 void EcsUiPaintListReset(
     EcsUiPaintList *list,
     ecs_entity_t tree,
@@ -35,11 +39,36 @@ typedef struct EcsUiPaintBuildContext {
     EcsUiMeasureTextFn measure_text;
     void *measure_user_data;
     uint32_t item_capacity;
+    int16_t base_z_index;
+    int16_t root_z_index;
+    uint32_t root_order;
+    uint32_t root_next_order;
+    uint32_t root_item_order;
+    EcsUiPaintClip active_clip;
 } EcsUiPaintBuildContext;
+
+typedef struct EcsUiPaintRootState {
+    int16_t root_z_index;
+    uint32_t root_order;
+    uint32_t root_item_order;
+    EcsUiPaintClip active_clip;
+} EcsUiPaintRootState;
 
 static float EcsUiPaintScale(const EcsUiTreeSnapshot *tree)
 {
     return tree != NULL && tree->scale > 0.0f ? tree->scale : 1.0f;
+}
+
+static int16_t EcsUiPaintZIndex(int16_t base, int relative)
+{
+    const int value = (int)base + relative;
+    if (value > INT16_MAX) {
+        return INT16_MAX;
+    }
+    if (value < INT16_MIN) {
+        return INT16_MIN;
+    }
+    return (int16_t)value;
 }
 
 static uint16_t EcsUiPaintU16(float value)
@@ -100,6 +129,13 @@ static EcsUiPaintTextContext EcsUiPaintNodeTextContext(
 static uint32_t EcsUiPaintClampTextIndex(uint32_t index, size_t length)
 {
     return index <= length ? index : (uint32_t)length;
+}
+
+static bool EcsUiPaintHasVisualOffset(const EcsUiTreeNodeSnapshot *node)
+{
+    return node != NULL && node->kind != ECS_UI_NODE_ROOT &&
+        (node->visual.offset_x < -0.01f || node->visual.offset_x > 0.01f ||
+            node->visual.offset_y < -0.01f || node->visual.offset_y > 0.01f);
 }
 
 static const EcsUiTreeNodeSnapshot *EcsUiPaintFindDirectTextChild(
@@ -217,38 +253,80 @@ static EcsUiPaintRect EcsUiPaintNodeRect(const EcsUiTreeNodeSnapshot *node)
         (EcsUiPaintRect){0};
 }
 
-static EcsUiPaintItem *EcsUiPaintReserve(
-    EcsUiPaintList *list,
-    uint32_t item_capacity)
+static EcsUiPaintRootState EcsUiPaintSaveRoot(
+    const EcsUiPaintBuildContext *ctx)
 {
-    if (list == NULL) {
+    return (EcsUiPaintRootState){
+        .root_z_index = ctx != NULL ? ctx->root_z_index : 0,
+        .root_order = ctx != NULL ? ctx->root_order : 0u,
+        .root_item_order = ctx != NULL ? ctx->root_item_order : 0u,
+        .active_clip = ctx != NULL ? ctx->active_clip : (EcsUiPaintClip){0},
+    };
+}
+
+static void EcsUiPaintRestoreRoot(
+    EcsUiPaintBuildContext *ctx,
+    EcsUiPaintRootState state)
+{
+    if (ctx == NULL) {
+        return;
+    }
+    ctx->root_z_index = state.root_z_index;
+    ctx->root_order = state.root_order;
+    ctx->root_item_order = state.root_item_order;
+    ctx->active_clip = state.active_clip;
+}
+
+static void EcsUiPaintBeginRoot(
+    EcsUiPaintBuildContext *ctx,
+    int16_t z_index,
+    EcsUiPaintClip active_clip)
+{
+    if (ctx == NULL) {
+        return;
+    }
+    ctx->root_z_index = z_index;
+    ctx->root_order = ctx->root_next_order;
+    ctx->root_next_order += 1u;
+    ctx->root_item_order = 0u;
+    ctx->active_clip = active_clip;
+}
+
+static EcsUiPaintItem *EcsUiPaintReserve(EcsUiPaintBuildContext *ctx)
+{
+    if (ctx == NULL || ctx->list == NULL) {
         return NULL;
     }
-    if (list->count >= item_capacity || list->count >= ECS_UI_PAINT_ITEM_MAX) {
-        list->truncated = true;
+    EcsUiPaintList *list = ctx->list;
+    if (list->count >= ctx->item_capacity ||
+            list->count >= ECS_UI_PAINT_ITEM_MAX) {
+        ctx->list->truncated = true;
         return NULL;
     }
 
     EcsUiPaintItem *item = &list->items[list->count];
     *item = (EcsUiPaintItem){0};
-    item->order = list->count;
+    item->z_index = ctx->root_z_index;
+    item->root_order = ctx->root_order;
+    item->order = ctx->root_item_order;
+    item->clip = ctx->active_clip;
+    ctx->root_item_order += 1u;
     list->count += 1u;
     return item;
 }
 
 static bool EcsUiPaintPushBox(
-    EcsUiPaintList *list,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *node,
     EcsUiColorF fill,
     EcsUiPaintCornerRadius radius,
     EcsUiPaintBorder border,
-    float opacity,
-    uint32_t item_capacity)
+    float opacity)
 {
-    if (list == NULL || node == NULL) {
+    if (ctx == NULL || ctx->list == NULL || node == NULL) {
         return false;
     }
-    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
     if (item == NULL) {
         return false;
     }
@@ -257,7 +335,7 @@ static bool EcsUiPaintPushBox(
         .source = node->entity,
         .role = ECS_UI_PAINT_ROLE_BOX,
         .part = 0u,
-        .generation = list->generation,
+        .generation = ctx->list->generation,
     };
     item->primitive = ECS_UI_PAINT_PRIMITIVE_BOX;
     item->rect = EcsUiPaintNodeRect(node);
@@ -271,19 +349,18 @@ static bool EcsUiPaintPushBox(
 }
 
 static bool EcsUiPaintPushRoleBox(
-    EcsUiPaintList *list,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *node,
     uint16_t role,
     uint16_t part,
     EcsUiPaintRect rect,
     EcsUiColorF fill,
-    float opacity,
-    uint32_t item_capacity)
+    float opacity)
 {
-    if (list == NULL || node == NULL) {
+    if (ctx == NULL || ctx->list == NULL || node == NULL) {
         return false;
     }
-    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
     if (item == NULL) {
         return false;
     }
@@ -292,7 +369,7 @@ static bool EcsUiPaintPushRoleBox(
         .source = node->entity,
         .role = role,
         .part = part,
-        .generation = list->generation,
+        .generation = ctx->list->generation,
     };
     item->primitive = ECS_UI_PAINT_PRIMITIVE_BOX;
     item->rect = rect;
@@ -304,7 +381,7 @@ static bool EcsUiPaintPushRoleBox(
 }
 
 static bool EcsUiPaintPushTextRun(
-    EcsUiPaintList *list,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *node,
     uint16_t part,
     EcsUiPaintRect rect,
@@ -313,13 +390,12 @@ static bool EcsUiPaintPushTextRun(
     uint32_t byte_end,
     uint16_t font_size,
     EcsUiColorF color,
-    float opacity,
-    uint32_t item_capacity)
+    float opacity)
 {
-    if (list == NULL || node == NULL) {
+    if (ctx == NULL || ctx->list == NULL || node == NULL) {
         return false;
     }
-    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
     if (item == NULL) {
         return false;
     }
@@ -328,7 +404,7 @@ static bool EcsUiPaintPushTextRun(
         .source = node->entity,
         .role = ECS_UI_PAINT_ROLE_TEXT_RUN,
         .part = part,
-        .generation = list->generation,
+        .generation = ctx->list->generation,
     };
     item->primitive = ECS_UI_PAINT_PRIMITIVE_TEXT_RUN;
     item->rect = rect;
@@ -344,17 +420,16 @@ static bool EcsUiPaintPushTextRun(
 }
 
 static bool EcsUiPaintPushCustom(
-    EcsUiPaintList *list,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *node,
     uint16_t role,
     EcsUiColorF color,
-    float opacity,
-    uint32_t item_capacity)
+    float opacity)
 {
-    if (list == NULL || node == NULL) {
+    if (ctx == NULL || ctx->list == NULL || node == NULL) {
         return false;
     }
-    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
     if (item == NULL) {
         return false;
     }
@@ -363,7 +438,7 @@ static bool EcsUiPaintPushCustom(
         .source = node->entity,
         .role = role,
         .part = 0u,
-        .generation = list->generation,
+        .generation = ctx->list->generation,
     };
     item->primitive = ECS_UI_PAINT_PRIMITIVE_CUSTOM;
     item->rect = EcsUiPaintNodeRect(node);
@@ -414,17 +489,16 @@ static EcsUiPaintRect EcsUiPaintBevelRect(
 }
 
 static bool EcsUiPaintPushBevelEdge(
-    EcsUiPaintList *list,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *node,
     uint16_t part,
     EcsUiColorF color,
-    float opacity,
-    uint32_t item_capacity)
+    float opacity)
 {
-    if (list == NULL || node == NULL) {
+    if (ctx == NULL || ctx->list == NULL || node == NULL) {
         return false;
     }
-    EcsUiPaintItem *item = EcsUiPaintReserve(list, item_capacity);
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
     if (item == NULL) {
         return false;
     }
@@ -433,13 +507,43 @@ static bool EcsUiPaintPushBevelEdge(
         .source = node->entity,
         .role = ECS_UI_PAINT_ROLE_BEVEL_EDGE,
         .part = part,
-        .generation = list->generation,
+        .generation = ctx->list->generation,
     };
     item->primitive = ECS_UI_PAINT_PRIMITIVE_BOX;
     item->rect = EcsUiPaintBevelRect(node, part);
     item->opacity = opacity;
     item->payload.bevel_edge = (EcsUiPaintBevelEdge){
         .color = color,
+    };
+    return true;
+}
+
+static bool EcsUiPaintPushClipScope(
+    EcsUiPaintBuildContext *ctx,
+    const EcsUiTreeNodeSnapshot *node,
+    uint16_t part,
+    EcsUiPaintRect rect)
+{
+    if (ctx == NULL || ctx->list == NULL || node == NULL) {
+        return false;
+    }
+    EcsUiPaintItem *item = EcsUiPaintReserve(ctx);
+    if (item == NULL) {
+        return false;
+    }
+
+    item->key = (EcsUiPaintKey){
+        .source = node->entity,
+        .role = ECS_UI_PAINT_ROLE_CLIP_SCOPE,
+        .part = part,
+        .generation = ctx->list->generation,
+    };
+    item->primitive = ECS_UI_PAINT_PRIMITIVE_CLIP_SCOPE;
+    item->rect = rect;
+    item->clip = (EcsUiPaintClip){
+        .scope = (uint32_t)node->entity,
+        .rect = rect,
+        .enabled = true,
     };
     return true;
 }
@@ -481,49 +585,51 @@ static EcsUiColorF EcsUiPaintCustomColor(
 }
 
 static bool EcsUiPaintEmitBevel(
-    EcsUiPaintList *list,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *node,
-    float opacity,
-    uint32_t item_capacity)
+    float opacity)
 {
     if (!EcsUiStyleHasDrawableBevel(node)) {
         return true;
     }
 
+    EcsUiPaintRootState previous = EcsUiPaintSaveRoot(ctx);
+    EcsUiPaintBeginRoot(
+        ctx,
+        EcsUiPaintZIndex(ctx->base_z_index, 20),
+        (EcsUiPaintClip){0});
     const EcsUiColorF top_left = EcsUiStyleBevelTopLeftColor(node);
     const EcsUiColorF bottom_right = EcsUiStyleBevelBottomRightColor(node);
-    return EcsUiPaintPushBevelEdge(
-            list,
+    const bool ok = EcsUiPaintPushBevelEdge(
+            ctx,
             node,
             ECS_UI_PAINT_BEVEL_EDGE_TOP,
             top_left,
-            opacity,
-            item_capacity) &&
+            opacity) &&
         EcsUiPaintPushBevelEdge(
-            list,
+            ctx,
             node,
             ECS_UI_PAINT_BEVEL_EDGE_LEFT,
             top_left,
-            opacity,
-            item_capacity) &&
+            opacity) &&
         EcsUiPaintPushBevelEdge(
-            list,
+            ctx,
             node,
             ECS_UI_PAINT_BEVEL_EDGE_BOTTOM,
             bottom_right,
-            opacity,
-            item_capacity) &&
+            opacity) &&
         EcsUiPaintPushBevelEdge(
-            list,
+            ctx,
             node,
             ECS_UI_PAINT_BEVEL_EDGE_RIGHT,
             bottom_right,
-            opacity,
-            item_capacity);
+            opacity);
+    EcsUiPaintRestoreRoot(ctx, previous);
+    return ok;
 }
 
 static bool EcsUiPaintEmitTextNode(
-    const EcsUiPaintBuildContext *ctx,
+    EcsUiPaintBuildContext *ctx,
     uint32_t index,
     EcsUiPaintTextContext text_context,
     float opacity)
@@ -601,7 +707,7 @@ static bool EcsUiPaintEmitTextNode(
 
     if (!has_newline) {
         return EcsUiPaintPushTextRun(
-            ctx->list,
+            ctx,
             node,
             EcsUiPaintPart(0u, 0u),
             element,
@@ -610,8 +716,7 @@ static bool EcsUiPaintEmitTextNode(
             text_end,
             font_size,
             color,
-            opacity,
-            ctx->item_capacity);
+            opacity);
     }
 
     for (uint32_t line = 0u; line < measure.line_count; line += 1u) {
@@ -629,7 +734,7 @@ static bool EcsUiPaintEmitTextNode(
             .height = measure.height,
         };
         if (!EcsUiPaintPushTextRun(
-                ctx->list,
+                ctx,
                 node,
                 EcsUiPaintPart(0u, line),
                 line_rect,
@@ -638,8 +743,7 @@ static bool EcsUiPaintEmitTextNode(
                 line_measure->byte_end,
                 font_size,
                 color,
-                opacity,
-                ctx->item_capacity)) {
+                opacity)) {
             return false;
         }
     }
@@ -669,7 +773,7 @@ static bool EcsUiPaintTextFieldHasUnsupportedFlowChild(
 }
 
 static bool EcsUiPaintEmitTextFieldRange(
-    const EcsUiPaintBuildContext *ctx,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *field_node,
     const EcsUiTreeNodeSnapshot *value_node,
     EcsUiPaintTextContext value_context,
@@ -710,19 +814,18 @@ static bool EcsUiPaintEmitTextFieldRange(
     const uint16_t part = EcsUiPaintPart(*segment, 0u);
     if (selection) {
         if (!EcsUiPaintPushRoleBox(
-                ctx->list,
+                ctx,
                 value_node,
                 ECS_UI_PAINT_ROLE_SELECTION,
                 part,
                 rect,
                 EcsUiStyleSelectionColor(ctx->theme),
-                opacity,
-                ctx->item_capacity)) {
+                opacity)) {
             return false;
         }
     }
     if (!EcsUiPaintPushTextRun(
-            ctx->list,
+            ctx,
             value_node,
             part,
             rect,
@@ -731,8 +834,7 @@ static bool EcsUiPaintEmitTextFieldRange(
             end,
             font_size,
             color,
-            opacity,
-            ctx->item_capacity)) {
+            opacity)) {
         return false;
     }
     *cursor_x += measure.width;
@@ -741,7 +843,7 @@ static bool EcsUiPaintEmitTextFieldRange(
 }
 
 static bool EcsUiPaintEmitTextFieldCaret(
-    const EcsUiPaintBuildContext *ctx,
+    EcsUiPaintBuildContext *ctx,
     const EcsUiTreeNodeSnapshot *field_node,
     const EcsUiTreeNodeSnapshot *value_node,
     EcsUiColorF color,
@@ -765,14 +867,13 @@ static bool EcsUiPaintEmitTextFieldCaret(
         .height = height,
     };
     if (!EcsUiPaintPushRoleBox(
-            ctx->list,
+            ctx,
             value_node,
             ECS_UI_PAINT_ROLE_CARET,
             EcsUiPaintPart(*segment, 0u),
             rect,
             color,
-            opacity,
-            ctx->item_capacity)) {
+            opacity)) {
         return false;
     }
     *cursor_x += width;
@@ -781,7 +882,7 @@ static bool EcsUiPaintEmitTextFieldCaret(
 }
 
 static bool EcsUiPaintEmitTextField(
-    const EcsUiPaintBuildContext *ctx,
+    EcsUiPaintBuildContext *ctx,
     uint32_t field_index,
     EcsUiPaintTextContext text_context,
     float opacity,
@@ -987,10 +1088,18 @@ static bool EcsUiPaintEmitTextField(
 }
 
 static bool EcsUiPaintEmitNode(
-    const EcsUiPaintBuildContext *ctx,
+    EcsUiPaintBuildContext *ctx,
     uint32_t index,
     EcsUiPaintTextContext text_context,
     float parent_opacity,
+    bool skip_children,
+    bool allow_visual_offset_root);
+
+static bool EcsUiPaintEmitNodeContent(
+    EcsUiPaintBuildContext *ctx,
+    uint32_t index,
+    EcsUiPaintTextContext text_context,
+    float opacity,
     bool skip_children)
 {
     if (ctx == NULL || ctx->list == NULL || ctx->tree == NULL ||
@@ -999,12 +1108,28 @@ static bool EcsUiPaintEmitNode(
     }
 
     const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[index];
-    const float opacity =
-        parent_opacity * EcsUiStyleClamp01(node->visual.opacity);
-    if (opacity <= 0.01f) {
-        return true;
-    }
     text_context = EcsUiPaintNodeTextContext(text_context, node);
+
+    bool opened_clip = false;
+    EcsUiPaintClip previous_clip = ctx->active_clip;
+    if (node->has_layout && node->has_scroll_view) {
+        const EcsUiPaintRect clip_rect = EcsUiPaintNodeRect(node);
+        EcsUiPaintClip clip = {
+            .scope = (uint32_t)node->entity,
+            .rect = clip_rect,
+            .enabled = true,
+        };
+        ctx->active_clip = clip;
+        if (!EcsUiPaintPushClipScope(
+                ctx,
+                node,
+                ECS_UI_PAINT_CLIP_SCOPE_START,
+                clip_rect)) {
+            ctx->active_clip = previous_clip;
+            return false;
+        }
+        opened_clip = true;
+    }
 
     if (node->has_layout) {
         const EcsUiColorF fill = EcsUiPaintBoxFill(node, ctx->theme);
@@ -1015,13 +1140,12 @@ static bool EcsUiPaintEmitNode(
             const EcsUiPaintCornerRadius radius =
                 EcsUiPaintBoxRadius(node, ctx->theme, fill);
             if (!EcsUiPaintPushBox(
-                    ctx->list,
+                    ctx,
                     node,
                     fill,
                     radius,
                     border,
-                    opacity,
-                    ctx->item_capacity)) {
+                    opacity)) {
                 return false;
             }
         }
@@ -1029,12 +1153,11 @@ static bool EcsUiPaintEmitNode(
         const uint16_t custom_role = EcsUiPaintCustomRole(node);
         if (custom_role != ECS_UI_PAINT_ROLE_NONE) {
             if (!EcsUiPaintPushCustom(
-                    ctx->list,
+                    ctx,
                     node,
                     custom_role,
                     EcsUiPaintCustomColor(node, ctx->theme),
-                    opacity,
-                    ctx->item_capacity)) {
+                    opacity)) {
                 return false;
             }
         }
@@ -1073,24 +1196,155 @@ static bool EcsUiPaintEmitNode(
             child_text_context.disabled =
                 child_text_context.disabled || node->pressable.disabled;
         }
-        for (uint32_t child = node->first_child;
-             child != ECS_UI_TREE_INVALID_INDEX && child < ctx->tree->count;
-             child = ctx->tree->nodes[child].next_sibling) {
-            if (!EcsUiPaintEmitNode(
+
+        if (node->kind == ECS_UI_NODE_ZSTACK) {
+            bool first = true;
+            int16_t z_index = 1;
+            for (uint32_t child = node->first_child;
+                 child != ECS_UI_TREE_INVALID_INDEX && child < ctx->tree->count;
+                 child = ctx->tree->nodes[child].next_sibling) {
+                const EcsUiTreeNodeSnapshot *child_node = &ctx->tree->nodes[child];
+                const bool placed = child_node->has_placement;
+                if (first && !placed) {
+                    if (!EcsUiPaintEmitNode(
+                            ctx,
+                            child,
+                            child_text_context,
+                            opacity,
+                            false,
+                            true)) {
+                        return false;
+                    }
+                    first = false;
+                    continue;
+                }
+
+                const float child_opacity =
+                    opacity * EcsUiStyleClamp01(child_node->visual.opacity);
+                if (child_opacity <= 0.01f) {
+                    continue;
+                }
+                EcsUiPaintRootState previous_root = EcsUiPaintSaveRoot(ctx);
+                EcsUiPaintBeginRoot(
+                    ctx,
+                    EcsUiPaintZIndex(ctx->base_z_index, z_index),
+                    (EcsUiPaintClip){0});
+                const bool ok = EcsUiPaintEmitNode(
                     ctx,
                     child,
                     child_text_context,
                     opacity,
-                    false)) {
-                return false;
+                    false,
+                    false);
+                EcsUiPaintRestoreRoot(ctx, previous_root);
+                if (!ok) {
+                    return false;
+                }
+                z_index += 1;
+                first = false;
+            }
+        } else {
+            for (uint32_t child = node->first_child;
+                 child != ECS_UI_TREE_INVALID_INDEX && child < ctx->tree->count;
+                 child = ctx->tree->nodes[child].next_sibling) {
+                if (!EcsUiPaintEmitNode(
+                        ctx,
+                        child,
+                        child_text_context,
+                        opacity,
+                        false,
+                        true)) {
+                    return false;
+                }
             }
         }
     }
-    return EcsUiPaintEmitBevel(
-        ctx->list,
-        node,
+
+    if (opened_clip) {
+        if (!EcsUiPaintPushClipScope(
+                ctx,
+                node,
+                ECS_UI_PAINT_CLIP_SCOPE_END,
+                EcsUiPaintNodeRect(node))) {
+            ctx->active_clip = previous_clip;
+            return false;
+        }
+        ctx->active_clip = previous_clip;
+    }
+
+    return EcsUiPaintEmitBevel(ctx, node, opacity);
+}
+
+static bool EcsUiPaintEmitNode(
+    EcsUiPaintBuildContext *ctx,
+    uint32_t index,
+    EcsUiPaintTextContext text_context,
+    float parent_opacity,
+    bool skip_children,
+    bool allow_visual_offset_root)
+{
+    if (ctx == NULL || ctx->list == NULL || ctx->tree == NULL ||
+            index >= ctx->tree->count) {
+        return false;
+    }
+
+    const EcsUiTreeNodeSnapshot *node = &ctx->tree->nodes[index];
+    const float opacity =
+        parent_opacity * EcsUiStyleClamp01(node->visual.opacity);
+    if (opacity <= 0.01f) {
+        return true;
+    }
+
+    if (allow_visual_offset_root && EcsUiPaintHasVisualOffset(node)) {
+        EcsUiPaintRootState previous_root = EcsUiPaintSaveRoot(ctx);
+        EcsUiPaintBeginRoot(ctx, 0, (EcsUiPaintClip){0});
+        const bool ok = EcsUiPaintEmitNodeContent(
+            ctx,
+            index,
+            text_context,
+            opacity,
+            skip_children);
+        EcsUiPaintRestoreRoot(ctx, previous_root);
+        return ok;
+    }
+
+    return EcsUiPaintEmitNodeContent(
+        ctx,
+        index,
+        text_context,
         opacity,
-        ctx->item_capacity);
+        skip_children);
+}
+
+static int EcsUiPaintCompareItems(const void *lhs, const void *rhs)
+{
+    const EcsUiPaintItem *a = (const EcsUiPaintItem *)lhs;
+    const EcsUiPaintItem *b = (const EcsUiPaintItem *)rhs;
+    if (a->z_index != b->z_index) {
+        return a->z_index < b->z_index ? -1 : 1;
+    }
+    if (a->root_order != b->root_order) {
+        return a->root_order < b->root_order ? -1 : 1;
+    }
+    if (a->order != b->order) {
+        return a->order < b->order ? -1 : 1;
+    }
+    return 0;
+}
+
+static void EcsUiPaintSortItems(EcsUiPaintList *list)
+{
+    if (list == NULL || list->count < 2u) {
+        return;
+    }
+    qsort(
+        list->items,
+        list->count,
+        sizeof(list->items[0]),
+        EcsUiPaintCompareItems);
+    for (uint32_t i = 0u; i < list->count; i += 1u) {
+        list->items[i].order = i;
+    }
 }
 
 bool EcsUiPaintListBuildWithCapacity(
@@ -1099,6 +1353,7 @@ bool EcsUiPaintListBuildWithCapacity(
     const EcsUiTheme *theme,
     EcsUiMeasureTextFn measure_text,
     void *measure_user_data,
+    int16_t base_z_index,
     uint32_t item_capacity)
 {
     if (list == NULL || tree == NULL || theme == NULL) {
@@ -1110,15 +1365,19 @@ bool EcsUiPaintListBuildWithCapacity(
     }
     EcsUiPaintListReset(list, tree->root, tree->generation);
     list->truncated = tree->truncated;
-    const EcsUiPaintBuildContext ctx = {
+    EcsUiPaintBuildContext ctx = {
         .list = list,
         .tree = tree,
         .theme = theme,
         .measure_text = measure_text,
         .measure_user_data = measure_user_data,
         .item_capacity = item_capacity,
+        .base_z_index = EcsUiPaintZIndex(base_z_index, 0),
+        .root_z_index = EcsUiPaintZIndex(base_z_index, 0),
+        .root_order = 0u,
+        .root_next_order = 1u,
+        .root_item_order = 0u,
     };
-    /* 7.2 snapshots contain one root; all roots are therefore z=0 and stable. */
     for (uint32_t i = 0u; i < tree->count; i += 1u) {
         if (tree->nodes[i].parent != 0) {
             continue;
@@ -1128,10 +1387,12 @@ bool EcsUiPaintListBuildWithCapacity(
                 i,
                 (EcsUiPaintTextContext){0},
                 1.0f,
-                false)) {
+                false,
+                true)) {
             return false;
         }
     }
+    EcsUiPaintSortItems(list);
     return true;
 }
 
@@ -1140,7 +1401,8 @@ bool EcsUiPaintListBuild(
     EcsUiTreeSnapshot *tree,
     const EcsUiTheme *theme,
     EcsUiMeasureTextFn measure_text,
-    void *measure_user_data)
+    void *measure_user_data,
+    int16_t base_z_index)
 {
     return EcsUiPaintListBuildWithCapacity(
         list,
@@ -1148,5 +1410,6 @@ bool EcsUiPaintListBuild(
         theme,
         measure_text,
         measure_user_data,
+        base_z_index,
         ECS_UI_PAINT_ITEM_MAX);
 }
