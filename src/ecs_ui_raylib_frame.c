@@ -94,6 +94,36 @@ static EcsUiRaylibRenderContext EcsUiRaylibDrawListContext(
     }
     return context;
 }
+
+static bool EcsUiRaylibDrawListIntersects(Rectangle a, Rectangle b)
+{
+    return a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y;
+}
+
+static bool EcsUiRaylibDrawListCulled(
+    Rectangle bounds,
+    const EcsUiRaylibRenderContext *root_context,
+    const EcsUiRaylibDrawOptions *options)
+{
+    if (options == NULL || !options->culling_enabled) {
+        return false;
+    }
+    Rectangle cull = options->culling_bounds;
+    if (cull.width <= 0.0f && cull.height <= 0.0f &&
+            root_context != NULL) {
+        cull = root_context->physical_root_bounds.width > 0.0f ||
+                root_context->physical_root_bounds.height > 0.0f ?
+            root_context->physical_root_bounds :
+            root_context->physical_bounds;
+    }
+    if (cull.width <= 0.0f || cull.height <= 0.0f) {
+        return false;
+    }
+    return !EcsUiRaylibDrawListIntersects(bounds, cull);
+}
 #endif
 
 EcsUiSize EcsUiRaylibMeasureText(
@@ -237,6 +267,11 @@ void EcsUiRaylibRenderDrawList(
         }
 
         Rectangle bounds = EcsUiRaylibDrawListRect(command->boundingBox);
+        if (command->commandType != CLAY_RENDER_COMMAND_TYPE_SCISSOR_START &&
+                command->commandType != CLAY_RENDER_COMMAND_TYPE_SCISSOR_END &&
+                EcsUiRaylibDrawListCulled(bounds, root_context, options)) {
+            continue;
+        }
         switch (command->commandType) {
         case CLAY_RENDER_COMMAND_TYPE_TEXT: {
             Clay_TextRenderData *text = &command->renderData.text;
@@ -642,7 +677,7 @@ void EcsUiRaylibRenderPaintList(
                 value,
                 (Vector2){.x = bounds.x, .y = bounds.y},
                 (float)run->font_size,
-                0.0f,
+                (float)run->letter_spacing,
                 EcsUiRaylibPaintColor(run->color, item->opacity));
             continue;
         }

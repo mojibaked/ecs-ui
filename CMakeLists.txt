@@ -351,6 +351,18 @@ if(ECS_UI_BUILD_TESTS)
             add_test(
                 NAME ecs_ui_raylib_draw_list
                 COMMAND ecs_ui_raylib_draw_list)
+
+            add_executable(ecs_ui_raylib_pixel_ab
+                tests/ecs_ui_raylib_pixel_ab.c)
+            target_link_libraries(ecs_ui_raylib_pixel_ab
+                PRIVATE ecs_ui_raylib ecs_ui_frame)
+            ecs_ui_enable_warnings(ecs_ui_raylib_pixel_ab)
+            add_test(
+                NAME ecs_ui_raylib_pixel_ab
+                COMMAND ecs_ui_raylib_pixel_ab)
+            set_tests_properties(
+                ecs_ui_raylib_pixel_ab
+                PROPERTIES SKIP_RETURN_CODE 77)
         endif()
     endif()
 

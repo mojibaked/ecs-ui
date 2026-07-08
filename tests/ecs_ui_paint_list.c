@@ -1105,6 +1105,9 @@ static int RequirePaintTextRunItem(
     result |= Require(
         item->payload.text_run.font_size == expected_font_size,
         "paint text font size mismatch");
+    result |= Require(
+        item->payload.text_run.letter_spacing == 0u,
+        "paint text letter spacing mismatch");
     result |= RequireColor(
         item->payload.text_run.color,
         expected_color,

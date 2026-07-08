@@ -116,6 +116,7 @@ typedef struct EcsUiPaintTextRun {
     uint32_t byte_end;
     uint16_t font_id;
     uint16_t font_size;
+    uint16_t letter_spacing;
     EcsUiColorF color;
 } EcsUiPaintTextRun;
 

@@ -1043,6 +1043,14 @@ static int CompareTextItem(
                 item->payload.text_run.font_id,
             "adapter text font id mismatch");
         result |= Require(
+            adapter_text->renderData.text.letterSpacing ==
+                item->payload.text_run.letter_spacing,
+            "adapter text letter spacing mismatch");
+        result |= Require(
+            adapter_text->renderData.text.letterSpacing ==
+                bridge_text->renderData.text.letterSpacing,
+            "text letter spacing mismatch");
+        result |= Require(
             adapter_text->renderData.text.stringContents.chars ==
                 bridge_text->renderData.text.stringContents.chars &&
                 adapter_text->renderData.text.stringContents.length ==

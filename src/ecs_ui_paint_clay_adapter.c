@@ -404,7 +404,7 @@ static bool EcsUiPaintClayPushText(
                         item->opacity),
                     .fontId = item->payload.text_run.font_id,
                     .fontSize = item->payload.text_run.font_size,
-                    .letterSpacing = 0u,
+                    .letterSpacing = item->payload.text_run.letter_spacing,
                     .lineHeight = 0u,
                 },
             },

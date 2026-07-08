@@ -443,6 +443,7 @@ static bool EcsUiPaintPushTextRun(
         .byte_end = byte_end,
         .font_id = 0u,
         .font_size = font_size,
+        .letter_spacing = 0u,
         .color = color,
     };
     return true;
