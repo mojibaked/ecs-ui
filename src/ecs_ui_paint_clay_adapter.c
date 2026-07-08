@@ -40,6 +40,79 @@ bool EcsUiPaintClayElementId(
     return out->id != 0u;
 }
 
+static uint32_t EcsUiPaintClayClampTextIndex(uint32_t index, size_t length)
+{
+    return index <= length ? index : (uint32_t)length;
+}
+
+static uint32_t EcsUiPaintClayInlineTextChildCount(
+    uint32_t start,
+    uint32_t end)
+{
+    return start != end ? 1u : 0u;
+}
+
+static bool EcsUiPaintClayIsDirectTextFieldValue(
+    const EcsUiTreeNodeSnapshot *field,
+    const EcsUiTreeNodeSnapshot *child)
+{
+    return field != NULL &&
+        child != NULL &&
+        field->kind == ECS_UI_NODE_PRESSABLE &&
+        field->has_text_field_view &&
+        field->text_field_view.value_node == child->entity &&
+        child->kind == ECS_UI_NODE_TEXT;
+}
+
+static uint32_t EcsUiPaintClayTextFieldValueChildCount(
+    const EcsUiTreeNodeSnapshot *field,
+    const EcsUiTreeNodeSnapshot *value)
+{
+    if (field == NULL || value == NULL || value->kind != ECS_UI_NODE_TEXT) {
+        return 0u;
+    }
+
+    const char *text = value->text.text;
+    const size_t length = strlen(text);
+    const EcsUiTextFieldView *view = &field->text_field_view;
+    const uint32_t text_end = (uint32_t)length;
+    const uint32_t cursor =
+        EcsUiPaintClayClampTextIndex(view->cursor, length);
+    uint32_t selection_start =
+        EcsUiPaintClayClampTextIndex(view->selection_anchor, length);
+    uint32_t selection_end =
+        EcsUiPaintClayClampTextIndex(view->selection_focus, length);
+    if (selection_start > selection_end) {
+        uint32_t swap = selection_start;
+        selection_start = selection_end;
+        selection_end = swap;
+    }
+
+    if (!view->focused) {
+        return EcsUiPaintClayInlineTextChildCount(0u, text_end);
+    }
+
+    if (selection_start >= selection_end) {
+        return
+            EcsUiPaintClayInlineTextChildCount(0u, cursor) +
+            1u +
+            EcsUiPaintClayInlineTextChildCount(cursor, text_end);
+    }
+
+    return
+        EcsUiPaintClayInlineTextChildCount(0u, selection_start) +
+        (cursor == selection_start ? 1u : 0u) +
+        1u +
+        (cursor != selection_start ? 1u : 0u) +
+        EcsUiPaintClayInlineTextChildCount(selection_end, text_end);
+}
+
+static bool EcsUiPaintClayChildVisible(
+    const EcsUiTreeNodeSnapshot *child)
+{
+    return child != NULL && child->visual.opacity > 0.01f;
+}
+
 static uint32_t EcsUiPaintClayChildCount(
     const EcsUiTreeSnapshot *tree,
     const EcsUiTreeNodeSnapshot *node)
@@ -47,11 +120,36 @@ static uint32_t EcsUiPaintClayChildCount(
     if (tree == NULL || node == NULL) {
         return 0u;
     }
+    if (node->kind == ECS_UI_NODE_TEXT) {
+        return 1u;
+    }
 
     uint32_t count = 0u;
+    bool zstack_first_child = true;
     for (uint32_t child = node->first_child;
          child != ECS_UI_TREE_INVALID_INDEX && child < tree->count;
          child = tree->nodes[child].next_sibling) {
+        const EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
+        if (node->kind == ECS_UI_NODE_ZSTACK) {
+            if (zstack_first_child) {
+                zstack_first_child = false;
+                if (!child_node->has_placement &&
+                        EcsUiPaintClayChildVisible(child_node)) {
+                    count += 1u;
+                }
+            }
+            continue;
+        }
+
+        if (EcsUiPaintClayIsDirectTextFieldValue(node, child_node)) {
+            count += EcsUiPaintClayTextFieldValueChildCount(
+                node,
+                child_node);
+            continue;
+        }
+        if (!EcsUiPaintClayChildVisible(child_node)) {
+            continue;
+        }
         count += 1u;
     }
     return count;
@@ -108,6 +206,31 @@ static Clay_Color EcsUiPaintClayColor(EcsUiColorF color, float opacity)
         .g = color.g,
         .b = color.b,
         .a = color.a * alpha,
+    };
+}
+
+static Clay_StringSlice EcsUiPaintClayTextSlice(
+    const EcsUiPaintTextRun *run)
+{
+    const char *text = run != NULL && run->text != NULL ? run->text : "";
+    uint32_t start = run != NULL ? run->byte_start : 0u;
+    uint32_t end = run != NULL ? run->byte_end : 0u;
+    const size_t length = strlen(text);
+    if (start > length) {
+        start = (uint32_t)length;
+    }
+    if (end > length) {
+        end = (uint32_t)length;
+    }
+    if (start > end) {
+        uint32_t swap = start;
+        start = end;
+        end = swap;
+    }
+    return (Clay_StringSlice){
+        .length = (int32_t)(end - start),
+        .chars = &text[start],
+        .baseChars = text,
     };
 }
 
@@ -260,6 +383,36 @@ static bool EcsUiPaintClayPushCustom(
         });
 }
 
+static bool EcsUiPaintClayPushText(
+    Clay_RenderCommandArray *out,
+    const EcsUiPaintItem *item,
+    const EcsUiPaintClayAdapterOptions *options,
+    float scale,
+    uint32_t id)
+{
+    return EcsUiPaintClayPush(
+        out,
+        (Clay_RenderCommand){
+            .boundingBox = EcsUiPaintClayBounds(item->rect, options, scale),
+            .renderData = {
+                .text = {
+                    .stringContents =
+                        EcsUiPaintClayTextSlice(&item->payload.text_run),
+                    .textColor = EcsUiPaintClayColor(
+                        item->payload.text_run.color,
+                        item->opacity),
+                    .fontId = 0u,
+                    .fontSize = item->payload.text_run.font_size,
+                    .letterSpacing = 0u,
+                    .lineHeight = 0u,
+                },
+            },
+            .id = id,
+            .zIndex = 0,
+            .commandType = CLAY_RENDER_COMMAND_TYPE_TEXT,
+        });
+}
+
 bool EcsUiPaintClayAdapterBuild(
     const EcsUiPaintList *paint,
     const EcsUiTreeSnapshot *tree,
@@ -288,6 +441,47 @@ bool EcsUiPaintClayAdapterBuild(
             EcsUiPaintClayFindNode(tree, item->key.source);
         Clay_ElementId element_id = {0};
         (void)EcsUiPaintClayElementId(node, NULL, &element_id);
+
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_TEXT_RUN &&
+                item->key.role == ECS_UI_PAINT_ROLE_TEXT_RUN) {
+            const uint32_t line_index = item->key.part & 0xffu;
+            const Clay_ElementId text_id =
+                Clay__HashNumber(line_index, element_id.id);
+            if (!EcsUiPaintClayPushText(
+                    out,
+                    item,
+                    options,
+                    scale,
+                    text_id.id)) {
+                return false;
+            }
+            continue;
+        }
+
+        if (item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX &&
+                (item->key.role == ECS_UI_PAINT_ROLE_CARET ||
+                    item->key.role == ECS_UI_PAINT_ROLE_SELECTION)) {
+            Clay_ElementId role_id = {0};
+            (void)EcsUiPaintClayElementId(
+                node,
+                item->key.role == ECS_UI_PAINT_ROLE_CARET ?
+                    "_Caret" :
+                    "_Selection",
+                &role_id);
+            if (!EcsUiPaintClayPushRectangle(
+                    out,
+                    item->rect,
+                    options,
+                    scale,
+                    role_id.id,
+                    item->payload.box.fill,
+                    item->opacity,
+                    (Clay_CornerRadius){0},
+                    0)) {
+                return false;
+            }
+            continue;
+        }
 
         if (item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX &&
                 item->key.role == ECS_UI_PAINT_ROLE_BOX) {

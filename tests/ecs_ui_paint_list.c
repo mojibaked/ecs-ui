@@ -164,10 +164,13 @@ static EcsUiSize TestMeasureText(
     void *user_data)
 {
     (void)utf8;
-    (void)length;
-    (void)spec;
     (void)user_data;
-    return (EcsUiSize){.width = 0.0f, .height = 0.0f};
+    const float font_size = spec != NULL ? spec->font_size : 0.0f;
+    const float chars = length > 0 ? (float)length : 0.0f;
+    return (EcsUiSize){
+        .width = chars * font_size * 0.5f + 3.0f,
+        .height = font_size + 4.0f,
+    };
 }
 
 static ecs_world_t *CreateWorld(void)
@@ -220,6 +223,20 @@ static int BuildPaintTree(
             .kind = "paint.custom",
             .preferred_width = 20.5f,
             .preferred_height = 12.25f,
+        });
+    ecs_entity_t single_text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintSingleText",
+            .text = "one two",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    ecs_entity_t multiline_text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintMultiText",
+            .text = "aa\n\nbbb ",
+            .role = ECS_UI_TEXT_CAPTION,
         });
     ecs_entity_t pressable = EcsUiBeginPressable(
         &builder,
@@ -307,6 +324,14 @@ static int BuildPaintTree(
     ecs_set(world, fit, EcsUiVisual, {
         .opacity = 0.75f,
     });
+    ecs_set(world, single_text, EcsUiTextLayout, {
+        .align_x = ECS_UI_ALIGN_END,
+        .align_y = ECS_UI_ALIGN_START,
+    });
+    ecs_set(world, multiline_text, EcsUiTextLayout, {
+        .align_x = ECS_UI_ALIGN_CENTER,
+        .align_y = ECS_UI_ALIGN_END,
+    });
     ecs_set(world, pressable, EcsUiBoxStyle, {
         .background = {40u, 50u, 60u, 200u},
         .radius = 6.25f,
@@ -328,6 +353,210 @@ static int BuildPaintTree(
         .bevel = ECS_UI_BEVEL_RAISED,
         .bevel_light = {240u, 245u, 250u, 230u},
         .bevel_dark = {20u, 25u, 30u, 210u},
+    });
+    return result;
+}
+
+static int BuildTextFieldPaintTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set text paint scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t unfocused = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldUnfocused",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t unfocused_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldUnfocusedValue",
+            .text = "abc def",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t cursor_start = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldCursorStart",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t cursor_start_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldCursorStartValue",
+            .text = "xy",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t cursor_end = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldCursorEnd",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t cursor_end_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldCursorEndValue",
+            .text = "xy",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t selection_start = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldSelectionStart",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t selection_start_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldSelectionStartValue",
+            .text = "abcde",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t selection_end = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldSelectionEnd",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t selection_end_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldSelectionEndValue",
+            .text = "abcde",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t styled = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldStyled",
+            .preferred_height = 32.5f,
+        });
+    ecs_entity_t styled_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldStyledValue",
+            .text = "hi",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t fractional_padding = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldFractionalPadding",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t fractional_padding_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldFractionalPaddingValue",
+            .text = "p",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "text paint builder failed");
+
+    ecs_set(world, unfocused, EcsUiTextFieldView, {
+        .value_node = unfocused_value,
+        .cursor = 5u,
+    });
+    ecs_set(world, cursor_start, EcsUiTextFieldView, {
+        .value_node = cursor_start_value,
+        .focused = true,
+        .cursor = 0u,
+    });
+    ecs_set(world, cursor_end, EcsUiTextFieldView, {
+        .value_node = cursor_end_value,
+        .focused = true,
+        .cursor = 2u,
+        .caret_width = 2.5f,
+    });
+    ecs_set(world, selection_start, EcsUiTextFieldView, {
+        .value_node = selection_start_value,
+        .focused = true,
+        .cursor = 1u,
+        .selection_anchor = 1u,
+        .selection_focus = 4u,
+    });
+    ecs_set(world, selection_end, EcsUiTextFieldView, {
+        .value_node = selection_end_value,
+        .focused = true,
+        .cursor = 4u,
+        .selection_anchor = 1u,
+        .selection_focus = 4u,
+        .caret_width = 2.5f,
+    });
+    ecs_set(world, styled, EcsUiTextFieldView, {
+        .value_node = styled_value,
+        .focused = false,
+        .disabled = true,
+    });
+    ecs_set(world, styled_value, EcsUiTextStyle, {
+        .color = {10u, 20u, 30u, 255u},
+        .disabled_color = {120u, 20u, 10u, 240u},
+        .body_size = 20.5f,
+    });
+    ecs_set(world, fractional_padding, EcsUiTextFieldView, {
+        .value_node = fractional_padding_value,
+        .focused = false,
+    });
+    ecs_set(world, fractional_padding, EcsUiBoxStyle, {
+        .background = {40u, 50u, 60u, 200u},
+        .padding = 12.25f,
+    });
+    return result;
+}
+
+static int BuildPlacedTextPaintTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set placed text scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "PaintPlacedZ",
+            .preferred_width = 80.0f,
+            .preferred_height = 40.0f,
+        });
+    ecs_entity_t text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintPlacedText",
+            .text = "zz",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "placed text builder failed");
+
+    ecs_set(world, text, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_START,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_START,
+        .child_y = ECS_UI_ALIGN_START,
+        .width = 60.0f,
+        .height = 30.0f,
+    });
+    ecs_set(world, text, EcsUiTextLayout, {
+        .align_x = ECS_UI_ALIGN_CENTER,
+        .align_y = ECS_UI_ALIGN_END,
     });
     return result;
 }
@@ -488,6 +717,147 @@ static int RequirePaintCustomItem(
     return result;
 }
 
+static float TestMeasuredWordWidth(uint32_t length, uint16_t font_size)
+{
+    return (float)length * (float)font_size * 0.5f + 3.0f;
+}
+
+static float TestMeasuredRangeWidth(
+    const char *text,
+    uint32_t start,
+    uint32_t end,
+    uint16_t font_size,
+    float scale)
+{
+    float width = 0.0f;
+    uint32_t word_start = start;
+    for (uint32_t i = start; i < end; i += 1u) {
+        if (text[i] == ' ') {
+            if (i > word_start) {
+                width += TestMeasuredWordWidth(i - word_start, font_size);
+            }
+            width += TestMeasuredWordWidth(1u, font_size);
+            word_start = i + 1u;
+        }
+    }
+    if (end > word_start) {
+        width += TestMeasuredWordWidth(end - word_start, font_size);
+    }
+    return width / scale;
+}
+
+static int RequirePaintTextRunItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    uint16_t expected_part,
+    EcsUiPaintRect expected_rect,
+    uint32_t expected_start,
+    uint32_t expected_end,
+    uint16_t expected_font_size,
+    EcsUiColorF expected_color,
+    float expected_opacity)
+{
+    int result = 0;
+    const EcsUiTreeNodeSnapshot *node = FindNode(tree, node_id);
+    result |= Require(node != NULL, "paint text node missing");
+    if (paint == NULL || tree == NULL || node == NULL || index >= paint->count) {
+        return result | Require(false, "paint text item index missing");
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
+    result |= Require(item->key.source == node->entity, "paint text source mismatch");
+    result |= Require(
+        item->key.role == ECS_UI_PAINT_ROLE_TEXT_RUN,
+        "paint text role mismatch");
+    result |= Require(item->key.part == expected_part, "paint text part mismatch");
+    result |= Require(
+        item->primitive == ECS_UI_PAINT_PRIMITIVE_TEXT_RUN,
+        "paint text primitive mismatch");
+    result |= Require(item->order == index, "paint text order mismatch");
+    result |= RequireNear(item->rect.x, expected_rect.x, 0.001f, "paint text x mismatch");
+    result |= RequireNear(item->rect.y, expected_rect.y, 0.001f, "paint text y mismatch");
+    result |= RequireNear(
+        item->rect.width,
+        expected_rect.width,
+        0.001f,
+        "paint text width mismatch");
+    result |= RequireNear(
+        item->rect.height,
+        expected_rect.height,
+        0.001f,
+        "paint text height mismatch");
+    result |= RequireNear(
+        item->opacity,
+        expected_opacity,
+        0.001f,
+        "paint text opacity mismatch");
+    result |= Require(
+        item->payload.text_run.text == node->text.text,
+        "paint text should alias snapshot text");
+    result |= Require(
+        item->payload.text_run.byte_start == expected_start &&
+            item->payload.text_run.byte_end == expected_end,
+        "paint text byte range mismatch");
+    result |= Require(
+        item->payload.text_run.font_size == expected_font_size,
+        "paint text font size mismatch");
+    result |= RequireColor(
+        item->payload.text_run.color,
+        expected_color,
+        "paint text color mismatch");
+    return result;
+}
+
+static int RequirePaintRoleBoxItem(
+    const EcsUiPaintList *paint,
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    const char *node_id,
+    uint16_t expected_role,
+    uint16_t expected_part,
+    EcsUiPaintRect expected_rect,
+    EcsUiColorF expected_fill,
+    float expected_opacity)
+{
+    int result = 0;
+    const EcsUiTreeNodeSnapshot *node = FindNode(tree, node_id);
+    result |= Require(node != NULL, "paint role-box node missing");
+    if (paint == NULL || tree == NULL || node == NULL || index >= paint->count) {
+        return result | Require(false, "paint role-box item index missing");
+    }
+    const EcsUiPaintItem *item = &paint->items[index];
+    result |= Require(item->key.source == node->entity, "paint role-box source mismatch");
+    result |= Require(item->key.role == expected_role, "paint role-box role mismatch");
+    result |= Require(item->key.part == expected_part, "paint role-box part mismatch");
+    result |= Require(
+        item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX,
+        "paint role-box primitive mismatch");
+    result |= Require(item->order == index, "paint role-box order mismatch");
+    result |= RequireNear(item->rect.x, expected_rect.x, 0.001f, "role-box x mismatch");
+    result |= RequireNear(item->rect.y, expected_rect.y, 0.001f, "role-box y mismatch");
+    result |= RequireNear(
+        item->rect.width,
+        expected_rect.width,
+        0.001f,
+        "role-box width mismatch");
+    result |= RequireNear(
+        item->rect.height,
+        expected_rect.height,
+        0.001f,
+        "role-box height mismatch");
+    result |= RequireNear(
+        item->opacity,
+        expected_opacity,
+        0.001f,
+        "role-box opacity mismatch");
+    result |= RequireColor(
+        item->payload.box.fill,
+        expected_fill,
+        "role-box fill mismatch");
+    return result;
+}
+
 static EcsUiPaintRect TestBevelRect(
     const EcsUiTreeNodeSnapshot *node,
     uint16_t part)
@@ -621,8 +991,8 @@ static int RequirePaintList(
         paint->generation == tree->generation,
         "paint generation should match snapshot");
     result |= Require(
-        paint->count == 13u,
-        "paint list should contain stage 7.4 paint items");
+        paint->count == 16u,
+        "paint list should contain stage 7.5 paint items");
     result |= RequirePaintBoxItem(
         paint,
         tree,
@@ -657,10 +1027,97 @@ static int RequirePaintList(
             theme->surface_subtle.b,
             theme->surface_subtle.a),
         0.75f);
+    const float scale = tree->scale > 0.0f ? tree->scale : 1.0f;
+    const EcsUiTreeNodeSnapshot *single = FindNode(tree, "PaintSingleText");
+    const EcsUiTreeNodeSnapshot *multi = FindNode(tree, "PaintMultiText");
+    const uint16_t body_font = (uint16_t)(18.0f * scale);
+    const uint16_t caption_font = (uint16_t)(13.0f * scale);
+    if (single != NULL) {
+        const float single_width = (
+            TestMeasuredWordWidth(3u, body_font) +
+            TestMeasuredWordWidth(1u, body_font) +
+            TestMeasuredWordWidth(3u, body_font)) / scale;
+        const float single_height = ((float)body_font + 4.0f) / scale;
+        result |= RequirePaintTextRunItem(
+            paint,
+            tree,
+            3u,
+            "PaintSingleText",
+            0u,
+            (EcsUiPaintRect){
+                .x = single->layout_x,
+                .y = single->layout_y,
+                .width = single_width,
+                .height = single_height,
+            },
+            0u,
+            7u,
+            body_font,
+            TestColor(
+                theme->text.r,
+                theme->text.g,
+                theme->text.b,
+                theme->text.a),
+            0.75f);
+    }
+    if (multi != NULL) {
+        const float line0_width =
+            TestMeasuredWordWidth(2u, caption_font) / scale;
+        const float line2_width = (
+            TestMeasuredWordWidth(3u, caption_font) +
+            TestMeasuredWordWidth(1u, caption_font)) / scale;
+        const float element_width = line2_width;
+        const float line_height = ((float)caption_font + 4.0f) / scale;
+        const float element_height = line_height * 3.0f;
+        const float element_y =
+            multi->layout_y + multi->layout_height - element_height;
+        result |= RequirePaintTextRunItem(
+            paint,
+            tree,
+            4u,
+            "PaintMultiText",
+            0u,
+            (EcsUiPaintRect){
+                .x = multi->layout_x + (element_width - line0_width) * 0.5f,
+                .y = element_y,
+                .width = line0_width,
+                .height = line_height,
+            },
+            0u,
+            2u,
+            caption_font,
+            TestColor(
+                theme->text_muted.r,
+                theme->text_muted.g,
+                theme->text_muted.b,
+                theme->text_muted.a),
+            0.75f);
+        result |= RequirePaintTextRunItem(
+            paint,
+            tree,
+            5u,
+            "PaintMultiText",
+            2u,
+            (EcsUiPaintRect){
+                .x = multi->layout_x,
+                .y = element_y + line_height * 2.0f,
+                .width = line2_width,
+                .height = line_height,
+            },
+            4u,
+            8u,
+            caption_font,
+            TestColor(
+                theme->text_muted.r,
+                theme->text_muted.g,
+                theme->text_muted.b,
+                theme->text_muted.a),
+            0.75f);
+    }
     result |= RequirePaintBoxItem(
         paint,
         tree,
-        3u,
+        6u,
         "PaintPress",
         TestColor(40u, 50u, 60u, 200u),
         TestRadius(6.25f),
@@ -669,7 +1126,7 @@ static int RequirePaintList(
     result |= RequirePaintCustomItem(
         paint,
         tree,
-        4u,
+        7u,
         "PaintIcon",
         ECS_UI_PAINT_ROLE_ICON,
         TestColor(0u, 0u, 0u, 255u),
@@ -677,7 +1134,7 @@ static int RequirePaintList(
     result |= RequirePaintBoxItem(
         paint,
         tree,
-        5u,
+        8u,
         "PaintButton",
         TestColor(
             theme->button_primary.r,
@@ -690,7 +1147,7 @@ static int RequirePaintList(
     result |= RequirePaintCustomItem(
         paint,
         tree,
-        6u,
+        9u,
         "PaintAfter",
         ECS_UI_PAINT_ROLE_CUSTOM,
         TestColor(
@@ -702,7 +1159,7 @@ static int RequirePaintList(
     result |= RequirePaintCustomItem(
         paint,
         tree,
-        7u,
+        10u,
         "PaintNine",
         ECS_UI_PAINT_ROLE_NINE_SLICE,
         TestColor(200u, 210u, 220u, 180u),
@@ -710,7 +1167,7 @@ static int RequirePaintList(
     result |= RequirePaintBoxItem(
         paint,
         tree,
-        8u,
+        11u,
         "PaintBevel",
         TestColor(90u, 100u, 110u, 255u),
         TestRadius(0.0f),
@@ -719,7 +1176,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        9u,
+        12u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_TOP,
         TestColor(240u, 245u, 250u, 230u),
@@ -727,7 +1184,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        10u,
+        13u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_LEFT,
         TestColor(240u, 245u, 250u, 230u),
@@ -735,7 +1192,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        11u,
+        14u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_BOTTOM,
         TestColor(20u, 25u, 30u, 210u),
@@ -743,7 +1200,7 @@ static int RequirePaintList(
     result |= RequirePaintBevelItem(
         paint,
         tree,
-        12u,
+        15u,
         "PaintBevel",
         ECS_UI_PAINT_BEVEL_EDGE_RIGHT,
         TestColor(20u, 25u, 30u, 210u),
@@ -827,6 +1284,503 @@ static int RunPaintCase(
     return result;
 }
 
+static EcsUiPaintRect TestFieldSegmentRect(
+    const EcsUiTreeNodeSnapshot *field,
+    float x,
+    float width,
+    float height)
+{
+    return (EcsUiPaintRect){
+        .x = x,
+        .y = field != NULL ?
+            field->layout_y + (field->layout_height - height) * 0.5f :
+            0.0f,
+        .width = width,
+        .height = height,
+    };
+}
+
+static int RunTextFieldPaintCase(
+    EcsUiFrameInternalBackend backend,
+    float scale,
+    TestFrameErrors *errors)
+{
+    int result = 0;
+    const uint32_t start_error_count = errors != NULL ? errors->count : 0u;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create text-field paint world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PaintTextFieldRoot");
+    result |= Require(root != 0, "text-field paint root missing");
+    result |= BuildTextFieldPaintTree(world, root, scale);
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "text-field tree read failed");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 360.0f * scale,
+            .height = 260.0f * scale,
+        },
+    };
+    EcsUiFrameBackendSetSurfaceSize(
+        options.physical_bounds.width,
+        options.physical_bounds.height);
+    EcsUiFrameInternalSelectBackend(backend);
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
+        "text-field paint frame run failed");
+    const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+    result |= Require(paint != NULL, "text-field paint list missing");
+    result |= Require(
+        paint != NULL && paint->count == 25u,
+        "text-field paint item count mismatch");
+
+    const uint16_t body_font = (uint16_t)(18.0f * scale);
+    const float body_height = ((float)body_font + 4.0f) / scale;
+    const EcsUiColorF body_color = TestColor(
+        theme.text.r,
+        theme.text.g,
+        theme.text.b,
+        theme.text.a);
+    const EcsUiColorF selection_color = TestColor(
+        theme.button_primary.r,
+        theme.button_primary.g,
+        theme.button_primary.b,
+        theme.button_primary.a);
+    const EcsUiColorF selection_fill = {
+        .r = selection_color.r,
+        .g = selection_color.g,
+        .b = selection_color.b,
+        .a = selection_color.a * 0.35f,
+    };
+
+    const EcsUiTreeNodeSnapshot *field = FindNode(&tree, "PaintFieldUnfocused");
+    float x = field != NULL ? field->layout_x + 12.0f : 0.0f;
+    const float unfocused_width =
+        TestMeasuredRangeWidth("abc def", 0u, 7u, body_font, scale);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        2u,
+        "PaintFieldUnfocusedValue",
+        0u,
+        TestFieldSegmentRect(field, x, unfocused_width, body_height),
+        0u,
+        7u,
+        body_font,
+        body_color,
+        1.0f);
+
+    field = FindNode(&tree, "PaintFieldCursorStart");
+    x = field != NULL ? field->layout_x + 12.0f : 0.0f;
+    result |= RequirePaintRoleBoxItem(
+        paint,
+        &tree,
+        4u,
+        "PaintFieldCursorStartValue",
+        ECS_UI_PAINT_ROLE_CARET,
+        0u,
+        TestFieldSegmentRect(field, x, 2.0f, 26.0f),
+        body_color,
+        1.0f);
+    x += 2.0f;
+    const float xy_width = TestMeasuredRangeWidth("xy", 0u, 2u, body_font, scale);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        5u,
+        "PaintFieldCursorStartValue",
+        (uint16_t)(1u << 8u),
+        TestFieldSegmentRect(field, x, xy_width, body_height),
+        0u,
+        2u,
+        body_font,
+        body_color,
+        1.0f);
+
+    field = FindNode(&tree, "PaintFieldCursorEnd");
+    x = field != NULL ? field->layout_x + 12.0f : 0.0f;
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        7u,
+        "PaintFieldCursorEndValue",
+        0u,
+        TestFieldSegmentRect(field, x, xy_width, body_height),
+        0u,
+        2u,
+        body_font,
+        body_color,
+        1.0f);
+    x += xy_width;
+    result |= RequirePaintRoleBoxItem(
+        paint,
+        &tree,
+        8u,
+        "PaintFieldCursorEndValue",
+        ECS_UI_PAINT_ROLE_CARET,
+        (uint16_t)(1u << 8u),
+        TestFieldSegmentRect(field, x, 2.5f, 26.0f),
+        body_color,
+        1.0f);
+
+    field = FindNode(&tree, "PaintFieldSelectionStart");
+    x = field != NULL ? field->layout_x + 12.0f : 0.0f;
+    const float a_width = TestMeasuredRangeWidth("abcde", 0u, 1u, body_font, scale);
+    const float bcd_width = TestMeasuredRangeWidth("abcde", 1u, 4u, body_font, scale);
+    const float e_width = TestMeasuredRangeWidth("abcde", 4u, 5u, body_font, scale);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        10u,
+        "PaintFieldSelectionStartValue",
+        0u,
+        TestFieldSegmentRect(field, x, a_width, body_height),
+        0u,
+        1u,
+        body_font,
+        body_color,
+        1.0f);
+    x += a_width;
+    result |= RequirePaintRoleBoxItem(
+        paint,
+        &tree,
+        11u,
+        "PaintFieldSelectionStartValue",
+        ECS_UI_PAINT_ROLE_CARET,
+        (uint16_t)(1u << 8u),
+        TestFieldSegmentRect(field, x, 2.0f, 26.0f),
+        body_color,
+        1.0f);
+    x += 2.0f;
+    result |= RequirePaintRoleBoxItem(
+        paint,
+        &tree,
+        12u,
+        "PaintFieldSelectionStartValue",
+        ECS_UI_PAINT_ROLE_SELECTION,
+        (uint16_t)(2u << 8u),
+        TestFieldSegmentRect(field, x, bcd_width, body_height),
+        selection_fill,
+        1.0f);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        13u,
+        "PaintFieldSelectionStartValue",
+        (uint16_t)(2u << 8u),
+        TestFieldSegmentRect(field, x, bcd_width, body_height),
+        1u,
+        4u,
+        body_font,
+        body_color,
+        1.0f);
+    x += bcd_width;
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        14u,
+        "PaintFieldSelectionStartValue",
+        (uint16_t)(3u << 8u),
+        TestFieldSegmentRect(field, x, e_width, body_height),
+        4u,
+        5u,
+        body_font,
+        body_color,
+        1.0f);
+
+    field = FindNode(&tree, "PaintFieldSelectionEnd");
+    x = field != NULL ? field->layout_x + 12.0f : 0.0f;
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        16u,
+        "PaintFieldSelectionEndValue",
+        0u,
+        TestFieldSegmentRect(field, x, a_width, body_height),
+        0u,
+        1u,
+        body_font,
+        body_color,
+        1.0f);
+    x += a_width;
+    result |= RequirePaintRoleBoxItem(
+        paint,
+        &tree,
+        17u,
+        "PaintFieldSelectionEndValue",
+        ECS_UI_PAINT_ROLE_SELECTION,
+        (uint16_t)(1u << 8u),
+        TestFieldSegmentRect(field, x, bcd_width, body_height),
+        selection_fill,
+        1.0f);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        18u,
+        "PaintFieldSelectionEndValue",
+        (uint16_t)(1u << 8u),
+        TestFieldSegmentRect(field, x, bcd_width, body_height),
+        1u,
+        4u,
+        body_font,
+        body_color,
+        1.0f);
+    x += bcd_width;
+    result |= RequirePaintRoleBoxItem(
+        paint,
+        &tree,
+        19u,
+        "PaintFieldSelectionEndValue",
+        ECS_UI_PAINT_ROLE_CARET,
+        (uint16_t)(2u << 8u),
+        TestFieldSegmentRect(field, x, 2.5f, 26.0f),
+        body_color,
+        1.0f);
+    x += 2.5f;
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        20u,
+        "PaintFieldSelectionEndValue",
+        (uint16_t)(3u << 8u),
+        TestFieldSegmentRect(field, x, e_width, body_height),
+        4u,
+        5u,
+        body_font,
+        body_color,
+        1.0f);
+
+    field = FindNode(&tree, "PaintFieldStyled");
+    x = field != NULL ? field->layout_x + 12.0f : 0.0f;
+    const uint16_t styled_font = (uint16_t)(20.5f * scale);
+    const float styled_height = ((float)styled_font + 4.0f) / scale;
+    const float styled_width =
+        TestMeasuredRangeWidth("hi", 0u, 2u, styled_font, scale);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        22u,
+        "PaintFieldStyledValue",
+        0u,
+        TestFieldSegmentRect(field, x, styled_width, styled_height),
+        0u,
+        2u,
+        styled_font,
+        TestColor(120u, 20u, 10u, 240u),
+        1.0f);
+
+    field = FindNode(&tree, "PaintFieldFractionalPadding");
+    const float truncated_padding =
+        (float)((uint16_t)(12.25f * scale)) / scale;
+    x = field != NULL ? field->layout_x + truncated_padding : 0.0f;
+    const float padding_width =
+        TestMeasuredRangeWidth("p", 0u, 1u, body_font, scale);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        24u,
+        "PaintFieldFractionalPaddingValue",
+        0u,
+        TestFieldSegmentRect(field, x, padding_width, body_height),
+        0u,
+        1u,
+        body_font,
+        body_color,
+        1.0f);
+
+    result |= Require(
+        errors == NULL || errors->count == start_error_count,
+        "text-field paint emitted unexpected frame errors");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
+static int RunTextFieldOrphanValueCase(
+    EcsUiFrameInternalBackend backend,
+    float scale,
+    TestFrameErrors *errors)
+{
+    int result = 0;
+    const uint32_t start_error_count = errors != NULL ? errors->count : 0u;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create orphan text-field world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PaintTextFieldOrphanRoot");
+    result |= Require(root != 0, "orphan text-field root missing");
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "failed to set orphan text-field scale");
+
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintFieldOrphanRef",
+            .preferred_height = 30.5f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t orphan = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintFieldOrphanValue",
+            .text = "orphan",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "orphan text-field builder failed");
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = orphan,
+        .focused = false,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "orphan tree read failed");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 220.0f * scale,
+            .height = 120.0f * scale,
+        },
+    };
+    EcsUiFrameBackendSetSurfaceSize(
+        options.physical_bounds.width,
+        options.physical_bounds.height);
+    EcsUiFrameInternalSelectBackend(backend);
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
+        "orphan text-field frame run failed");
+    const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+    result |= Require(paint != NULL, "orphan paint list missing");
+    result |= Require(
+        paint != NULL && paint->count == 3u,
+        "orphan text-field should not synthesize a value run");
+
+    const EcsUiTreeNodeSnapshot *text =
+        FindNode(&tree, "PaintFieldOrphanValue");
+    const uint16_t body_font = (uint16_t)(18.0f * scale);
+    const float body_height = ((float)body_font + 4.0f) / scale;
+    const float width =
+        TestMeasuredRangeWidth("orphan", 0u, 6u, body_font, scale);
+    result |= RequirePaintTextRunItem(
+        paint,
+        &tree,
+        2u,
+        "PaintFieldOrphanValue",
+        0u,
+        (EcsUiPaintRect){
+            .x = text != NULL ? text->layout_x : 0.0f,
+            .y = text != NULL ?
+                text->layout_y + (text->layout_height - body_height) * 0.5f :
+                0.0f,
+            .width = width,
+            .height = body_height,
+        },
+        0u,
+        6u,
+        body_font,
+        TestColor(
+            theme.text.r,
+            theme.text.g,
+            theme.text.b,
+            theme.text.a),
+        1.0f);
+    result |= Require(
+        errors == NULL || errors->count == start_error_count,
+        "orphan text-field emitted unexpected frame errors");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
+static int RunPlacedTextPaintCase(
+    EcsUiFrameInternalBackend backend,
+    float scale,
+    TestFrameErrors *errors)
+{
+    int result = 0;
+    const uint32_t start_error_count = errors != NULL ? errors->count : 0u;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create placed text paint world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PaintPlacedTextRoot");
+    result |= Require(root != 0, "placed text root missing");
+    result |= BuildPlacedTextPaintTree(world, root, scale);
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "placed text tree read failed");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 180.0f * scale,
+            .height = 100.0f * scale,
+        },
+    };
+    EcsUiFrameBackendSetSurfaceSize(
+        options.physical_bounds.width,
+        options.physical_bounds.height);
+    EcsUiFrameInternalSelectBackend(backend);
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
+        "placed text frame run failed");
+    const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+    result |= Require(paint != NULL, "placed text paint missing");
+    result |= Require(
+        paint != NULL && paint->count == 2u,
+        "placed text paint item count mismatch");
+
+    const EcsUiTreeNodeSnapshot *text = FindNode(&tree, "PaintPlacedText");
+    const uint16_t font = (uint16_t)(18.0f * scale);
+    const float width = TestMeasuredRangeWidth("zz", 0u, 2u, font, scale);
+    const float height = ((float)font + 4.0f) / scale;
+    if (text != NULL) {
+        result |= RequirePaintTextRunItem(
+            paint,
+            &tree,
+            1u,
+            "PaintPlacedText",
+            0u,
+            (EcsUiPaintRect){
+                .x = text->layout_x + (text->layout_width - width) * 0.5f,
+                .y = text->layout_y + text->layout_height - height,
+                .width = width,
+                .height = height,
+            },
+            0u,
+            2u,
+            font,
+            TestColor(
+                theme.text.r,
+                theme.text.g,
+                theme.text.b,
+                theme.text.a),
+            1.0f);
+    }
+    result |= Require(
+        errors == NULL || errors->count == start_error_count,
+        "placed text emitted unexpected frame errors");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
 static int TestSourceTruncationPropagates(void)
 {
     EcsUiTreeSnapshot tree = {
@@ -853,7 +1807,7 @@ static int TestSourceTruncationPropagates(void)
     EcsUiTheme theme = EcsUiThemeDefault();
     int result = 0;
     result |= Require(
-        EcsUiPaintListBuild(&paint, &tree, &theme),
+        EcsUiPaintListBuild(&paint, &tree, &theme, TestMeasureText, NULL),
         "source-truncated paint build should fit paint capacity");
     result |= Require(
         paint.truncated,
@@ -891,7 +1845,7 @@ static int TestOpacityCullDirect(void)
     EcsUiTheme theme = EcsUiThemeDefault();
     int result = 0;
     result |= Require(
-        EcsUiPaintListBuild(&paint, &tree, &theme),
+        EcsUiPaintListBuild(&paint, &tree, &theme, TestMeasureText, NULL),
         "direct opacity-cull paint build should fit paint capacity");
     result |= Require(
         paint.count == 0u,
@@ -1026,7 +1980,13 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
     static EcsUiPaintList local;
     memset(&local, 0, sizeof(local));
     result |= Require(
-        !EcsUiPaintListBuildWithCapacity(&local, &tree, &theme, 2u),
+        !EcsUiPaintListBuildWithCapacity(
+            &local,
+            &tree,
+            &theme,
+            TestMeasureText,
+            NULL,
+            2u),
         "direct paint build should fail a tiny item capacity");
     result |= Require(
         local.truncated,
@@ -1056,6 +2016,88 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
     return result;
 }
 
+static int TestTextFieldScopeGuard(TestFrameErrors *errors)
+{
+    int result = 0;
+    if (errors == NULL) {
+        return Require(false, "missing text-field guard error recorder");
+    }
+
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create text-field guard world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "PaintTextFieldGuardRoot");
+    result |= Require(root != 0, "text-field guard root missing");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "PaintTextFieldGuard",
+            .preferred_height = 30.5f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "PaintTextFieldGuardValue",
+            .text = "guard",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    ecs_entity_t placed_icon = EcsUiAddIcon(
+        &builder,
+        (EcsUiIconDesc){
+            .id = "PaintTextFieldGuardIcon",
+            .name = "guard.icon",
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "text-field guard builder failed");
+    ecs_set(world, placed_icon, EcsUiPlacement, {
+        .mode = ECS_UI_PLACEMENT_PARENT,
+        .parent_x = ECS_UI_ALIGN_START,
+        .parent_y = ECS_UI_ALIGN_START,
+        .child_x = ECS_UI_ALIGN_START,
+        .child_y = ECS_UI_ALIGN_START,
+        .width = 16.0f,
+        .height = 16.0f,
+    });
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .focused = true,
+        .cursor = 2u,
+    });
+
+    EcsUiTreeSnapshot tree = {0};
+    result |= Require(EcsUiReadTree(world, root, &tree), "guard tree read failed");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 180.0f,
+            .height = 80.0f,
+        },
+    };
+    EcsUiFrameBackendSetSurfaceSize(180.0f, 80.0f);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,
+        "text-field guard should not abort live draw list");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY,
+        "text-field guard should report element capacity error kind");
+    result |= Require(
+        strstr(errors->last_message, "text-field scope") != NULL,
+        "text-field guard should report clear scope message");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
 int main(void)
 {
     int result = 0;
@@ -1076,10 +2118,59 @@ int main(void)
     result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY, 2.0f, &errors);
     result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 1.0f, &errors);
     result |= RunPaintCase(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE, 2.0f, &errors);
+    result |= RunTextFieldPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        &errors);
+    result |= RunTextFieldPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        2.0f,
+        &errors);
+    result |= RunTextFieldPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        &errors);
+    result |= RunTextFieldPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        2.0f,
+        &errors);
+    result |= RunTextFieldOrphanValueCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        &errors);
+    result |= RunTextFieldOrphanValueCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        2.0f,
+        &errors);
+    result |= RunTextFieldOrphanValueCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        &errors);
+    result |= RunTextFieldOrphanValueCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        2.0f,
+        &errors);
+    result |= RunPlacedTextPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        1.0f,
+        &errors);
+    result |= RunPlacedTextPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_CLAY,
+        2.0f,
+        &errors);
+    result |= RunPlacedTextPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        1.0f,
+        &errors);
+    result |= RunPlacedTextPaintCase(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        2.0f,
+        &errors);
     result |= TestSourceTruncationPropagates();
     result |= TestOpacityCullDirect();
     result |= TestGenerationHeldOnSolverFailure(&errors);
     result |= TestPaintCapacityFailure(&errors);
+    result |= TestTextFieldScopeGuard(&errors);
 
     EcsUiFrameBackendShutdown();
     return result;

@@ -7,6 +7,8 @@ bool EcsUiPaintListBuildWithCapacity(
     EcsUiPaintList *list,
     EcsUiTreeSnapshot *tree,
     const EcsUiTheme *theme,
+    EcsUiMeasureTextFn measure_text,
+    void *measure_user_data,
     uint32_t item_capacity);
 
 #endif

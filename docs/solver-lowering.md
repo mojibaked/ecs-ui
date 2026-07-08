@@ -571,11 +571,13 @@ commands a derived id:
 `children.length` is Clay's count of emitted child layout elements, not the
 snapshot child count: it excludes floating children and opacity-culled children,
 and includes bridge-injected synthetic children such as text-field caret,
-selection, and inline text segments, plus the inner `CLAY_TEXT` child inside a
-bordered TEXT wrapper. The stage-7.3 bootstrap diff uses the snapshot direct
-child count only for plain visible box elements where it is equal to Clay's
-emitted `children.length`; outside that join scope the test must fail loudly
-with a scope-limitation message rather than reporting a misleading paint value
+selection, and inline text segments. TEXT wrappers do emit an inner
+`CLAY_TEXT`, but the current bridge TEXT declaration does not attach a border,
+so paint suppresses TEXT borders to match the bridge instead of manufacturing a
+border command. The stage-7.3 bootstrap diff uses the snapshot direct child count
+only for plain visible box elements where it is equal to Clay's emitted
+`children.length`; outside that join scope the test must fail loudly with a
+scope-limitation message rather than reporting a misleading paint value
 mismatch. The border command id is used only for this diff join; the live raylib
 renderer switches on command type and draws command bounds/data, ignoring
 `Clay_RenderCommand.id`.
@@ -632,9 +634,209 @@ they do not increment the parent element's `children.length`, so a bordered
 beveled plain box remains inside the 7.3 border-id join scope. Custom,
 nine-slice, and icon items join by the source element id plus command type
 `CUSTOM`; the diff compares bounds, `customData` identity, and background color.
-The 7.3 border join still fails loudly for text-field pressables, bordered TEXT,
-ZStack floating children, and opacity-culled children until a later diff
-generalizes the exact Clay child-count model for those synthetic cases.
+The 7.3 border join still fails loudly for ZStack floating children and
+opacity-culled children; 7.5 generalizes the text-field synthetic child-count
+case, and TEXT borders remain suppressed because the bridge TEXT declaration
+does not emit them.
+
+### Paint pass (stage 7.5 text)
+
+Stage 7.5 adds the paint layout the rect stages deliberately never computed:
+where glyphs actually land INSIDE the wrapper/pressable boxes that parity
+already solves. This is the largest genuinely-new surface in the paint pass;
+its rules are pinned here in full before code, and it is verified by dedicated
+structural goldens (per-line boxes, alignment, text-field carets/selections at
+scale 1+2).
+
+PARITY TARGET: paint reproduces the CLAY BRIDGE's text emission
+(`EcsUiClayEmitTextContent`, `EcsUiClayEmitTextFieldValue` and the
+caret/selection/inline-range helpers), NOT the legacy direct raylib renderer.
+The legacy `EcsUiRaylibDrawTextFieldView`/`EcsUiRaylibDrawTextLine` measure
+whole strings and compute caret/selection from prefix substrings; that geometry
+DIFFERS from the bridge's per-segment element layout and is not a parity target
+(same rule already stated for the x50 radius quirk: paint matches the bridge).
+
+BACKEND INDEPENDENCE: paint runs after either backend has enriched
+`tree->nodes[]` with root-relative logical rects. Under the Clay path the native
+solver does not run, so paint MUST re-derive all text internals from the
+snapshot (node rects, `node->text`, `text_layout`, `text_field_view`, inherited
+text style) plus the measure callback — it must NOT read solver-internal virtual
+flow. The solver's `EcsUiSolverBuildTextFieldVirtualFlow` is a parallel
+computation (for the pressable's content width only); 7.5 paint MIRRORS its
+segment model but recomputes placement from the enriched boxes.
+
+MEASURE PLUMBING: `EcsUiPaintListBuild` gains an `EcsUiMeasureTextFn measure_text`
++ `void *measure_user_data` (threaded from `backend->desc` in `EcsUiFramePaint`,
+the same source the solver gets). Paint measures with the IDENTICAL per-word
+model the solver uses (`EcsUiSolverMeasureTextRange`: split on ' ' and '\n',
+per-word measured widths, interior-space `spaceWidth` accumulation, physical
+truncated `fontSize`, `min_width` = longest word). To avoid a third copy of that
+model (bridge, solver, paint), extract the per-word measurement AND the text-size
+resolvers into the shared unit: move `RoleTextSize`/`TextStyleSize`/`TextSize`/
+`InheritedTextSize` and a per-word range-measure into `ecs_ui_style.c` (behavior-
+guarded, bit-identical to the solver copies), and have the solver and paint both
+call it. The shared range-measure must additionally expose PER-LINE widths (the
+solver collapses to `max` line width; paint needs each newline-split line's
+width and the trailing-space rule for line boxes).
+
+#### Normal TEXT node (wrapper enriched, carries node id, has_layout)
+
+The wrapper rect is `node`'s enriched layout rect. Inside it Clay places ONE text
+element and emits one render command PER wrapped line. Paint reproduces:
+
+- Text element box within the wrapper (wrapper has 0 padding, default
+  LEFT_TO_RIGHT, one child):
+  - width = measured UNWRAPPED width (max line width; single box).
+  - height = measured height. No embedded newline: max single-word height. With
+    embedded newlines: `natural_line_height * line_count`, where
+    `natural_line_height` = the same max single-word height (Clay's
+    `preferredDimensions.height`; `lineHeight` config is 0 so
+    `finalLineHeight == naturalLineHeight`, `lineHeightOffset == 0`).
+  - x = wrapper.x (childAlignment.x is LEFT for the normal wrapper).
+  - y = wrapper.y + off-axis(align_y) where
+    `off = (wrapper.height - text_height) * {START:0, CENTER:0.5, END:1}`, align_y
+    from `node->text_layout.align_y`, DEFAULT CENTER (`EcsUiClayDefaultTextLayout`).
+    `off` is NOT clamped: multiline text taller than the FIXED wrapper yields a
+    NEGATIVE y (the inner element overflows the wrapper; clipping is 7.6, not
+    7.5). Rect parity above the wrapper is unaffected — the wrapper height is the
+    parity rect.
+- Per-line text-run items (role `text-run`, primitive kept minimal; carries a run
+  ref, see schema below), matching Clay's `Clay__CalculateFinalLayout` wrap +
+  emit exactly:
+  - SINGLE-LINE FAST PATH (no '\n' AND unwrapped width <= element width, which is
+    always true since element width == unwrapped width): exactly ONE line whose
+    box == the text element box; the wrapped line's dimensions are the ELEMENT
+    dimensions, so the textAlignment offset is 0 regardless of align_x. One
+    text-run item spanning `[0, len)` with rect == element box.
+  - EMBEDDED-NEWLINE PATH: split the string on '\n' into lines (a '\n' is a
+    zero-length "word" that closes the current line). For each line i:
+    - line width = that line's measured width by the SAME per-word rule
+      (interior spaces add `spaceWidth`). Clay's `finalCharIsSpace` trailing-space
+      subtraction applies ONLY to newline-TERMINATED lines (clay.h ~2569-2570);
+      the FINAL line is closed by the post-loop block (~2584-2585) with NO
+      subtraction, so a last line ending in a space keeps that space's width. Do
+      not trim the final line. Line height = `natural_line_height`. (Element
+      /wrapper width is unaffected either way: the measure cache and the solver
+      both include trailing-space widths in the unwrapped/line-max width.)
+    - textAlignment offset within the element box:
+      `offset = (element_box.width - line.width) * {LEFT:0, CENTER:0.5, RIGHT:1}`,
+      align from `node->text_layout.align_x` (default START/LEFT).
+    - box = `{element_box.x + offset, element_box.y + i*natural_line_height,
+      line.width, natural_line_height}`.
+    - An EMPTY line (length 0, e.g. consecutive newlines) advances yPosition but
+      emits NO item (Clay `continue`s without a render command). The line-INDEX
+      part still increments so keys stay stable and unique.
+  - Run ref / key: `source` = the TEXT node entity; role `text-run`;
+    `part = (sub<<8)|index` with `sub = 0` for a normal TEXT node and
+    `index = wrapped-line ordinal` (including skipped empty lines, so the ordinal
+    tracks Clay's `lineIndex`). Payload = byte range `[start,end)` into
+    `node->text.text` (aliases the snapshot), physical `font_size`
+    (`U16(scaled(resolved_size))`), resolved `EcsUiColorF` text color, and the
+    logical rect above.
+- Resolved size uses the INHERITED text style chain (nearest ancestor with
+  `has_text_style`), mirroring `EcsUiSolverInheritedTextSize` /
+  `EcsUiClayEmitTextContent`. Resolved color uses `EcsUiStyleTextColor` with the
+  same inherited style plus `inverse_text` and `disabled` propagated from the
+  paint walk (both currently only reachable via ancestors/theme — carry them the
+  same way the bridge threads them through `EmitNode`).
+
+PLACED-TEXT-IN-ZSTACK variant (a ZStack child with a placement whose kind is
+TEXT): the floating wrapper takes the NODE id (no "Floating" suffix) and sets
+childAlignment BOTH x = align_x and y = align_y, and contains the text directly.
+So horizontal placement of the element box comes from childAlignment.x (not just
+per-line textAlignment): element x = wrapper.x + `(wrapper.width - text_width) *
+{START:0,CENTER:0.5,END:1}`. For single-line text the per-line offset is still 0,
+so childAlignment.x is the ONLY horizontal mechanism. A golden must cover placed
+centered text. (Normal in-flow TEXT always uses childAlignment.x LEFT.)
+
+#### Text-field pressable (value node NOT enriched)
+
+The pressable rect is enriched; its VALUE TEXT child (matched by
+`text_field_view.value_node`) is NOT enriched (`has_layout` false) and is
+replaced in flow by synthetic segments. Paint lays those segments out inside the
+pressable, mirroring `EcsUiClayEmitTextFieldValue` + the solver virtual flow:
+
+- Segment model (indices clamped to value length; selection normalized start<=end;
+  selection counts only when `focused && start < end`):
+  - not focused: one inline range `[0, len)`.
+  - focused, no selection: `[0, cursor)`, caret, `[cursor, len)`.
+  - focused with selection: `[0, sel_start)`, caret if `cursor == sel_start`,
+    selection wrapper containing `[sel_start, sel_end)`, caret if
+    `cursor != sel_start`, `[sel_end, len)`.
+  An empty inline range emits NOTHING (segment count varies with cursor).
+- Each element is a flow child of the pressable in emission order, gap 0,
+  childAlignment y CENTER, x LEFT, laid out left-to-right from the pressable's
+  inner content-left (`pressable.x + left padding`; padding = box padding when
+  positive else 12 logical units, scaled to physical `uint16_t` and converted
+  back to logical before placement — the stage-1/6c pressable rule). Vertical:
+  each element is centered in the pressable INNER box (`inner.y +
+  (inner.height - element.height)/2`).
+  - Inline range = a bare text-run (role `text-run`), measured width, height =
+    measured height, `sub` = the segment ordinal (0,1,2,... in emission order),
+    `index` = 0 (inline ranges are single-line; text fields hold no newlines).
+    Uses `EcsUiClayDefaultTextLayout()` (align_x START), color from the inherited
+    VALUE style chain + `view->disabled`.
+  - Caret = a fixed box, role `caret`, primitive box: width =
+    `caret_width>0?caret_width:2`, height = `resolved_value_size + 8`, fill = the
+    resolved value text color. Its flow width is the caret width.
+  - Selection wrapper = a box, role `selection`, primitive box, fill =
+    `EcsUiStyleSelectionColor(theme)` (theme selection color, alpha x0.35 already
+    folded into the resolver). Its size FITS its single inline range (width =
+    range measured width, height = range measured height); it advances flow by
+    that width. The selected text is ALSO emitted as an inner text-run
+    (role `text-run`, `sub` = the selection's segment ordinal) positioned inside
+    the selection box, y-centered within it (childAlignment y CENTER), align_x
+    START. Emit the selection box first, then its inner text-run (box under text).
+- Resolved value size/color use the value node's inherited style chain
+  (value node's own `has_text_style` wins), matching the bridge and
+  `EcsUiSolverBuildTextFieldVirtualFlow`.
+
+SCOPE GUARD (7.5): the segment run's origin above assumes the value is the SOLE
+flow child of the pressable (the common text-field shape), so the run starts at
+the pressable inner content-left. A text-field pressable with the value ALONGSIDE
+other flow children requires replaying the full pressable child flow to find the
+value's slot; 7.5 does not do that. Paint FAILS LOUD (like the diff's child-count
+scope guard) when a `has_text_field_view` pressable has any enriched flow child
+besides the value node, with a message naming the generalization needed. A later
+stage lifts this by replaying full pressable child flow for the text-field value
+slot.
+
+#### Item schema additions
+
+- New role payloads: `text-run` carries `{const char *text (aliases
+  node->text.text), uint32_t byte_start, byte_end, uint16_t font_size (physical),
+  EcsUiColorF color}`; caret and selection reuse the box primitive/fill. Widen
+  `part` to uint32 only if a golden overflows `(sub<<8)|index` (per the plan).
+- Per-node paint order (extends 7.4's box→custom→bevel): the box/custom fill
+  first, then this node's TEXT paint (text runs, or for a text field: per segment
+  in emission order — inline run / caret / [selection box then its inner run]),
+  then bevel edges on top. Text draws above the node's own fill, below bevel.
+- `truncated` and capacity: text fields and multiline text multiply items per
+  node; if `ECS_UI_PAINT_ITEMS_PER_NODE_HEADROOM` is exceeded by a stress golden,
+  widen it (the header already flags this) rather than silently dropping runs.
+
+#### Bootstrap diff (7.5)
+
+The bootstrap value-diff now needs the child-count generalization the 7.3/7.4
+guards deferred: text-field pressables replace the value child with inline
+segments, caret, and selection wrapper children, changing the Clay
+`children.length` used for the border-command id join. Generalize the diff's
+child-count model to Clay's EMITTED child count for these synthetic cases (see
+the 7.3 note); the helper also models normal TEXT wrappers as having one inner
+`CLAY_TEXT`, but paint does not emit TEXT borders because the bridge does not set
+`.border` on TEXT declarations. Then join text render commands: normal-text
+lines by the wrapper element id + line ordinal
+(`Clay__HashNumber(lineIndex, element->id)`); text-field caret/selection by their
+suffixed ids (`_Caret`, `_Selection`); inline ranges have Clay auto ids that are
+not snapshot ids, so the bootstrap diff joins them by the aliased source string
+slice (base text + byte range) and then compares geometry/color/font size.
+Compare line box geometry, resolved color, and font size; classify any residual
+delta SEMANTIC or CLAY-ONLY. Scroll/clip trees stay excluded until 7.6. The join
+also requires
+CULLING OFF (clay.h ~2916-2918 breaks the per-line loop below the viewport, so a
+culling bridge emits fewer text lines than paint): the diff/adapter goldens
+already set `EcsUiFrameBackendSetCullingEnabled(false)`; keep it — paint never
+culls (a demoted clay quirk, on the adoption-time out-of-scope list).
 
 ### Stage 6 scope
 

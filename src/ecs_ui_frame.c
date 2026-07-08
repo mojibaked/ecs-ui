@@ -523,14 +523,23 @@ static bool EcsUiFramePaint(
             &backend->paint_lists[scratch_index],
             tree,
             theme,
+            backend->desc.measure_text,
+            backend->desc.measure_user_data,
             item_capacity)) {
+        const EcsUiPaintList *scratch = &backend->paint_lists[scratch_index];
+        const bool capacity_exceeded =
+            scratch->count >= item_capacity ||
+            scratch->count >= ECS_UI_PAINT_ITEM_MAX;
         tree->generation = previous_generation != 0u ?
             previous_generation :
             previous_tree_generation;
         EcsUiFrameReportError(
             &backend->desc,
             ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY,
-            "ecs-ui paint list capacity exceeded");
+            capacity_exceeded ?
+                "ecs-ui paint list capacity exceeded" :
+                "ecs-ui paint text-field scope requires replaying pressable "
+                "child flow for non-value children");
         return false;
     }
 

@@ -1,5 +1,8 @@
 #include "ecs_ui_style.h"
 
+#include <stdint.h>
+#include <string.h>
+
 float EcsUiStyleClamp01(float value)
 {
     if (value < 0.0f) {
@@ -284,4 +287,297 @@ EcsUiColorF EcsUiStyleSelectionColor(const EcsUiTheme *theme)
 EcsUiColorF EcsUiStyleIconColor(void)
 {
     return (EcsUiColorF){0.0f, 0.0f, 0.0f, 255.0f};
+}
+
+uint16_t EcsUiStyleScaledU16(float value, float scale)
+{
+    if (scale <= 0.0f) {
+        scale = 1.0f;
+    }
+    const float scaled = value * scale;
+    if (scaled <= 0.0f) {
+        return 0u;
+    }
+    if (scaled >= 65535.0f) {
+        return UINT16_MAX;
+    }
+    return (uint16_t)scaled;
+}
+
+float EcsUiStyleScaledU16Logical(float value, float scale)
+{
+    if (scale <= 0.0f) {
+        scale = 1.0f;
+    }
+    return (float)EcsUiStyleScaledU16(value, scale) / scale;
+}
+
+float EcsUiStyleRoleTextSize(EcsUiTextRole role)
+{
+    switch (role) {
+    case ECS_UI_TEXT_TITLE:
+        return 28.0f;
+    case ECS_UI_TEXT_LABEL:
+    case ECS_UI_TEXT_BUTTON:
+    case ECS_UI_TEXT_BODY:
+        return 18.0f;
+    case ECS_UI_TEXT_CAPTION:
+        return 13.0f;
+    default:
+        return 18.0f;
+    }
+}
+
+float EcsUiStyleTextStyleSize(
+    EcsUiTextRole role,
+    EcsUiTextStyle text_style)
+{
+    switch (role) {
+    case ECS_UI_TEXT_TITLE:
+        return text_style.title_size;
+    case ECS_UI_TEXT_LABEL:
+        return text_style.label_size;
+    case ECS_UI_TEXT_BUTTON:
+        return text_style.button_size;
+    case ECS_UI_TEXT_CAPTION:
+        return text_style.caption_size;
+    case ECS_UI_TEXT_BODY:
+    default:
+        return text_style.body_size;
+    }
+}
+
+float EcsUiStyleTextSize(
+    EcsUiTextRole role,
+    EcsUiTextStyle text_style,
+    bool has_text_style)
+{
+    const float styled_size =
+        has_text_style ? EcsUiStyleTextStyleSize(role, text_style) : 0.0f;
+    return styled_size > 0.0f ? styled_size : EcsUiStyleRoleTextSize(role);
+}
+
+bool EcsUiStyleInheritedTextStyle(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index,
+    EcsUiTextStyle *out_style,
+    bool *out_has_style)
+{
+    if (out_style != NULL) {
+        *out_style = (EcsUiTextStyle){0};
+    }
+    if (out_has_style != NULL) {
+        *out_has_style = false;
+    }
+    if (tree == NULL || index >= tree->count) {
+        return false;
+    }
+
+    uint32_t current = index;
+    while (current != ECS_UI_TREE_INVALID_INDEX && current < tree->count) {
+        const EcsUiTreeNodeSnapshot *candidate = &tree->nodes[current];
+        if (candidate->has_text_style) {
+            if (out_style != NULL) {
+                *out_style = candidate->text_style;
+            }
+            if (out_has_style != NULL) {
+                *out_has_style = true;
+            }
+            return true;
+        }
+        current = candidate->parent_index;
+    }
+    return false;
+}
+
+float EcsUiStyleInheritedTextSize(
+    const EcsUiTreeSnapshot *tree,
+    uint32_t index)
+{
+    if (tree == NULL || index >= tree->count) {
+        return EcsUiStyleRoleTextSize(ECS_UI_TEXT_BODY);
+    }
+
+    EcsUiTextStyle text_style = {0};
+    bool has_text_style = false;
+    (void)EcsUiStyleInheritedTextStyle(
+        tree,
+        index,
+        &text_style,
+        &has_text_style);
+    return EcsUiStyleTextSize(
+        tree->nodes[index].text.role,
+        text_style,
+        has_text_style);
+}
+
+static uint32_t EcsUiStyleClampTextIndex(uint32_t index, size_t length)
+{
+    return index <= length ? index : (uint32_t)length;
+}
+
+static EcsUiSize EcsUiStyleMeasureTextSlice(
+    EcsUiMeasureTextFn measure_text,
+    void *measure_user_data,
+    const char *text,
+    int32_t length,
+    uint16_t font_size)
+{
+    if (measure_text == NULL) {
+        return (EcsUiSize){0};
+    }
+
+    const EcsUiTextMeasureSpec spec = {
+        .font_id = 0u,
+        .font_size = (float)font_size,
+        .letter_spacing = 0.0f,
+        .line_height = 0.0f,
+    };
+    return measure_text(text, length, &spec, measure_user_data);
+}
+
+static float EcsUiStyleMaxFloat(float a, float b)
+{
+    return a > b ? a : b;
+}
+
+static void EcsUiStyleAddTextLine(
+    EcsUiStyleTextRangeMeasure *measured,
+    uint32_t start,
+    uint32_t end,
+    float width,
+    float height,
+    float scale)
+{
+    if (measured == NULL) {
+        return;
+    }
+    if (measured->line_count >= ECS_UI_STYLE_TEXT_LINE_MAX) {
+        measured->truncated = true;
+        return;
+    }
+    measured->lines[measured->line_count] = (EcsUiStyleTextLineMeasure){
+        .byte_start = start,
+        .byte_end = end,
+        .width = width / scale,
+        .height = height / scale,
+    };
+    measured->line_count += 1u;
+}
+
+EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRange(
+    EcsUiMeasureTextFn measure_text,
+    void *measure_user_data,
+    const char *text_or_null,
+    uint32_t start,
+    uint32_t end,
+    uint16_t font_size,
+    float scale)
+{
+    EcsUiStyleTextRangeMeasure measured = {0};
+    if (scale <= 0.0f) {
+        scale = 1.0f;
+    }
+    if (measure_text == NULL) {
+        return measured;
+    }
+
+    const char *text = text_or_null != NULL ? text_or_null : "";
+    const size_t source_length = strlen(text);
+    uint32_t range_start = EcsUiStyleClampTextIndex(start, source_length);
+    uint32_t range_end = EcsUiStyleClampTextIndex(end, source_length);
+    if (range_start > range_end) {
+        uint32_t swap = range_start;
+        range_start = range_end;
+        range_end = swap;
+    }
+
+    const char *range_text = &text[range_start];
+    const int32_t text_length = (int32_t)(range_end - range_start);
+    const float space_width =
+        EcsUiStyleMeasureTextSlice(
+            measure_text,
+            measure_user_data,
+            " ",
+            1,
+            font_size)
+            .width;
+
+    int32_t word_start = 0;
+    int32_t word_end = 0;
+    int32_t line_start = 0;
+    float line_width = 0.0f;
+    float measured_width = 0.0f;
+    float measured_height = 0.0f;
+    float min_width = 0.0f;
+    while (word_end < text_length) {
+        const char current = range_text[word_end];
+        if (current == ' ' || current == '\n') {
+            const int32_t word_length = word_end - word_start;
+            EcsUiSize dimensions = {0};
+            if (word_length > 0) {
+                dimensions = EcsUiStyleMeasureTextSlice(
+                    measure_text,
+                    measure_user_data,
+                    &range_text[word_start],
+                    word_length,
+                    font_size);
+            }
+            min_width = EcsUiStyleMaxFloat(min_width, dimensions.width);
+            measured_height =
+                EcsUiStyleMaxFloat(measured_height, dimensions.height);
+            if (current == ' ') {
+                dimensions.width += space_width;
+                line_width += dimensions.width;
+            } else {
+                line_width += dimensions.width;
+                measured_width =
+                    EcsUiStyleMaxFloat(measured_width, line_width);
+                const bool final_space =
+                    word_end > line_start && range_text[word_end - 1] == ' ';
+                const int32_t line_length =
+                    word_end - line_start - (final_space ? 1 : 0);
+                EcsUiStyleAddTextLine(
+                    &measured,
+                    range_start + (uint32_t)line_start,
+                    range_start + (uint32_t)(line_start + line_length),
+                    line_width - (final_space ? space_width : 0.0f),
+                    measured_height,
+                    scale);
+                line_width = 0.0f;
+                line_start = word_end + 1;
+            }
+            word_start = word_end + 1;
+        }
+        word_end += 1;
+    }
+
+    if (word_end - word_start > 0) {
+        const EcsUiSize dimensions = EcsUiStyleMeasureTextSlice(
+            measure_text,
+            measure_user_data,
+            &range_text[word_start],
+            word_end - word_start,
+            font_size);
+        line_width += dimensions.width;
+        measured_height =
+            EcsUiStyleMaxFloat(measured_height, dimensions.height);
+        min_width = EcsUiStyleMaxFloat(min_width, dimensions.width);
+    }
+
+    measured_width = EcsUiStyleMaxFloat(line_width, measured_width);
+    if (text_length > 0 && line_start < text_length) {
+        EcsUiStyleAddTextLine(
+            &measured,
+            range_start + (uint32_t)line_start,
+            range_end,
+            line_width,
+            measured_height,
+            scale);
+    }
+
+    measured.width = measured_width / scale;
+    measured.height = measured_height / scale;
+    measured.min_width = min_width / scale;
+    return measured;
 }

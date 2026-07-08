@@ -4,6 +4,9 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+
+extern Clay_ElementId Clay__HashNumber(uint32_t offset, uint32_t seed);
 
 static int Require(bool condition, const char *message)
 {
@@ -72,10 +75,13 @@ static EcsUiSize TestMeasureText(
     void *user_data)
 {
     (void)utf8;
-    (void)length;
-    (void)spec;
     (void)user_data;
-    return (EcsUiSize){.width = 0.0f, .height = 0.0f};
+    const float font_size = spec != NULL ? spec->font_size : 0.0f;
+    const float chars = length > 0 ? (float)length : 0.0f;
+    return (EcsUiSize){
+        .width = chars * font_size * 0.5f + 3.0f,
+        .height = font_size + 4.0f,
+    };
 }
 
 static ecs_world_t *CreateWorld(void)
@@ -120,6 +126,41 @@ static int BuildDiffTree(
             .id = "DiffInner",
             .preferred_width = 32.5f,
             .preferred_height = 18.25f,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t diff_text = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DiffText",
+            .text = "x",
+            .role = ECS_UI_TEXT_CAPTION,
+        });
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "DiffTextField",
+            .preferred_height = 28.5f,
+        });
+    ecs_entity_t field_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DiffTextFieldValue",
+            .text = "aa bb",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    ecs_entity_t repeated_field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "DiffRepeatedTextField",
+            .preferred_height = 28.5f,
+        });
+    ecs_entity_t repeated_value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "DiffRepeatedTextFieldValue",
+            .text = "aa",
+            .role = ECS_UI_TEXT_BODY,
         });
     EcsUiEnd(&builder);
     (void)EcsUiBeginButton(
@@ -192,6 +233,28 @@ static int BuildDiffTree(
         .border_top_width = 3.25f,
         .border_color = {150u, 160u, 170u, 230u},
     });
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = field_value,
+        .focused = true,
+        .cursor = 5u,
+        .selection_anchor = 3u,
+        .selection_focus = 5u,
+        .caret_width = 2.5f,
+    });
+    ecs_set(world, field, EcsUiBoxStyle, {
+        .background = {55u, 65u, 75u, 210u},
+        .border_width = 2.0f,
+        .border_color = {145u, 155u, 165u, 230u},
+    });
+    ecs_set(world, repeated_field, EcsUiTextFieldView, {
+        .value_node = repeated_value,
+        .focused = true,
+        .cursor = 1u,
+    });
+    ecs_set(world, diff_text, EcsUiBoxStyle, {
+        .border_width = 2.0f,
+        .border_color = {135u, 145u, 155u, 230u},
+    });
     ecs_set(world, subpixel, EcsUiBoxStyle, {
         .background = {44u, 55u, 66u, 200u},
         .radius = 3.5f,
@@ -240,6 +303,50 @@ static const Clay_RenderCommand *FindCommand(
     for (int32_t i = 0; i < commands->length; i += 1) {
         const Clay_RenderCommand *command = &commands->internalArray[i];
         if (command->id == id && command->commandType == type) {
+            return command;
+        }
+    }
+    return NULL;
+}
+
+static const Clay_RenderCommand *FindTextCommandByRun(
+    const Clay_RenderCommandArray *commands,
+    const EcsUiPaintTextRun *run,
+    bool *claimed,
+    int32_t *out_index)
+{
+    if (out_index != NULL) {
+        *out_index = -1;
+    }
+    if (commands == NULL || commands->internalArray == NULL ||
+            run == NULL || run->text == NULL) {
+        return NULL;
+    }
+    for (int32_t i = 0; i < commands->length; i += 1) {
+        if (claimed != NULL && claimed[i]) {
+            continue;
+        }
+        const Clay_RenderCommand *command = &commands->internalArray[i];
+        if (command->commandType != CLAY_RENDER_COMMAND_TYPE_TEXT) {
+            continue;
+        }
+        const Clay_StringSlice slice =
+            command->renderData.text.stringContents;
+        const int32_t length =
+            (int32_t)(run->byte_end - run->byte_start);
+        if (slice.length != length) {
+            continue;
+        }
+        if ((slice.baseChars == run->text &&
+                slice.chars == &run->text[run->byte_start]) ||
+                (slice.chars != NULL &&
+                    strncmp(
+                        slice.chars,
+                        &run->text[run->byte_start],
+                        (size_t)length) == 0)) {
+            if (out_index != NULL) {
+                *out_index = i;
+            }
             return command;
         }
     }
@@ -333,25 +440,24 @@ static const char *DiffBorderJoinScopeReason(
     if (tree == NULL || node == NULL) {
         return "missing snapshot node";
     }
-    if (node->kind == ECS_UI_NODE_TEXT) {
-        return "bordered TEXT emits an inner CLAY_TEXT child";
-    }
-    if (node->kind == ECS_UI_NODE_PRESSABLE && node->has_text_field_view) {
-        return "text-field pressable emits synthetic value/caret/selection children";
-    }
 
     bool zstack_flow_child_seen = false;
     for (uint32_t child = node->first_child;
          child != ECS_UI_TREE_INVALID_INDEX && child < tree->count;
          child = tree->nodes[child].next_sibling) {
         const EcsUiTreeNodeSnapshot *child_node = &tree->nodes[child];
-        if (child_node->visual.opacity <= 0.01f) {
+        const bool text_field_value =
+            node->kind == ECS_UI_NODE_PRESSABLE &&
+            node->has_text_field_view &&
+            node->text_field_view.value_node == child_node->entity &&
+            child_node->kind == ECS_UI_NODE_TEXT;
+        if (!text_field_value && child_node->visual.opacity <= 0.01f) {
             return "direct child is opacity-culled before Clay opens it";
         }
-        if (child_node->has_placement) {
-            return "direct child is emitted as a floating element";
-        }
         if (node->kind == ECS_UI_NODE_ZSTACK) {
+            if (child_node->has_placement) {
+                return "direct child is emitted as a floating element";
+            }
             if (zstack_flow_child_seen) {
                 return "ZStack children after the first flow child are floating";
             }
@@ -579,6 +685,148 @@ static int CompareCustomItem(
     return result;
 }
 
+static int CompareTextItem(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiPaintItem *item,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter,
+    bool *bridge_claimed,
+    bool *adapter_claimed)
+{
+    if (tree == NULL || item == NULL) {
+        return Require(false, "missing text diff item inputs");
+    }
+    const EcsUiTreeNodeSnapshot *node =
+        FindNodeByEntity(tree, item->key.source);
+    Clay_ElementId element_id = {0};
+    int result = 0;
+    (void)EcsUiPaintClayElementId(node, NULL, &element_id);
+    const uint32_t line_index = item->key.part & 0xffu;
+    const Clay_ElementId text_id =
+        Clay__HashNumber(line_index, element_id.id);
+    const bool text_field_value =
+        node != NULL &&
+        node->parent_index != ECS_UI_TREE_INVALID_INDEX &&
+        node->parent_index < tree->count &&
+        tree->nodes[node->parent_index].kind == ECS_UI_NODE_PRESSABLE &&
+        tree->nodes[node->parent_index].has_text_field_view &&
+        tree->nodes[node->parent_index].text_field_view.value_node ==
+            node->entity;
+
+    const Clay_RenderCommand *adapter_text = text_field_value ?
+        NULL :
+        FindCommand(adapter, text_id.id, CLAY_RENDER_COMMAND_TYPE_TEXT);
+    const Clay_RenderCommand *bridge_text = text_field_value ?
+        NULL :
+        FindCommand(bridge, text_id.id, CLAY_RENDER_COMMAND_TYPE_TEXT);
+    int32_t adapter_index = -1;
+    int32_t bridge_index = -1;
+    if (adapter_text != NULL && adapter->internalArray != NULL) {
+        adapter_index = (int32_t)(adapter_text - adapter->internalArray);
+    }
+    if (bridge_text != NULL && bridge->internalArray != NULL) {
+        bridge_index = (int32_t)(bridge_text - bridge->internalArray);
+    }
+    if (adapter_text == NULL) {
+        adapter_text =
+            FindTextCommandByRun(
+                adapter,
+                &item->payload.text_run,
+                adapter_claimed,
+                &adapter_index);
+    }
+    if (bridge_text == NULL) {
+        bridge_text =
+            FindTextCommandByRun(
+                bridge,
+                &item->payload.text_run,
+                bridge_claimed,
+                &bridge_index);
+    }
+    if (adapter_text == NULL || bridge_text == NULL) {
+        (void)fprintf(
+            stderr,
+            "text diff missing command node=%s range=%u..%u part=%u\n",
+            node != NULL && node->id[0] != '\0' ? node->id : "Node",
+            item->payload.text_run.byte_start,
+            item->payload.text_run.byte_end,
+            item->key.part);
+    }
+    result |= Require(adapter_text != NULL, "adapter text command missing");
+    result |= Require(bridge_text != NULL, "bridge text command missing");
+    if (adapter_text != NULL && bridge_text != NULL) {
+        if (adapter_claimed != NULL && adapter_index >= 0) {
+            adapter_claimed[adapter_index] = true;
+        }
+        if (bridge_claimed != NULL && bridge_index >= 0) {
+            bridge_claimed[bridge_index] = true;
+        }
+        result |= RequireBoundsEqual(
+            adapter_text->boundingBox,
+            bridge_text->boundingBox,
+            "text bounds mismatch");
+        result |= RequireColor(
+            adapter_text->renderData.text.textColor,
+            bridge_text->renderData.text.textColor,
+            "text color mismatch");
+        result |= Require(
+            adapter_text->renderData.text.fontSize ==
+                bridge_text->renderData.text.fontSize,
+            "text font size mismatch");
+        result |= Require(
+            adapter_text->renderData.text.stringContents.chars ==
+                bridge_text->renderData.text.stringContents.chars &&
+                adapter_text->renderData.text.stringContents.length ==
+                    bridge_text->renderData.text.stringContents.length,
+            "text slice mismatch");
+    }
+    return result;
+}
+
+static int CompareRoleBoxItem(
+    const EcsUiTreeSnapshot *tree,
+    const EcsUiPaintItem *item,
+    const Clay_RenderCommandArray *bridge,
+    const Clay_RenderCommandArray *adapter)
+{
+    if (tree == NULL || item == NULL) {
+        return Require(false, "missing role-box diff item inputs");
+    }
+    const EcsUiTreeNodeSnapshot *node =
+        FindNodeByEntity(tree, item->key.source);
+    Clay_ElementId role_id = {0};
+    int result = 0;
+    result |= Require(
+        EcsUiPaintClayElementId(
+            node,
+            item->key.role == ECS_UI_PAINT_ROLE_CARET ?
+                "_Caret" :
+                "_Selection",
+            &role_id),
+        "role-box item should have a computable Clay id");
+    if (role_id.id == 0u) {
+        return result;
+    }
+
+    const Clay_RenderCommand *adapter_rect =
+        FindCommand(adapter, role_id.id, CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    const Clay_RenderCommand *bridge_rect =
+        FindCommand(bridge, role_id.id, CLAY_RENDER_COMMAND_TYPE_RECTANGLE);
+    result |= Require(adapter_rect != NULL, "adapter role-box command missing");
+    result |= Require(bridge_rect != NULL, "bridge role-box command missing");
+    if (adapter_rect != NULL && bridge_rect != NULL) {
+        result |= RequireBoundsEqual(
+            adapter_rect->boundingBox,
+            bridge_rect->boundingBox,
+            "role-box bounds mismatch");
+        result |= RequireColor(
+            adapter_rect->renderData.rectangle.backgroundColor,
+            bridge_rect->renderData.rectangle.backgroundColor,
+            "role-box color mismatch");
+    }
+    return result;
+}
+
 static int RunDiffCase(float scale)
 {
     int result = 0;
@@ -632,6 +880,8 @@ static int RunDiffCase(float scale)
             &adapter),
         "paint clay adapter build failed");
 
+    bool bridge_text_claimed[256] = {0};
+    bool adapter_text_claimed[256] = {0};
     if (paint != NULL && bridge != NULL && adapter.internalArray != NULL) {
         for (uint32_t i = 0u; i < paint->count; i += 1u) {
             const EcsUiPaintItem *item = &paint->items[i];
@@ -643,6 +893,23 @@ static int RunDiffCase(float scale)
             if (item->key.role == ECS_UI_PAINT_ROLE_BEVEL_EDGE &&
                     item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX) {
                 result |= CompareBevelItem(&tree, item, bridge, &adapter);
+                continue;
+            }
+            if (item->key.role == ECS_UI_PAINT_ROLE_TEXT_RUN &&
+                    item->primitive == ECS_UI_PAINT_PRIMITIVE_TEXT_RUN) {
+                result |= CompareTextItem(
+                    &tree,
+                    item,
+                    bridge,
+                    &adapter,
+                    bridge_text_claimed,
+                    adapter_text_claimed);
+                continue;
+            }
+            if ((item->key.role == ECS_UI_PAINT_ROLE_CARET ||
+                    item->key.role == ECS_UI_PAINT_ROLE_SELECTION) &&
+                    item->primitive == ECS_UI_PAINT_PRIMITIVE_BOX) {
+                result |= CompareRoleBoxItem(&tree, item, bridge, &adapter);
                 continue;
             }
             if ((item->key.role == ECS_UI_PAINT_ROLE_NINE_SLICE ||

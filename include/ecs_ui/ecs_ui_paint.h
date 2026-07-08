@@ -2,6 +2,7 @@
 #define ECS_UI_ECS_UI_PAINT_H
 
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_frame.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +42,7 @@ typedef enum EcsUiPaintPrimitive {
     ECS_UI_PAINT_PRIMITIVE_NONE = 0,
     ECS_UI_PAINT_PRIMITIVE_BOX = 1,
     ECS_UI_PAINT_PRIMITIVE_CUSTOM = 2,
+    ECS_UI_PAINT_PRIMITIVE_TEXT_RUN = 3,
 } EcsUiPaintPrimitive;
 
 typedef enum EcsUiPaintBevelEdgePart {
@@ -101,6 +103,14 @@ typedef struct EcsUiPaintCustom {
     EcsUiColorF color;
 } EcsUiPaintCustom;
 
+typedef struct EcsUiPaintTextRun {
+    const char *text;
+    uint32_t byte_start;
+    uint32_t byte_end;
+    uint16_t font_size;
+    EcsUiColorF color;
+} EcsUiPaintTextRun;
+
 typedef struct EcsUiPaintItem {
     EcsUiPaintKey key;
     uint16_t primitive;
@@ -113,6 +123,7 @@ typedef struct EcsUiPaintItem {
         EcsUiPaintBox box;
         EcsUiPaintBevelEdge bevel_edge;
         EcsUiPaintCustom custom;
+        EcsUiPaintTextRun text_run;
     } payload;
 } EcsUiPaintItem;
 
@@ -136,7 +147,9 @@ void EcsUiPaintListReset(
 bool EcsUiPaintListBuild(
     EcsUiPaintList *list,
     EcsUiTreeSnapshot *tree,
-    const EcsUiTheme *theme);
+    const EcsUiTheme *theme,
+    EcsUiMeasureTextFn measure_text,
+    void *measure_user_data);
 
 extern ECS_COMPONENT_DECLARE(EcsUiFrameArtifacts);
 
