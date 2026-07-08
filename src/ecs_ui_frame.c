@@ -15,6 +15,8 @@
 #endif
 
 #include "ecs_ui_frame_internal.h"
+#include "ecs_ui/ecs_ui_paint.h"
+#include "ecs_ui_paint_internal.h"
 #include "ecs_ui_scroll_state.h"
 #include "ecs_ui_solver.h"
 
@@ -44,6 +46,10 @@ typedef struct EcsUiFrameBackend {
     EcsUiSolverScrollContent native_scroll_contents[ECS_UI_TREE_NODE_MAX];
     EcsUiScrollUpdate native_scroll_reports[ECS_UI_TREE_NODE_MAX];
     uint32_t native_scroll_report_count;
+    EcsUiPaintList paint_lists[2];
+    uint32_t active_paint_list;
+    uint32_t paint_item_capacity;
+    uint32_t generation;
 } EcsUiFrameBackend;
 
 static EcsUiFrameBackend g_ecs_ui_frame_backend;
@@ -56,6 +62,17 @@ void EcsUiFrameInternalSelectBackend(EcsUiFrameInternalBackend backend)
 EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void)
 {
     return g_ecs_ui_frame_backend.selected_backend;
+}
+
+const EcsUiPaintList *EcsUiFrameInternalPaintList(void)
+{
+    return &g_ecs_ui_frame_backend
+        .paint_lists[g_ecs_ui_frame_backend.active_paint_list];
+}
+
+void EcsUiFrameInternalSetPaintItemCapacity(uint32_t capacity)
+{
+    g_ecs_ui_frame_backend.paint_item_capacity = capacity;
 }
 
 void EcsUiFrameInternalSetNativeScrollOffsets(
@@ -479,6 +496,49 @@ static void EcsUiFrameStoreNativeScrollReports(
     }
 }
 
+static bool EcsUiFramePaint(
+    EcsUiFrameBackend *backend,
+    EcsUiTreeSnapshot *tree,
+    const EcsUiTheme *theme)
+{
+    if (backend == NULL || tree == NULL || theme == NULL) {
+        return false;
+    }
+    uint32_t next_generation = backend->generation + 1u;
+    if (next_generation == 0u) {
+        next_generation += 1u;
+    }
+    const uint32_t previous_generation =
+        backend->paint_lists[backend->active_paint_list].generation;
+    const uint32_t previous_tree_generation = tree->generation;
+    const uint32_t scratch_index =
+        backend->active_paint_list == 0u ? 1u : 0u;
+    const uint32_t item_capacity =
+        backend->paint_item_capacity > 0u ?
+            backend->paint_item_capacity :
+            ECS_UI_PAINT_ITEM_MAX;
+
+    tree->generation = next_generation;
+    if (!EcsUiPaintListBuildWithCapacity(
+            &backend->paint_lists[scratch_index],
+            tree,
+            theme,
+            item_capacity)) {
+        tree->generation = previous_generation != 0u ?
+            previous_generation :
+            previous_tree_generation;
+        EcsUiFrameReportError(
+            &backend->desc,
+            ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY,
+            "ecs-ui paint list capacity exceeded");
+        return false;
+    }
+
+    backend->generation = next_generation;
+    backend->active_paint_list = scratch_index;
+    return true;
+}
+
 static void EcsUiFrameApplyClayScrollReports(
     ecs_world_t *world,
     const EcsUiClayInteractionFrame *frame)
@@ -713,6 +773,7 @@ const EcsUiDrawList *EcsUiFrameRun(
                 solver_message[0] != '\0' ?
                     solver_message :
                     "native layout solver failed");
+            tree->generation = EcsUiFrameInternalPaintList()->generation;
             return NULL;
         }
         EcsUiFrameCopyNativeScrollContents(
@@ -724,7 +785,7 @@ const EcsUiDrawList *EcsUiFrameRun(
             tree,
             backend->native_scroll_contents,
             native_content_count);
-        (void)theme;
+        (void)EcsUiFramePaint(backend, tree, theme);
         (void)pointer_or_null;
         (void)frame_or_null;
         return &backend->draw_list;
@@ -757,6 +818,7 @@ const EcsUiDrawList *EcsUiFrameRun(
     (void)EcsUiClayEnrichSnapshotLayout(
         tree,
         options != NULL ? &clay_options : NULL);
+    (void)EcsUiFramePaint(backend, tree, theme);
 
     if (pointer_or_null != NULL) {
         Clay_SetPointerState(
@@ -835,6 +897,7 @@ bool EcsUiFrameApply(
     ecs_world_t *world,
     const EcsUiInteractionFrame *frame)
 {
+    EcsUiFrameBackend *backend = &g_ecs_ui_frame_backend;
     bool ok = EcsUiApplyHoverState(
         world,
         frame != NULL ? frame->resolved_node : 0);
@@ -844,10 +907,20 @@ bool EcsUiFrameApply(
             frame->pending_scrolls,
             frame->pending_scroll_count) && ok;
     }
-    if (frame != NULL && frame == g_ecs_ui_frame_backend.active_frame) {
+    if (frame != NULL && frame == backend->active_frame) {
         EcsUiFrameApplyClayScrollReports(
             world,
-            &g_ecs_ui_frame_backend.clay_frame);
+            &backend->clay_frame);
+    }
+    if (world != NULL && backend->initialized) {
+        const EcsUiPaintList *paint = EcsUiFrameInternalPaintList();
+        ecs_singleton_set(
+            world,
+            EcsUiFrameArtifacts,
+            {
+                .paint = paint,
+                .generation = paint != NULL ? paint->generation : 0u,
+            });
     }
     return ok;
 }

@@ -11,9 +11,9 @@ float EcsUiStyleClamp01(float value)
     return value;
 }
 
-EcsUiStyleColor EcsUiStyleColorFrom(EcsUiColor color)
+EcsUiColorF EcsUiStyleColorFrom(EcsUiColor color)
 {
-    return (EcsUiStyleColor){
+    return (EcsUiColorF){
         .r = (float)color.r,
         .g = (float)color.g,
         .b = (float)color.b,
@@ -21,21 +21,21 @@ EcsUiStyleColor EcsUiStyleColorFrom(EcsUiColor color)
     };
 }
 
-EcsUiStyleColor EcsUiStyleApplyOpacity(
-    EcsUiStyleColor color,
+EcsUiColorF EcsUiStyleApplyOpacity(
+    EcsUiColorF color,
     float opacity)
 {
     color.a *= EcsUiStyleClamp01(opacity);
     return color;
 }
 
-EcsUiStyleColor EcsUiStyleLerpColor(
-    EcsUiStyleColor from,
-    EcsUiStyleColor to,
+EcsUiColorF EcsUiStyleLerpColor(
+    EcsUiColorF from,
+    EcsUiColorF to,
     float amount)
 {
     const float t = EcsUiStyleClamp01(amount);
-    return (EcsUiStyleColor){
+    return (EcsUiColorF){
         .r = from.r + ((to.r - from.r) * t),
         .g = from.g + ((to.g - from.g) * t),
         .b = from.b + ((to.b - from.b) * t),
@@ -43,14 +43,14 @@ EcsUiStyleColor EcsUiStyleLerpColor(
     };
 }
 
-EcsUiStyleColor EcsUiStyleColorOr(
+EcsUiColorF EcsUiStyleColorOr(
     EcsUiColor color,
-    EcsUiStyleColor fallback)
+    EcsUiColorF fallback)
 {
     return color.a != 0u ? EcsUiStyleColorFrom(color) : fallback;
 }
 
-EcsUiStyleColor EcsUiStyleTextColor(
+EcsUiColorF EcsUiStyleTextColor(
     const EcsUiTheme *theme,
     EcsUiTextRole role,
     bool inverse,
@@ -78,7 +78,7 @@ EcsUiStyleColor EcsUiStyleTextColor(
     return EcsUiStyleColorFrom(theme->text);
 }
 
-EcsUiStyleColor EcsUiStyleButtonColor(
+EcsUiColorF EcsUiStyleButtonColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
 {
@@ -86,7 +86,7 @@ EcsUiStyleColor EcsUiStyleButtonColor(
         return EcsUiStyleColorFrom(theme->button_disabled);
     }
 
-    EcsUiStyleColor fill = EcsUiStyleColorFrom(theme->button);
+    EcsUiColorF fill = EcsUiStyleColorFrom(theme->button);
     switch (node != NULL ? node->button.variant : ECS_UI_BUTTON_DEFAULT) {
     case ECS_UI_BUTTON_PRIMARY:
         fill = EcsUiStyleColorFrom(theme->button_primary);
@@ -105,7 +105,7 @@ EcsUiStyleColor EcsUiStyleButtonColor(
 
     return EcsUiStyleLerpColor(
         fill,
-        (EcsUiStyleColor){255.0f, 255.0f, 255.0f, fill.a},
+        (EcsUiColorF){255.0f, 255.0f, 255.0f, fill.a},
         node != NULL ? EcsUiStyleClamp01(node->visual.highlight) * 0.42f : 0.0f);
 }
 
@@ -115,17 +115,17 @@ bool EcsUiStyleHasNineSlice(const EcsUiTreeNodeSnapshot *node)
         node->nine_slice_style.image[0] != '\0';
 }
 
-EcsUiStyleColor EcsUiStyleContainerBackground(
+EcsUiColorF EcsUiStyleContainerBackground(
     const EcsUiTreeNodeSnapshot *node,
-    EcsUiStyleColor fallback)
+    EcsUiColorF fallback)
 {
     if (EcsUiStyleHasNineSlice(node)) {
-        return (EcsUiStyleColor){0};
+        return (EcsUiColorF){0};
     }
     if (node == NULL || !node->has_box_style) {
         return fallback;
     }
-    EcsUiStyleColor fill = EcsUiStyleColorOr(
+    EcsUiColorF fill = EcsUiStyleColorOr(
         node->box_style.background,
         fallback);
     if (node->hover_within) {
@@ -136,18 +136,18 @@ EcsUiStyleColor EcsUiStyleContainerBackground(
     return fill;
 }
 
-EcsUiStyleColor EcsUiStylePressableColor(
+EcsUiColorF EcsUiStylePressableColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node)
 {
-    EcsUiStyleColor fill = EcsUiStyleColorFrom(theme->button_subtle);
+    EcsUiColorF fill = EcsUiStyleColorFrom(theme->button_subtle);
     if (node == NULL || !node->has_box_style) {
         if (node != NULL && node->hover_within) {
             fill = EcsUiStyleApplyOpacity(fill, 0.86f);
         }
         return EcsUiStyleLerpColor(
             fill,
-            (EcsUiStyleColor){255.0f, 255.0f, 255.0f, fill.a},
+            (EcsUiColorF){255.0f, 255.0f, 255.0f, fill.a},
             node != NULL ? EcsUiStyleClamp01(node->visual.highlight) * 0.42f : 0.0f);
     }
 
@@ -161,20 +161,20 @@ EcsUiStyleColor EcsUiStylePressableColor(
             node->box_style.hover_background,
             fill);
     }
-    EcsUiStyleColor highlight = EcsUiStyleColorOr(
+    EcsUiColorF highlight = EcsUiStyleColorOr(
         node->box_style.highlight_background,
-        (EcsUiStyleColor){255.0f, 255.0f, 255.0f, fill.a});
+        (EcsUiColorF){255.0f, 255.0f, 255.0f, fill.a});
     return EcsUiStyleLerpColor(
         fill,
         highlight,
         EcsUiStyleClamp01(node->visual.highlight));
 }
 
-EcsUiStyleColor EcsUiStyleNineSliceTint(
+EcsUiColorF EcsUiStyleNineSliceTint(
     const EcsUiTreeNodeSnapshot *node)
 {
     if (!EcsUiStyleHasNineSlice(node) || node->nine_slice_style.tint.a == 0u) {
-        return (EcsUiStyleColor){255.0f, 255.0f, 255.0f, 255.0f};
+        return (EcsUiColorF){255.0f, 255.0f, 255.0f, 255.0f};
     }
     return EcsUiStyleColorFrom(node->nine_slice_style.tint);
 }
@@ -209,7 +209,7 @@ float EcsUiStyleCornerRadius(
     return radius;
 }
 
-EcsUiStyleColor EcsUiStyleBevelTopLeftColor(
+EcsUiColorF EcsUiStyleBevelTopLeftColor(
     const EcsUiTreeNodeSnapshot *node)
 {
     return EcsUiStyleColorFrom(
@@ -218,7 +218,7 @@ EcsUiStyleColor EcsUiStyleBevelTopLeftColor(
             node->box_style.bevel_light);
 }
 
-EcsUiStyleColor EcsUiStyleBevelBottomRightColor(
+EcsUiColorF EcsUiStyleBevelBottomRightColor(
     const EcsUiTreeNodeSnapshot *node)
 {
     return EcsUiStyleColorFrom(
@@ -227,14 +227,14 @@ EcsUiStyleColor EcsUiStyleBevelBottomRightColor(
             node->box_style.bevel_dark);
 }
 
-EcsUiStyleColor EcsUiStyleSelectionColor(const EcsUiTheme *theme)
+EcsUiColorF EcsUiStyleSelectionColor(const EcsUiTheme *theme)
 {
-    EcsUiStyleColor selection = EcsUiStyleColorFrom(theme->button_primary);
+    EcsUiColorF selection = EcsUiStyleColorFrom(theme->button_primary);
     selection.a *= 0.35f;
     return selection;
 }
 
-EcsUiStyleColor EcsUiStyleIconColor(void)
+EcsUiColorF EcsUiStyleIconColor(void)
 {
-    return (EcsUiStyleColor){0.0f, 0.0f, 0.0f, 255.0f};
+    return (EcsUiColorF){0.0f, 0.0f, 0.0f, 255.0f};
 }

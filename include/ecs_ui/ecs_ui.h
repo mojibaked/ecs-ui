@@ -559,6 +559,7 @@ typedef struct EcsUiTreeNodeSnapshot {
 typedef struct EcsUiTreeSnapshot {
     ecs_entity_t root;
     float scale;
+    uint32_t generation;
     uint32_t count;
     bool truncated;
     EcsUiTreeNodeSnapshot nodes[ECS_UI_TREE_NODE_MAX];

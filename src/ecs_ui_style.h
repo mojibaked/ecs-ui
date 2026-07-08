@@ -1,59 +1,52 @@
 #ifndef ECS_UI_STYLE_H
 #define ECS_UI_STYLE_H
 
-#include "ecs_ui/ecs_ui.h"
-
-typedef struct EcsUiStyleColor {
-    float r;
-    float g;
-    float b;
-    float a;
-} EcsUiStyleColor;
+#include "ecs_ui/ecs_ui_paint.h"
 
 float EcsUiStyleClamp01(float value);
-EcsUiStyleColor EcsUiStyleColorFrom(EcsUiColor color);
-EcsUiStyleColor EcsUiStyleApplyOpacity(
-    EcsUiStyleColor color,
+EcsUiColorF EcsUiStyleColorFrom(EcsUiColor color);
+EcsUiColorF EcsUiStyleApplyOpacity(
+    EcsUiColorF color,
     float opacity);
-EcsUiStyleColor EcsUiStyleLerpColor(
-    EcsUiStyleColor from,
-    EcsUiStyleColor to,
+EcsUiColorF EcsUiStyleLerpColor(
+    EcsUiColorF from,
+    EcsUiColorF to,
     float amount);
-EcsUiStyleColor EcsUiStyleColorOr(
+EcsUiColorF EcsUiStyleColorOr(
     EcsUiColor color,
-    EcsUiStyleColor fallback);
+    EcsUiColorF fallback);
 
-EcsUiStyleColor EcsUiStyleTextColor(
+EcsUiColorF EcsUiStyleTextColor(
     const EcsUiTheme *theme,
     EcsUiTextRole role,
     bool inverse,
     EcsUiTextStyle text_style,
     bool has_text_style,
     bool disabled);
-EcsUiStyleColor EcsUiStyleButtonColor(
+EcsUiColorF EcsUiStyleButtonColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node);
-EcsUiStyleColor EcsUiStyleContainerBackground(
+EcsUiColorF EcsUiStyleContainerBackground(
     const EcsUiTreeNodeSnapshot *node,
-    EcsUiStyleColor fallback);
-EcsUiStyleColor EcsUiStylePressableColor(
+    EcsUiColorF fallback);
+EcsUiColorF EcsUiStylePressableColor(
     const EcsUiTheme *theme,
     const EcsUiTreeNodeSnapshot *node);
 
 bool EcsUiStyleHasNineSlice(const EcsUiTreeNodeSnapshot *node);
-EcsUiStyleColor EcsUiStyleNineSliceTint(
+EcsUiColorF EcsUiStyleNineSliceTint(
     const EcsUiTreeNodeSnapshot *node);
 bool EcsUiStyleHasBevel(const EcsUiTreeNodeSnapshot *node);
 bool EcsUiStyleHasDrawableBevel(const EcsUiTreeNodeSnapshot *node);
 float EcsUiStyleCornerRadius(
     const EcsUiTreeNodeSnapshot *node,
     float fallback);
-EcsUiStyleColor EcsUiStyleBevelTopLeftColor(
+EcsUiColorF EcsUiStyleBevelTopLeftColor(
     const EcsUiTreeNodeSnapshot *node);
-EcsUiStyleColor EcsUiStyleBevelBottomRightColor(
+EcsUiColorF EcsUiStyleBevelBottomRightColor(
     const EcsUiTreeNodeSnapshot *node);
 
-EcsUiStyleColor EcsUiStyleSelectionColor(const EcsUiTheme *theme);
-EcsUiStyleColor EcsUiStyleIconColor(void);
+EcsUiColorF EcsUiStyleSelectionColor(const EcsUiTheme *theme);
+EcsUiColorF EcsUiStyleIconColor(void);
 
 #endif

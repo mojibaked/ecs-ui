@@ -214,9 +214,9 @@ static Clay_SizingAxis EcsUiClayFixed(float value)
     return CLAY_SIZING_FIXED(EcsUiClayScaled(value));
 }
 
-static EcsUiStyleColor EcsUiClayStyleFromClay(Clay_Color color)
+static EcsUiColorF EcsUiClayStyleFromClay(Clay_Color color)
 {
-    return (EcsUiStyleColor){
+    return (EcsUiColorF){
         .r = color.r,
         .g = color.g,
         .b = color.b,
@@ -224,7 +224,7 @@ static EcsUiStyleColor EcsUiClayStyleFromClay(Clay_Color color)
     };
 }
 
-static Clay_Color EcsUiClayStyleColor(EcsUiStyleColor color)
+static Clay_Color EcsUiClayStyleColor(EcsUiColorF color)
 {
     return (Clay_Color){
         .r = color.r,

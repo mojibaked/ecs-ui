@@ -1,4 +1,5 @@
 #include "ecs_ui/ecs_ui.h"
+#include "ecs_ui/ecs_ui_paint.h"
 #include "ecs_ui_projection_internal.h"
 
 #include <stdarg.h>
@@ -29,6 +30,7 @@ ECS_COMPONENT_DECLARE(EcsUiHitTest);
 ECS_COMPONENT_DECLARE(EcsUiScrollView);
 ECS_COMPONENT_DECLARE(EcsUiScrollState);
 ECS_COMPONENT_DECLARE(EcsUiTextFieldView);
+ECS_COMPONENT_DECLARE(EcsUiFrameArtifacts);
 
 ECS_TAG_DECLARE(EcsUiRoot);
 ECS_TAG_DECLARE(EcsUiInteractive);
@@ -849,6 +851,7 @@ void EcsUiImport(ecs_world_t *world)
     ECS_COMPONENT_DEFINE(world, EcsUiScrollView);
     ECS_COMPONENT_DEFINE(world, EcsUiScrollState);
     ECS_COMPONENT_DEFINE(world, EcsUiTextFieldView);
+    ECS_COMPONENT_DEFINE(world, EcsUiFrameArtifacts);
 
     ECS_TAG_DEFINE(world, EcsUiRoot);
     ECS_TAG_DEFINE(world, EcsUiInteractive);

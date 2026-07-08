@@ -69,6 +69,7 @@ add_library(ecs_ui STATIC
     src/ecs_ui.c
     src/ecs_ui_gesture.c
     src/ecs_ui_overlay.c
+    src/ecs_ui_paint.c
     src/ecs_ui_projection.c
     src/ecs_ui_runner.c
     src/ecs_ui_scroll_state.c
@@ -346,5 +347,14 @@ if(ECS_UI_BUILD_TESTS)
         add_test(
             NAME ecs_ui_solver_parity
             COMMAND ecs_ui_solver_parity)
+
+        add_executable(ecs_ui_paint_list
+            tests/ecs_ui_paint_list.c)
+        target_link_libraries(ecs_ui_paint_list
+            PRIVATE ecs_ui_frame ecs_ui_clay)
+        ecs_ui_enable_warnings(ecs_ui_paint_list)
+        add_test(
+            NAME ecs_ui_paint_list
+            COMMAND ecs_ui_paint_list)
     endif()
 endif()

@@ -496,6 +496,47 @@ pending update, `EcsUiFrameApply` commits it, and frame N+1's snapshot/emit
 consumes the new offset. The frame that collected the wheel does not move
 content in-place.
 
+### Paint pass (stage 7.2 skeleton)
+
+The paint pass produces a durable renderer-neutral `EcsUiPaintList` from the
+PLACED snapshot plus theme. It is a pure subphase of `EcsUiFrameRun`: both the
+native solver path and the Clay path run paint only after they have written
+root-relative logical layout rectangles into `tree->nodes[]`. Paint never reads
+Clay, re-measures, re-walks backend layout internals, or feeds back into
+layout.
+
+The artifact is frame-owned packed POD. ECS stores only the current handle:
+`EcsUiFrameArtifacts { const EcsUiPaintList *paint; uint32_t generation; }`.
+The frame backend advances one generation counter only when a new paint list is
+successfully produced, stamps the snapshot and list with that generation, and
+`EcsUiFrameApply` writes the handle/generation into the world.
+`artifacts.paint->generation` is authoritative; the duplicated
+`artifacts.generation` mirrors it for cheap consumers. On a failed or aborted
+run, generation does not advance and the last coherent artifact is held.
+Item keys are unique within `(paint->tree, paint->generation)`.
+
+Each paint item has an `EcsUiPaintKey { source, role, part, generation }`, a
+primitive kind, a logical root-relative rect, a resolved clip field, cumulative
+opacity, and a payload. The 7.2 skeleton defines all roles and primitive slots
+but emits only box items: one `ECS_UI_PAINT_ROLE_BOX` item for each placed node
+whose resolved background fill has nonzero alpha. Box items carry only key,
+rect, neutral `EcsUiColorF` fill, cumulative opacity, and their list order.
+Radius, borders, bevel, nine-slice, text, selection/caret, icons, custom items,
+and real clip scopes are intentionally left for later stages.
+If the source snapshot was truncated, that source truncation is surfaced through
+`paint_list->truncated` even when the paint list itself has remaining capacity.
+
+Draw order is the native semantic order: z-sorted roots, then depth-first. 7.2
+has one root and no floating/z paint, so this reduces to snapshot depth-first
+order, but the implementation owns the rule as a paint-list property rather
+than inheriting Clay command order.
+
+String/data references in future payloads alias the source snapshot and remain
+valid until the next paint-list reset and only while the snapshot storage is
+alive and unmodified. The list storage is fixed-capacity frame storage; emission
+fails loudly by truncating the list if capacity is exceeded, and it does not
+reallocate after item pointers are captured.
+
 ### Stage 6 scope
 
 6a in scope: ZStack containers, floating wrappers with attach-point
