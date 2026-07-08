@@ -496,6 +496,70 @@ pending update, `EcsUiFrameApply` commits it, and frame N+1's snapshot/emit
 consumes the new offset. The frame that collected the wheel does not move
 content in-place.
 
+### Native interaction frame builder (cutover stage 4)
+
+Clay interaction has two separable phases. During emit, the bridge registers a
+flat target list; during collection, it asks Clay for pointer-over ids and then
+routes wheel/capture/pointer events using only that target list. The native
+interaction frame mirrors the second phase exactly and replaces only the
+pointer-over query with snapshot hit testing.
+
+Target registration rules:
+
+- A node target is registered only for the root area, a pressable target, a
+  blocking target (`hit_test == CAPTURE`), a scroll container, or a
+  scroll-subscribed node. TEXT nodes do not register targets; text-field value
+  synthetics are interaction-invisible and the owning PRESSABLE is the target.
+- Pressable targets are enabled BUTTON/PRESSABLE nodes, stacks/custom/root with
+  `on_click`, and no target when hit-test is NONE or CHILDREN. Disabled
+  button/pressable nodes are still marked disabled and are not eligible.
+- A capture wrapper target is registered for ZStack floating children whose
+  node captures itself. It is blocking only; it is not pressable.
+- `capture_pointer` on bounded frame layout is modeled as a blocking root-area
+  target. Descendant targets have later emit order, so they still win inside the
+  same tree.
+- Scroll targets carry axes, viewport rect, and content dimensions in physical
+  units. Collection writes pending ECS scroll updates in logical units; it does
+  not mutate backend-retained scroll state.
+
+Hit-test and priority rules:
+
+- Native hit testing uses solved snapshot layout converted to physical window
+  coordinates with `physical_bounds.xy + layout * scale`. Event payload
+  coordinates remain window-origin logical (`pointer / scale`), matching the
+  existing frame contract.
+- Target order is the paint/root order from stage 7.6: roots sorted by z, stable
+  root creation order for equal z, then within-root DFS. ZStack floating
+  children open roots at `base_z + 1, +2, ...`; visual-offset roots open at
+  literal z 0; normal content uses the frame base z. The final target
+  `emit_order` is assigned from that sorted order. Candidate priority is Clay's
+  rule: later emit order wins, with deeper target as the tie-break.
+- Scroll-container children inherit the container clip for hit testing; floating
+  roots opened from inside the clipped subtree clear the active clip, matching
+  the paint model and Clay's floating-root behavior.
+
+Collection rules are a direct neutral port of `EcsUiClayCollectFrameEvents`:
+
+- Wheel routing first resolves the topmost inside blocking/scroll target.
+  Direct scroll containers consume only axes they can scroll; a node that is
+  both a scroll container and scroll subscriber receives only leftover axes.
+  Blocking targets drop wheel events behind them.
+- Active capture first looks up the original pressable target. If it is gone,
+  the frame reports `capture_missing_target`, clears capture, and lets current
+  target resolution continue. If a higher-priority blocking target covers the
+  captured target, `DRAG_ENDED` is emitted before capture is cleared.
+- While the captured button is down, collection emits DRAGGED. On release, or
+  on a missed button-up frame with no release edge, it emits DRAG_ENDED and
+  optionally CLICKED when the drag threshold (`physical distance squared <= 36`)
+  was not exceeded, the release is inside the original target, and the captured
+  button is not middle. Primary, secondary, and middle capture use the same
+  lifecycle; secondary emits SECONDARY_PRESSED before capture starts, and middle
+  never emits CLICKED.
+
+`EcsUiFrameCollectEvents` consumes this neutral frame for both Clay-reference
+and native-solved frames. The Clay collector remains only as a parity oracle
+until Clay deletion.
+
 ### Paint pass (stage 7.2 skeleton)
 
 The paint pass produces a durable renderer-neutral `EcsUiPaintList` from the

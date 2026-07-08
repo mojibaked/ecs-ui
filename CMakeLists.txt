@@ -106,6 +106,7 @@ ecs_ui_enable_warnings(ecs_ui_text_input)
 
 add_library(ecs_ui_frame STATIC
     src/ecs_ui_frame.c
+    src/ecs_ui_interaction.c
     src/ecs_ui_solver.c)
 add_library(ecs_ui::frame ALIAS ecs_ui_frame)
 target_link_libraries(ecs_ui_frame

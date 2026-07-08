@@ -396,6 +396,23 @@ static int RequireEventListsMatch(
             raw_event->delta_y,
             0.001f,
             "event delta y mismatch");
+        if (raw_event->type == ECS_UI_EVENT_SCROLLED) {
+            result |= RequireNear(
+                neutral_event->scroll_x,
+                raw_event->scroll_x,
+                0.001f,
+                "event scroll x mismatch");
+            result |= RequireNear(
+                neutral_event->scroll_y,
+                raw_event->scroll_y,
+                0.001f,
+                "event scroll y mismatch");
+        }
+        /*
+         * Elapsed and velocity are derived diagnostics from the same pointer
+         * samples; semantic event routing is covered by type/identity,
+         * coordinates, starts, deltas, and scroll payloads above.
+         */
     }
     return result;
 }
@@ -813,6 +830,12 @@ static int BuildPressTree(
     return result;
 }
 
+static int BuildScrollStateTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale,
+    ecs_entity_t *out_scroll);
+
 static EcsUiClayPointerState ClayPointer(EcsUiPointerState pointer)
 {
     return (EcsUiClayPointerState){
@@ -873,6 +896,174 @@ static void RunNeutralPointerFrame(
     if (out_frame != NULL) {
         *out_frame = frame;
     }
+}
+
+static int RunBackendPointerFrame(
+    EcsUiFrameInternalBackend backend,
+    EcsUiTreeSnapshot *tree,
+    const EcsUiTheme *theme,
+    const EcsUiFrameLayoutOptions *options,
+    EcsUiInteractionState *state,
+    EcsUiPointerState pointer,
+    EcsUiEventList *events,
+    EcsUiInteractionFrame *out_frame)
+{
+    EcsUiInteractionFrame frame = {
+        .state = state,
+    };
+    EcsUiFrameInternalSelectBackend(backend);
+    EcsUiFrameBackendSetSurfaceSize(
+        options->physical_bounds.width,
+        options->physical_bounds.height);
+    const EcsUiDrawList *draw_list =
+        EcsUiFrameRun(tree, theme, options, &pointer, &frame);
+    int result = Require(draw_list != NULL, "backend pointer frame run failed");
+    EcsUiFrameCollectEvents(&frame, pointer, events);
+    if (out_frame != NULL) {
+        *out_frame = frame;
+    }
+    return result;
+}
+
+static int RequireClayNativeScrollUpdatesMatch(
+    const EcsUiClayInteractionFrame *clay,
+    const EcsUiInteractionFrame *native,
+    const char *message)
+{
+    int result = 0;
+    result |= Require(clay != NULL, "missing raw clay frame for scroll compare");
+    result |= Require(native != NULL, "missing native frame for scroll compare");
+    if (clay == NULL || native == NULL) {
+        return result;
+    }
+    if (clay->pending_scroll_count != native->pending_scroll_count ||
+            clay->scroll_consumed != native->scroll_consumed) {
+        (void)fprintf(
+            stderr,
+            "%s: scroll count clay=%u native=%u consumed clay=%d native=%d\n",
+            message,
+            (unsigned int)clay->pending_scroll_count,
+            (unsigned int)native->pending_scroll_count,
+            clay->scroll_consumed,
+            native->scroll_consumed);
+        return 1;
+    }
+    for (uint32_t i = 0u; i < clay->pending_scroll_count; i += 1u) {
+        const EcsUiScrollUpdate *a = &clay->pending_scrolls[i];
+        const EcsUiScrollUpdate *b = &native->pending_scrolls[i];
+        result |= Require(
+            a->node == b->node && a->axes == b->axes,
+            "pending scroll identity mismatch");
+        result |= RequireNear(
+            b->offset_x,
+            a->offset_x,
+            0.001f,
+            "pending scroll offset x mismatch");
+        result |= RequireNear(
+            b->offset_y,
+            a->offset_y,
+            0.001f,
+            "pending scroll offset y mismatch");
+        result |= RequireNear(
+            b->content_w,
+            a->content_w,
+            0.001f,
+            "pending scroll content width mismatch");
+        result |= RequireNear(
+            b->content_h,
+            a->content_h,
+            0.001f,
+            "pending scroll content height mismatch");
+    }
+    return result;
+}
+
+static int RequireClayNativeCaptureStateMatch(
+    const EcsUiClayInteractionState *clay,
+    const EcsUiInteractionState *native,
+    const char *message)
+{
+    int result = 0;
+    result |= Require(clay != NULL, "missing raw clay capture state");
+    result |= Require(native != NULL, "missing native capture state");
+    if (clay == NULL || native == NULL) {
+        return result;
+    }
+    const EcsUiClayPointerCapture *a = &clay->capture;
+    const EcsUiPointerCapture *b = &native->capture;
+    if (a->active != b->active || a->node != b->node ||
+            a->action != b->action || a->button != b->button ||
+            strcmp(a->node_id, b->node_id) != 0) {
+        (void)fprintf(
+            stderr,
+            "%s: capture mismatch active clay=%d native=%d node clay=%llu native=%llu\n",
+            message,
+            a->active,
+            b->active,
+            (unsigned long long)a->node,
+            (unsigned long long)b->node);
+        return 1;
+    }
+    if (a->active) {
+        result |= RequireNear(
+            b->start_x,
+            a->start_x,
+            0.001f,
+            "capture start x mismatch");
+        result |= RequireNear(
+            b->start_y,
+            a->start_y,
+            0.001f,
+            "capture start y mismatch");
+    }
+    return result;
+}
+
+static int RequireClayNativeCaptureFrameMatch(
+    const EcsUiClayInteractionFrame *clay,
+    const EcsUiInteractionFrame *native,
+    const char *message)
+{
+    int result = 0;
+    result |= Require(clay != NULL, "missing raw clay interaction frame");
+    result |= Require(native != NULL, "missing native interaction frame");
+    if (clay == NULL || native == NULL) {
+        return result;
+    }
+    if (clay->capture_missing_target != native->capture_missing_target ||
+        clay->capture_missing_node != native->capture_missing_node ||
+        clay->capture_missing_action != native->capture_missing_action ||
+        clay->capture_missing_payload != native->capture_missing_payload ||
+        strcmp(
+            clay->capture_missing_node_id,
+            native->capture_missing_node_id) != 0) {
+        (void)fprintf(
+            stderr,
+            "%s: capture-missing mismatch clay=%d native=%d\n",
+            message,
+            clay->capture_missing_target,
+            native->capture_missing_target);
+        result |= 1;
+    }
+    if (clay->capture_missed_release != native->capture_missed_release ||
+        clay->capture_missed_release_node !=
+            native->capture_missed_release_node ||
+        clay->capture_missed_release_action !=
+            native->capture_missed_release_action ||
+        clay->capture_missed_release_payload !=
+            native->capture_missed_release_payload ||
+        strcmp(
+            clay->capture_missed_release_node_id,
+            native->capture_missed_release_node_id) != 0) {
+        (void)fprintf(
+            stderr,
+            "%s: capture-missed-release mismatch clay=%d native=%d\n",
+            message,
+            clay->capture_missed_release,
+            native->capture_missed_release);
+        result |= 1;
+    }
+    return result;
 }
 
 static int TestPointerCaptureRoundTrip(float scale)
@@ -1023,6 +1214,883 @@ static int TestPointerCaptureRoundTrip(float scale)
             0.001f,
             "neutral release start x should be logical");
     }
+
+    ecs_fini(world);
+    return result;
+}
+
+static int RunDualInteractionSequence(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale,
+    const EcsUiFrameLayoutOptions *options,
+    const EcsUiPointerState *pointers,
+    uint32_t pointer_count,
+    const char *message)
+{
+    int result = 0;
+    EcsUiTreeSnapshot clay_tree = {0};
+    EcsUiTreeSnapshot native_tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &clay_tree),
+        "dual interaction clay tree read failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &native_tree),
+        "dual interaction native tree read failed");
+
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayInteractionState clay_state = {0};
+    EcsUiInteractionState native_state = {0};
+    EcsUiClayInteractionStateInit(&clay_state);
+    EcsUiFrameInteractionStateInit(&native_state);
+    EcsUiEventList clay_events = {0};
+    EcsUiEventList native_events = {0};
+    EcsUiClayInteractionFrame clay_frame = {0};
+    EcsUiInteractionFrame native_frame = {0};
+    EcsUiClayLayoutOptions clay_options = ClayOptionsWithAttach(options);
+    for (uint32_t i = 0u; i < pointer_count; i += 1u) {
+        RunRawPointerFrame(
+            &clay_tree,
+            &theme,
+            &clay_options,
+            &clay_state,
+            pointers[i],
+            &clay_events,
+            &clay_frame);
+        result |= RunBackendPointerFrame(
+            ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+            &native_tree,
+            &theme,
+            options,
+            &native_state,
+            pointers[i],
+            &native_events,
+            &native_frame);
+        result |= RequireEventListsMatch(
+            &clay_events,
+            &native_events,
+            message);
+        result |= RequireClayNativeScrollUpdatesMatch(
+            &clay_frame,
+            &native_frame,
+            message);
+        result |= RequireClayNativeCaptureStateMatch(
+            &clay_state,
+            &native_state,
+            message);
+        result |= RequireClayNativeCaptureFrameMatch(
+            &clay_frame,
+            &native_frame,
+            message);
+    }
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    (void)scale;
+    return result;
+}
+
+static int TestNativeInteractionPressCaptureParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create native press parity world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativePressParityRoot");
+    result |= BuildPressTree(world, root, scale, NULL);
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    const EcsUiPointerState drag_release[] = {
+        {
+            .x = 40.0f * scale,
+            .y = 36.0f * scale,
+            .time = 10.0,
+            .down = true,
+            .pressed = true,
+        },
+        {
+            .x = 190.0f * scale,
+            .y = 120.0f * scale,
+            .time = 10.3,
+            .down = true,
+        },
+        {
+            .x = 190.0f * scale,
+            .y = 120.0f * scale,
+            .time = 10.6,
+            .released = true,
+        },
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        drag_release,
+        3u,
+        "native press/drag/release parity");
+
+    const EcsUiPointerState missed_release[] = {
+        {
+            .x = 24.0f * scale,
+            .y = 24.0f * scale,
+            .time = 11.0,
+            .down = true,
+            .pressed = true,
+        },
+        {
+            .x = 24.0f * scale,
+            .y = 24.0f * scale,
+            .time = 11.2,
+        },
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        missed_release,
+        2u,
+        "native missed-release parity");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int BuildCoveredCaptureTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale,
+    ecs_entity_t *out_blocker)
+{
+    int result = 0;
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "failed to set covered-capture scale");
+    ecs_entity_t action =
+        ecs_entity(world, {.name = "NativeCoveredAction", .sep = ""});
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NativeCoveredZStack",
+            .preferred_width = 180.0f,
+            .preferred_height = 90.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NativeCoveredTarget",
+            .kind = "covered.target",
+            .preferred_width = 180.0f,
+            .preferred_height = 90.0f,
+            .on_click = action,
+        });
+    ecs_entity_t blocker = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NativeCoveredBlocker",
+            .kind = "covered.blocker",
+            .preferred_width = 180.0f,
+            .preferred_height = 90.0f,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "covered-capture builder failed");
+    ecs_set(world, blocker, EcsUiHitTest, {.mode = ECS_UI_HIT_TEST_CAPTURE});
+    ecs_set(world, blocker, EcsUiVisual, {.opacity = 0.0f});
+    if (out_blocker != NULL) {
+        *out_blocker = blocker;
+    }
+    return result;
+}
+
+static int TestNativeInteractionCaptureCoveredParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create covered-capture world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeCoveredRoot");
+    ecs_entity_t blocker = 0;
+    result |= BuildCoveredCaptureTree(world, root, scale, &blocker);
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions clay_options = ClayOptionsWithAttach(&options);
+    EcsUiClayInteractionState clay_state = {0};
+    EcsUiInteractionState native_state = {0};
+    EcsUiClayInteractionStateInit(&clay_state);
+    EcsUiFrameInteractionStateInit(&native_state);
+
+    EcsUiPointerState press = {
+        .x = 24.0f * scale,
+        .y = 24.0f * scale,
+        .time = 60.0,
+        .down = true,
+        .pressed = true,
+    };
+    EcsUiTreeSnapshot clay_tree = {0};
+    EcsUiTreeSnapshot native_tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &clay_tree),
+        "covered-capture clay press tree read failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &native_tree),
+        "covered-capture native press tree read failed");
+    EcsUiEventList clay_events = {0};
+    EcsUiEventList native_events = {0};
+    EcsUiClayInteractionFrame clay_frame = {0};
+    EcsUiInteractionFrame native_frame = {0};
+    RunRawPointerFrame(
+        &clay_tree,
+        &theme,
+        &clay_options,
+        &clay_state,
+        press,
+        &clay_events,
+        &clay_frame);
+    result |= RunBackendPointerFrame(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        &native_tree,
+        &theme,
+        &options,
+        &native_state,
+        press,
+        &native_events,
+        &native_frame);
+    result |= RequireEventListsMatch(
+        &clay_events,
+        &native_events,
+        "covered-capture press parity");
+    result |= RequireClayNativeCaptureStateMatch(
+        &clay_state,
+        &native_state,
+        "covered-capture press parity");
+    result |= Require(
+        clay_state.capture.active && native_state.capture.active,
+        "covered-capture setup should start capture");
+
+    ecs_set(world, blocker, EcsUiVisual, {.opacity = 1.0f});
+    EcsUiPointerState covered = {
+        .x = 24.0f * scale,
+        .y = 24.0f * scale,
+        .time = 60.2,
+        .down = true,
+    };
+    result |= Require(
+        EcsUiReadTree(world, root, &clay_tree),
+        "covered-capture clay blocker tree read failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &native_tree),
+        "covered-capture native blocker tree read failed");
+    RunRawPointerFrame(
+        &clay_tree,
+        &theme,
+        &clay_options,
+        &clay_state,
+        covered,
+        &clay_events,
+        &clay_frame);
+    result |= RunBackendPointerFrame(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        &native_tree,
+        &theme,
+        &options,
+        &native_state,
+        covered,
+        &native_events,
+        &native_frame);
+    result |= RequireEventListsMatch(
+        &clay_events,
+        &native_events,
+        "covered-capture drag-ended parity");
+    result |= Require(
+        clay_events.count == 1u &&
+            clay_events.events[0].type == ECS_UI_EVENT_DRAG_ENDED,
+        "covered-capture clay should emit drag-ended");
+    result |= Require(
+        native_events.count == 1u &&
+            native_events.events[0].type == ECS_UI_EVENT_DRAG_ENDED,
+        "covered-capture native should emit drag-ended");
+    result |= RequireClayNativeCaptureStateMatch(
+        &clay_state,
+        &native_state,
+        "covered-capture cleared parity");
+    result |= RequireClayNativeCaptureFrameMatch(
+        &clay_frame,
+        &native_frame,
+        "covered-capture frame parity");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionStaleCaptureParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create stale-capture world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeStaleCaptureRoot");
+    ecs_entity_t target = 0;
+    result |= BuildPressTree(world, root, scale, &target);
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiClayLayoutOptions clay_options = ClayOptionsWithAttach(&options);
+    EcsUiClayInteractionState clay_state = {0};
+    EcsUiInteractionState native_state = {0};
+    EcsUiClayInteractionStateInit(&clay_state);
+    EcsUiFrameInteractionStateInit(&native_state);
+
+    EcsUiPointerState press = {
+        .x = 28.0f * scale,
+        .y = 24.0f * scale,
+        .time = 61.0,
+        .down = true,
+        .pressed = true,
+    };
+    EcsUiTreeSnapshot clay_tree = {0};
+    EcsUiTreeSnapshot native_tree = {0};
+    result |= Require(
+        EcsUiReadTree(world, root, &clay_tree),
+        "stale-capture clay press tree read failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &native_tree),
+        "stale-capture native press tree read failed");
+    EcsUiEventList clay_events = {0};
+    EcsUiEventList native_events = {0};
+    EcsUiClayInteractionFrame clay_frame = {0};
+    EcsUiInteractionFrame native_frame = {0};
+    RunRawPointerFrame(
+        &clay_tree,
+        &theme,
+        &clay_options,
+        &clay_state,
+        press,
+        &clay_events,
+        &clay_frame);
+    result |= RunBackendPointerFrame(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        &native_tree,
+        &theme,
+        &options,
+        &native_state,
+        press,
+        &native_events,
+        &native_frame);
+    result |= RequireEventListsMatch(
+        &clay_events,
+        &native_events,
+        "stale-capture press parity");
+    result |= Require(
+        clay_state.capture.active && native_state.capture.active,
+        "stale-capture setup should start capture");
+
+    ecs_delete(world, target);
+    EcsUiPointerState stale = {
+        .x = 28.0f * scale,
+        .y = 24.0f * scale,
+        .time = 61.2,
+        .down = true,
+    };
+    result |= Require(
+        EcsUiReadTree(world, root, &clay_tree),
+        "stale-capture clay missing tree read failed");
+    result |= Require(
+        EcsUiReadTree(world, root, &native_tree),
+        "stale-capture native missing tree read failed");
+    RunRawPointerFrame(
+        &clay_tree,
+        &theme,
+        &clay_options,
+        &clay_state,
+        stale,
+        &clay_events,
+        &clay_frame);
+    result |= RunBackendPointerFrame(
+        ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE,
+        &native_tree,
+        &theme,
+        &options,
+        &native_state,
+        stale,
+        &native_events,
+        &native_frame);
+    result |= RequireEventListsMatch(
+        &clay_events,
+        &native_events,
+        "stale-capture missing-target event parity");
+    result |= RequireClayNativeCaptureStateMatch(
+        &clay_state,
+        &native_state,
+        "stale-capture missing-target state parity");
+    result |= RequireClayNativeCaptureFrameMatch(
+        &clay_frame,
+        &native_frame,
+        "stale-capture missing-target frame parity");
+    result |= Require(
+        clay_frame.capture_missing_target &&
+            native_frame.capture_missing_target,
+        "stale-capture should report missing target");
+
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionSecondaryMiddleParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create native button parity world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeButtonParityRoot");
+    result |= BuildPressTree(world, root, scale, NULL);
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    const EcsUiPointerState secondary[] = {
+        {
+            .x = 28.0f * scale,
+            .y = 24.0f * scale,
+            .time = 20.0,
+            .secondary_down = true,
+            .secondary_pressed = true,
+        },
+        {
+            .x = 28.0f * scale,
+            .y = 24.0f * scale,
+            .time = 20.2,
+            .secondary_released = true,
+        },
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        secondary,
+        2u,
+        "native secondary capture parity");
+
+    const EcsUiPointerState middle[] = {
+        {
+            .x = 28.0f * scale,
+            .y = 24.0f * scale,
+            .time = 21.0,
+            .middle_down = true,
+            .middle_pressed = true,
+        },
+        {
+            .x = 180.0f * scale,
+            .y = 90.0f * scale,
+            .time = 21.2,
+            .middle_down = true,
+        },
+        {
+            .x = 180.0f * scale,
+            .y = 90.0f * scale,
+            .time = 21.4,
+            .middle_released = true,
+        },
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        middle,
+        3u,
+        "native middle capture parity");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int BuildInteractionZStackTree(
+    ecs_world_t *world,
+    ecs_entity_t root,
+    float scale,
+    bool blocker)
+{
+    int result = 0;
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set z scale");
+    ecs_entity_t behind_action =
+        ecs_entity(world, {.name = "NativeZBehindAction", .sep = ""});
+    ecs_entity_t top_action =
+        ecs_entity(world, {.name = "NativeZTopAction", .sep = ""});
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    EcsUiBeginZStack(
+        &builder,
+        (EcsUiStackDesc){
+            .id = "NativeZStack",
+            .preferred_width = 180.0f,
+            .preferred_height = 90.0f,
+        });
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NativeZBehind",
+            .kind = "behind",
+            .preferred_width = 180.0f,
+            .preferred_height = 90.0f,
+            .on_click = behind_action,
+        });
+    ecs_entity_t top = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NativeZTop",
+            .kind = "top",
+            .preferred_width = 90.0f,
+            .preferred_height = 50.0f,
+            .on_click = blocker ? 0 : top_action,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "z interaction builder failed");
+    if (blocker) {
+        ecs_set(world, top, EcsUiHitTest, {.mode = ECS_UI_HIT_TEST_CAPTURE});
+    }
+    return result;
+}
+
+static int TestNativeInteractionZStackParity(float scale)
+{
+    int result = 0;
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    EcsUiPointerState press = {
+        .x = 24.0f * scale,
+        .y = 24.0f * scale,
+        .time = 30.0,
+        .down = true,
+        .pressed = true,
+    };
+
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create z parity world");
+    }
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeZParityRoot");
+    result |= BuildInteractionZStackTree(world, root, scale, false);
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &press,
+        1u,
+        "native zstack top target parity");
+    ecs_fini(world);
+
+    world = CreateWorld();
+    if (world == NULL) {
+        return result | Require(false, "failed to create z blocker world");
+    }
+    root = EcsUiRootEntity(world, "NativeZBlockerRoot");
+    result |= BuildInteractionZStackTree(world, root, scale, true);
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &press,
+        1u,
+        "native zstack blocker parity");
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionVisualOffsetParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create visual offset world");
+    }
+
+    ecs_entity_t action =
+        ecs_entity(world, {.name = "NativeOffsetAction", .sep = ""});
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeOffsetRoot");
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set offset scale");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t target = EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NativeOffsetTarget",
+            .kind = "offset",
+            .preferred_width = 64.0f,
+            .preferred_height = 32.0f,
+            .on_click = action,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "offset builder failed");
+    ecs_set(world, target, EcsUiVisual, {
+        .opacity = 1.0f,
+        .offset_x = 40.0f,
+        .offset_y = 20.0f,
+    });
+
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 220.0f * scale,
+            .height = 120.0f * scale,
+        },
+    };
+    const EcsUiPointerState press = {
+        .x = 45.0f * scale,
+        .y = 25.0f * scale,
+        .time = 40.0,
+        .down = true,
+        .pressed = true,
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &press,
+        1u,
+        "native visual offset parity");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionScrollParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create native scroll parity world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeScrollParityRoot");
+    ecs_entity_t scroll = 0;
+    result |= BuildScrollStateTree(world, root, scale, &scroll);
+    ecs_set(world, scroll, EcsUiScrollState, {.offset_y = -4.0f});
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    const EcsUiPointerState wheel = {
+        .x = 10.0f * scale,
+        .y = 10.0f * scale,
+        .scroll_y = -1.0f,
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &wheel,
+        1u,
+        "native scroll routing parity");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionSubscribedScrollParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create subscribed-scroll parity world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeSubscribedScrollRoot");
+    ecs_entity_t action =
+        ecs_entity(world, {.name = "NativeSubscribedScrollAction", .sep = ""});
+    result |= Require(
+        EcsUiSetScale(world, root, scale),
+        "failed to set subscribed-scroll scale");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    (void)EcsUiAddCustom(
+        &builder,
+        (EcsUiCustomDesc){
+            .id = "NativeSubscribedScrollTarget",
+            .kind = "subscribed.scroll",
+            .preferred_width = 100.0f,
+            .preferred_height = 60.0f,
+            .on_click = action,
+            .payload = 77u,
+            .scroll_subscribed = true,
+        });
+    EcsUiBuilderEnd(&builder);
+    result |= Require(
+        EcsUiBuilderOk(&builder),
+        "subscribed-scroll builder failed");
+
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    const EcsUiPointerState wheel = {
+        .x = 60.0f * scale,
+        .y = 40.0f * scale,
+        .scroll_x = 2.0f,
+        .scroll_y = -3.0f,
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &wheel,
+        1u,
+        "native subscribed-scroll event parity");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionNonZeroOriginParity(void)
+{
+    const float scale = 2.0f;
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create nonzero-origin parity world");
+    }
+
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeOriginParityRoot");
+    result |= BuildPressTree(world, root, scale, NULL);
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 17.0f,
+            .y = 23.0f,
+            .width = 240.0f * scale,
+            .height = 160.0f * scale,
+        },
+    };
+    const EcsUiPointerState press = {
+        .x = 17.0f + 40.0f * scale,
+        .y = 23.0f + 36.0f * scale,
+        .time = 62.0,
+        .down = true,
+        .pressed = true,
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &press,
+        1u,
+        "native nonzero physical-bounds origin parity");
+
+    ecs_fini(world);
+    return result;
+}
+
+static int TestNativeInteractionTextFieldParity(float scale)
+{
+    int result = 0;
+    ecs_world_t *world = CreateWorld();
+    if (world == NULL) {
+        return Require(false, "failed to create text-field parity world");
+    }
+
+    ecs_entity_t action =
+        ecs_entity(world, {.name = "NativeTextFieldAction", .sep = ""});
+    ecs_entity_t root = EcsUiRootEntity(world, "NativeTextFieldRoot");
+    result |= Require(EcsUiSetScale(world, root, scale), "failed to set text-field scale");
+    EcsUiBuilder builder = EcsUiBuilderBegin(world, root);
+    ecs_entity_t field = EcsUiBeginPressable(
+        &builder,
+        (EcsUiPressableDesc){
+            .id = "NativeTextField",
+            .on_click = action,
+            .preferred_height = 36.0f,
+        });
+    ecs_entity_t value = EcsUiAddText(
+        &builder,
+        (EcsUiTextDesc){
+            .id = "NativeTextFieldValue",
+            .text = "field value",
+            .role = ECS_UI_TEXT_BODY,
+        });
+    EcsUiEnd(&builder);
+    EcsUiBuilderEnd(&builder);
+    result |= Require(EcsUiBuilderOk(&builder), "text-field builder failed");
+    ecs_set(world, field, EcsUiTextFieldView, {
+        .value_node = value,
+        .cursor = 5u,
+        .focused = true,
+    });
+
+    EcsUiFrameLayoutOptions options = {
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 260.0f * scale,
+            .height = 120.0f * scale,
+        },
+    };
+    const EcsUiPointerState press = {
+        .x = 18.0f * scale,
+        .y = 18.0f * scale,
+        .time = 50.0,
+        .down = true,
+        .pressed = true,
+    };
+    result |= RunDualInteractionSequence(
+        world,
+        root,
+        scale,
+        &options,
+        &press,
+        1u,
+        "native text-field pressable parity");
 
     ecs_fini(world);
     return result;
@@ -1652,6 +2720,25 @@ int main(void)
     result |= TestCapturePointerTranslation();
     result |= TestPointerCaptureRoundTrip(1.0f);
     result |= TestPointerCaptureRoundTrip(2.0f);
+    result |= TestNativeInteractionPressCaptureParity(1.0f);
+    result |= TestNativeInteractionPressCaptureParity(2.0f);
+    result |= TestNativeInteractionCaptureCoveredParity(1.0f);
+    result |= TestNativeInteractionCaptureCoveredParity(2.0f);
+    result |= TestNativeInteractionStaleCaptureParity(1.0f);
+    result |= TestNativeInteractionStaleCaptureParity(2.0f);
+    result |= TestNativeInteractionSecondaryMiddleParity(1.0f);
+    result |= TestNativeInteractionSecondaryMiddleParity(2.0f);
+    result |= TestNativeInteractionZStackParity(1.0f);
+    result |= TestNativeInteractionZStackParity(2.0f);
+    result |= TestNativeInteractionVisualOffsetParity(1.0f);
+    result |= TestNativeInteractionVisualOffsetParity(2.0f);
+    result |= TestNativeInteractionScrollParity(1.0f);
+    result |= TestNativeInteractionScrollParity(2.0f);
+    result |= TestNativeInteractionSubscribedScrollParity(1.0f);
+    result |= TestNativeInteractionSubscribedScrollParity(2.0f);
+    result |= TestNativeInteractionNonZeroOriginParity();
+    result |= TestNativeInteractionTextFieldParity(1.0f);
+    result |= TestNativeInteractionTextFieldParity(2.0f);
     result |= TestScrollStateOwnership(1.0f);
     result |= TestScrollStateOwnership(2.0f);
     result |= TestNativeScrollSettle(1.0f, 90.0f, -50.0f);

@@ -22,6 +22,7 @@
 
 #include "ecs_ui_frame_internal.h"
 #include "ecs_ui/ecs_ui_paint.h"
+#include "ecs_ui_interaction.h"
 #include "ecs_ui_paint_internal.h"
 #include "ecs_ui_scroll_state.h"
 #include "ecs_ui_solver.h"
@@ -276,27 +277,6 @@ EcsUiClayLayoutOptions EcsUiFrameInternalClayLayoutOptions(
     };
 }
 
-static EcsUiClayPointerState EcsUiFrameClayPointer(
-    EcsUiPointerState pointer)
-{
-    return (EcsUiClayPointerState){
-        .x = pointer.x,
-        .y = pointer.y,
-        .time = pointer.time,
-        .down = pointer.down,
-        .pressed = pointer.pressed,
-        .released = pointer.released,
-        .secondary_down = pointer.secondary_down,
-        .secondary_pressed = pointer.secondary_pressed,
-        .secondary_released = pointer.secondary_released,
-        .middle_down = pointer.middle_down,
-        .middle_pressed = pointer.middle_pressed,
-        .middle_released = pointer.middle_released,
-        .scroll_x = pointer.scroll_x,
-        .scroll_y = pointer.scroll_y,
-    };
-}
-
 static EcsUiClayPointerCapture EcsUiFrameClayCapture(
     EcsUiPointerCapture capture)
 {
@@ -316,126 +296,6 @@ static EcsUiClayPointerCapture EcsUiFrameClayCapture(
     };
     (void)snprintf(out.node_id, sizeof(out.node_id), "%s", capture.node_id);
     return out;
-}
-
-static EcsUiPointerCapture EcsUiFramePublicCapture(
-    EcsUiClayPointerCapture capture)
-{
-    EcsUiPointerCapture out = {
-        .active = capture.active,
-        .tree = capture.tree,
-        .node = capture.node,
-        .action = capture.action,
-        .payload = capture.payload,
-        .scale = capture.scale,
-        .start_x = capture.start_x,
-        .start_y = capture.start_y,
-        .physical_start_x = capture.physical_start_x,
-        .physical_start_y = capture.physical_start_y,
-        .start_time = capture.start_time,
-        .button = capture.button,
-    };
-    (void)snprintf(out.node_id, sizeof(out.node_id), "%s", capture.node_id);
-    return out;
-}
-
-static EcsUiInteractionTarget EcsUiFramePublicTarget(
-    const EcsUiClayInteractionTarget *target)
-{
-    if (target == NULL) {
-        return (EcsUiInteractionTarget){0};
-    }
-
-    EcsUiInteractionTarget out = {
-        .tree = target->tree,
-        .node = target->node,
-        .action = target->action,
-        .payload = target->payload,
-        .tree_snapshot = target->tree_snapshot,
-        .node_index = target->node_index,
-        .emit_order = target->emit_order,
-        .depth = target->depth,
-        .scale = target->scale,
-        .area = target->area,
-        .pressable = target->pressable,
-        .blocking = target->blocking,
-        .scroll_container = target->scroll_container,
-        .scroll_subscribed = target->scroll_subscribed,
-        .scroll_axes = target->scroll_axes,
-        .disabled = target->disabled,
-        .inside = target->inside,
-    };
-    (void)snprintf(out.node_id, sizeof(out.node_id), "%s", target->node_id);
-    return out;
-}
-
-static void EcsUiFrameCopyPublicFrame(
-    EcsUiInteractionFrame *out,
-    const EcsUiClayInteractionFrame *frame)
-{
-    if (out == NULL || frame == NULL) {
-        return;
-    }
-
-    EcsUiInteractionState *state = out->state;
-    memset(out, 0, sizeof(*out));
-    out->state = state;
-    if (out->state != NULL && frame->state != NULL) {
-        out->state->capture = EcsUiFramePublicCapture(frame->state->capture);
-    }
-
-    const uint32_t target_count =
-        frame->target_count < ECS_UI_INTERACTION_TARGET_MAX ?
-            frame->target_count :
-            ECS_UI_INTERACTION_TARGET_MAX;
-    for (uint32_t i = 0u; i < target_count; i += 1u) {
-        out->targets[i] = EcsUiFramePublicTarget(&frame->targets[i]);
-    }
-
-    out->target_count = target_count;
-    out->inside_target_count = frame->inside_target_count;
-    out->pressable_target_count = frame->pressable_target_count;
-    out->resolved_tree = frame->resolved_tree;
-    out->resolved_node = frame->resolved_node;
-    out->resolved_action = frame->resolved_action;
-    out->resolved_payload = frame->resolved_payload;
-    (void)snprintf(
-        out->resolved_node_id,
-        sizeof(out->resolved_node_id),
-        "%s",
-        frame->resolved_node_id);
-    out->resolved_pressable = frame->resolved_pressable;
-    const uint32_t pending_scroll_count =
-        frame->pending_scroll_count < ECS_UI_SCROLL_UPDATE_MAX ?
-            frame->pending_scroll_count :
-            ECS_UI_SCROLL_UPDATE_MAX;
-    for (uint32_t i = 0u; i < pending_scroll_count; i += 1u) {
-        out->pending_scrolls[i] = frame->pending_scrolls[i];
-    }
-    out->pending_scroll_count = pending_scroll_count;
-    out->scroll_consumed = frame->scroll_consumed;
-    out->truncated = frame->truncated ||
-        frame->target_count > ECS_UI_INTERACTION_TARGET_MAX;
-    out->capture_missing_target = frame->capture_missing_target;
-    out->capture_missing_node = frame->capture_missing_node;
-    out->capture_missing_action = frame->capture_missing_action;
-    out->capture_missing_payload = frame->capture_missing_payload;
-    (void)snprintf(
-        out->capture_missing_node_id,
-        sizeof(out->capture_missing_node_id),
-        "%s",
-        frame->capture_missing_node_id);
-    out->capture_missed_release = frame->capture_missed_release;
-    out->capture_missed_release_node = frame->capture_missed_release_node;
-    out->capture_missed_release_action =
-        frame->capture_missed_release_action;
-    out->capture_missed_release_payload =
-        frame->capture_missed_release_payload;
-    (void)snprintf(
-        out->capture_missed_release_node_id,
-        sizeof(out->capture_missed_release_node_id),
-        "%s",
-        frame->capture_missed_release_node_id);
 }
 #endif
 
@@ -607,6 +467,61 @@ static void EcsUiFrameApplyClayScrollReports(
             .viewport_h = container_height / scale,
         };
         (void)EcsUiScrollStateApplyUpdate(world, &update);
+    }
+}
+
+static void EcsUiFrameStoreClayScrollReports(
+    EcsUiFrameBackend *backend,
+    const EcsUiClayInteractionFrame *frame)
+{
+    if (backend == NULL || frame == NULL) {
+        return;
+    }
+    backend->native_scroll_report_count = 0u;
+    for (uint32_t i = 0u; i < frame->target_count; i += 1u) {
+        const EcsUiClayInteractionTarget *target = &frame->targets[i];
+        if (!target->scroll_container || target->node == 0 ||
+                backend->native_scroll_report_count >= ECS_UI_TREE_NODE_MAX) {
+            continue;
+        }
+        const float scale = target->scale > 0.0f ? target->scale : 1.0f;
+        Clay_ScrollContainerData data =
+            Clay_GetScrollContainerData(target->clay_id);
+        if (!data.found) {
+            continue;
+        }
+        Clay_ElementData element_data = Clay_GetElementData(target->clay_id);
+        const float container_width =
+            data.scrollContainerDimensions.width > 0.0f ?
+                data.scrollContainerDimensions.width :
+                (element_data.found ? element_data.boundingBox.width : 0.0f);
+        const float container_height =
+            data.scrollContainerDimensions.height > 0.0f ?
+                data.scrollContainerDimensions.height :
+                (element_data.found ? element_data.boundingBox.height : 0.0f);
+        const EcsUiTreeNodeSnapshot *node =
+            target->tree_snapshot != NULL &&
+                    target->node_index < target->tree_snapshot->count ?
+                &target->tree_snapshot->nodes[target->node_index] :
+                NULL;
+        const EcsUiScrollState *scroll_state =
+            node != NULL && node->has_scroll_state ? &node->scroll_state : NULL;
+        backend->native_scroll_reports[backend->native_scroll_report_count] =
+            (EcsUiScrollUpdate){
+                .tree = target->tree,
+                .node = target->node,
+                .node_index = target->node_index,
+                .axes = target->scroll_axes,
+                .offset_x =
+                    scroll_state != NULL ? scroll_state->offset_x : 0.0f,
+                .offset_y =
+                    scroll_state != NULL ? scroll_state->offset_y : 0.0f,
+                .content_w = data.contentDimensions.width / scale,
+                .content_h = data.contentDimensions.height / scale,
+                .viewport_w = container_width / scale,
+                .viewport_h = container_height / scale,
+            };
+        backend->native_scroll_report_count += 1u;
     }
 }
 
@@ -835,13 +750,24 @@ const EcsUiDrawList *EcsUiFrameRun(
             tree,
             backend->native_scroll_contents,
             native_content_count);
+        if (frame_or_null != NULL) {
+            (void)EcsUiInteractionFrameBuild(
+                frame_or_null,
+                tree,
+                &(EcsUiInteractionBuildOptions){
+                    .layout = options,
+                    .scroll_reports = backend->native_scroll_reports,
+                    .scroll_report_count =
+                        backend->native_scroll_report_count,
+                });
+            backend->active_frame = frame_or_null;
+        }
         (void)EcsUiFramePaint(
             backend,
             tree,
             theme,
             options != NULL ? options->z_index : 0);
         (void)pointer_or_null;
-        (void)frame_or_null;
         return &backend->draw_list;
     }
 
@@ -887,8 +813,18 @@ const EcsUiDrawList *EcsUiFrameRun(
             },
             pointer_or_null->down);
     }
+    EcsUiFrameStoreClayScrollReports(backend, &backend->clay_frame);
     if (frame_or_null != NULL) {
-        EcsUiFrameCopyPublicFrame(frame_or_null, &backend->clay_frame);
+        (void)EcsUiInteractionFrameBuild(
+            frame_or_null,
+            tree,
+            &(EcsUiInteractionBuildOptions){
+                .layout = options,
+                .scroll_reports = backend->native_scroll_reports,
+                .scroll_report_count =
+                    backend->native_scroll_report_count,
+            });
+        backend->active_frame = frame_or_null;
     }
 
     return &backend->draw_list;
@@ -956,15 +892,7 @@ void EcsUiFrameCollectEvents(
         return;
     }
 
-#if ECS_UI_FRAME_ENABLE_CLAY
-    EcsUiClayCollectFrameEvents(
-        &backend->clay_frame,
-        EcsUiFrameClayPointer(pointer),
-        events);
-    EcsUiFrameCopyPublicFrame(frame, &backend->clay_frame);
-#else
-    (void)pointer;
-#endif
+    EcsUiInteractionCollectFrameEvents(frame, pointer, events);
 }
 
 bool EcsUiFrameApply(

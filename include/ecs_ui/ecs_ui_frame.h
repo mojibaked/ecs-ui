@@ -132,6 +132,22 @@ typedef struct EcsUiInteractionTarget {
     uint32_t scroll_axes;
     bool disabled;
     bool inside;
+    float physical_x;
+    float physical_y;
+    float physical_width;
+    float physical_height;
+    bool clip_enabled;
+    float clip_x;
+    float clip_y;
+    float clip_width;
+    float clip_height;
+    float scroll_content_width;
+    float scroll_content_height;
+    float scroll_viewport_width;
+    float scroll_viewport_height;
+    int16_t z_index;
+    uint32_t root_order;
+    uint32_t order;
 } EcsUiInteractionTarget;
 
 typedef struct EcsUiPointerCapture {
