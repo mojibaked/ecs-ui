@@ -78,6 +78,17 @@ EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void)
     return g_ecs_ui_frame_backend.selected_backend;
 }
 
+static bool EcsUiFrameBackendIsNative(const EcsUiFrameBackend *backend)
+{
+    if (backend == NULL) {
+        return true;
+    }
+    return backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE ||
+        backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE ||
+        backend->selected_backend ==
+            ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE;
+}
+
 const EcsUiPaintList *EcsUiFrameInternalPaintList(void)
 {
     const EcsUiPaintList *paint = &g_ecs_ui_frame_backend
@@ -591,10 +602,17 @@ bool EcsUiFrameBackendInit(const EcsUiFrameBackendDesc *desc)
     backend->clay_frame = (EcsUiClayInteractionFrame){0};
 #endif
     backend->active_frame = NULL;
-#if ECS_UI_FRAME_ENABLE_CLAY
-    backend->selected_backend = ECS_UI_FRAME_INTERNAL_BACKEND_CLAY;
-#else
     backend->selected_backend = ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE;
+#if ECS_UI_FRAME_ENABLE_CLAY
+    /*
+     * Temporary Stage 6 live-acceptance hook. This gives downstream harnesses a
+     * clay-layout baseline without making backend selection public; it dies with
+     * EcsUiFrameInternalBackend when clay is removed.
+     */
+    const char *backend_env = getenv("ECS_UI_FRAME_BACKEND");
+    if (backend_env != NULL && strcmp(backend_env, "clay") == 0) {
+        backend->selected_backend = ECS_UI_FRAME_INTERNAL_BACKEND_CLAY;
+    }
 #endif
 
     const float surface_width =
@@ -701,16 +719,7 @@ const EcsUiDrawList *EcsUiFrameRun(
         return NULL;
     }
     backend->native_scroll_report_count = 0u;
-#if ECS_UI_FRAME_ENABLE_CLAY
-    const bool use_native =
-        backend->selected_backend == ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE ||
-            backend->selected_backend ==
-                ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE ||
-            backend->selected_backend ==
-                ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE;
-#else
-    const bool use_native = true;
-#endif
+    const bool use_native = EcsUiFrameBackendIsNative(backend);
     if (use_native) {
         backend->active_frame = NULL;
         backend->draw_list = (EcsUiDrawList){0};
@@ -853,28 +862,31 @@ const EcsUiDrawList *EcsUiFrameRun(
 
 void EcsUiFrameSettleScroll(ecs_world_t *world, double dt)
 {
-    if (!g_ecs_ui_frame_backend.initialized) {
+    EcsUiFrameBackend *backend = &g_ecs_ui_frame_backend;
+    if (!backend->initialized) {
         return;
     }
 #if ECS_UI_FRAME_ENABLE_CLAY
-    Clay_UpdateScrollContainers(
-        false,
-        (Clay_Vector2){.x = 0.0f, .y = 0.0f},
-        (float)dt);
-    (void)EcsUiFrameApplyPendingScrolls(
-        world,
-        g_ecs_ui_frame_backend.clay_frame.pending_scrolls,
-        g_ecs_ui_frame_backend.clay_frame.pending_scroll_count);
-    EcsUiFrameApplyClayScrollReports(
-        world,
-        &g_ecs_ui_frame_backend.clay_frame);
+    const bool use_native = EcsUiFrameBackendIsNative(backend);
+    if (!use_native) {
+        Clay_UpdateScrollContainers(
+            false,
+            (Clay_Vector2){.x = 0.0f, .y = 0.0f},
+            (float)dt);
+        (void)EcsUiFrameApplyPendingScrolls(
+            world,
+            backend->clay_frame.pending_scrolls,
+            backend->clay_frame.pending_scroll_count);
+        EcsUiFrameApplyClayScrollReports(world, &backend->clay_frame);
+        return;
+    }
 #else
     (void)dt;
 #endif
     (void)EcsUiFrameApplyPendingScrolls(
         world,
-        g_ecs_ui_frame_backend.native_scroll_reports,
-        g_ecs_ui_frame_backend.native_scroll_report_count);
+        backend->native_scroll_reports,
+        backend->native_scroll_report_count);
 }
 
 void EcsUiFrameInteractionStateInit(EcsUiInteractionState *state)
@@ -923,7 +935,8 @@ bool EcsUiFrameApply(
             frame->pending_scrolls,
             frame->pending_scroll_count) && ok;
     }
-    if (frame != NULL && frame == backend->active_frame) {
+    if (frame != NULL && frame == backend->active_frame &&
+            !EcsUiFrameBackendIsNative(backend)) {
 #if ECS_UI_FRAME_ENABLE_CLAY
         EcsUiFrameApplyClayScrollReports(
             world,

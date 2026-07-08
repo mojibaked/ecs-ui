@@ -1110,27 +1110,23 @@ static int RunPixelCase(
         };
         PixelImage native =
             TestRenderToImage(width, height, TestRenderPaint, &native_paint_ctx);
-        PixelDiff ac = TestComparePixels(&bridge, &native);
-        if (ac.count != 0u) {
-            (void)fprintf(
-                stdout,
-                "INFO native-layout delta fixture=%s first=(%d,%d) "
-                "count=%u bbox=(%d,%d)-(%d,%d)\n",
+        PixelDiff shadow = TestComparePixels(&paint, &native);
+        if (shadow.count != 0u) {
+            TestPrintDiff(
                 case_name,
-                ac.first_x,
-                ac.first_y,
-                ac.count,
-                ac.min_x,
-                ac.min_y,
-                ac.max_x,
-                ac.max_y);
+                "clay-layout paint vs native-layout paint",
+                shadow,
+                &paint,
+                &native);
+            result |= 1;
         }
         TestFreeImage(&native);
     } else {
         (void)fprintf(
-            stdout,
-            "INFO native-layout render unavailable fixture=%s\n",
+            stderr,
+            "native-layout render unavailable fixture=%s\n",
             case_name);
+        result |= 1;
     }
 
     TestFreeImage(&bridge);

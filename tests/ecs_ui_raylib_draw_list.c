@@ -1,5 +1,6 @@
 #include "ecs_ui/ecs_ui_frame.h"
 #include "ecs_ui/ecs_ui_raylib.h"
+#include "../src/ecs_ui_frame_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -1144,6 +1145,7 @@ int main(void)
             .height = 220.0f,
         },
     };
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     const EcsUiDrawList *draw_list = EcsUiFrameRun(
         &tree,
         &theme,
@@ -1194,6 +1196,7 @@ int main(void)
     result |= Require(
         null_spec_size.height == 11.0f,
         "raylib measure NULL spec should default spacing to 1");
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     if (errors.count != 0u) {
         (void)fprintf(
             stderr,

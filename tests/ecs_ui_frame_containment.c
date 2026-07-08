@@ -775,6 +775,7 @@ static int TestZIndexTranslation(void)
         180.0f,
         NULL);
     EcsUiFrameBackendSetSurfaceSize(240.0f, 180.0f);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
     const EcsUiDrawList *draw_list = EcsUiFrameRun(
         &neutral_tree,
         &theme,
@@ -797,6 +798,7 @@ static int TestZIndexTranslation(void)
             neutral_custom->zIndex == raw_custom->zIndex,
             "neutral z-index should match raw clay z-index");
     }
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
 
     ecs_fini(world);
     return result;

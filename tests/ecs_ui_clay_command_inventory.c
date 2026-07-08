@@ -169,6 +169,7 @@ int main(void)
             }),
         "failed to initialize frame backend");
     EcsUiFrameBackendSetCullingEnabled(false);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
 
     EcsUiTheme theme = EcsUiThemeDefault();
     const EcsUiDrawList *draw_list = EcsUiFrameRun(
