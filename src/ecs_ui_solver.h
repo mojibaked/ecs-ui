@@ -43,6 +43,8 @@ typedef struct EcsUiSolverRunOptions {
     uint32_t scroll_content_count;
     bool force_divergence;
     bool force_deep_divergence;
+    uint32_t text_line_capacity;
+    EcsUiFrameErrorKind *error_kind;
     char *error_message;
     size_t error_message_size;
 } EcsUiSolverRunOptions;

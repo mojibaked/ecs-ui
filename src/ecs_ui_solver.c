@@ -20,9 +20,15 @@ typedef struct EcsUiSolverLayout {
     bool emitted;
 } EcsUiSolverLayout;
 
+typedef struct EcsUiSolverElementIdEntry {
+    char id[ECS_UI_ID_MAX * 2u];
+    uint32_t index;
+} EcsUiSolverElementIdEntry;
+
 typedef struct EcsUiSolverContext {
     EcsUiTreeSnapshot *tree;
     EcsUiSolverArena *arena;
+    EcsUiSolverElementIdEntry *element_ids;
     EcsUiSolverLayout *layouts;
     struct EcsUiSolverMetrics *metrics;
     struct EcsUiSolverVirtualFlow *virtual_entries;
@@ -39,6 +45,8 @@ typedef struct EcsUiSolverContext {
     uint32_t scroll_offset_count;
     EcsUiSolverScrollContent *scroll_contents;
     uint32_t scroll_content_count;
+    uint32_t text_line_capacity;
+    EcsUiFrameErrorKind *error_kind;
     char *error_message;
     size_t error_message_size;
     bool failed;
@@ -334,14 +342,18 @@ static void *EcsUiSolverArenaAlloc(
     return out;
 }
 
-static void EcsUiSolverSetError(
+static void EcsUiSolverSetErrorKind(
     EcsUiSolverContext *ctx,
+    EcsUiFrameErrorKind kind,
     const char *message)
 {
     if (ctx == NULL) {
         return;
     }
     ctx->failed = true;
+    if (ctx->error_kind != NULL) {
+        *ctx->error_kind = kind;
+    }
     if (ctx->error_message == NULL || ctx->error_message_size == 0u ||
             message == NULL) {
         return;
@@ -353,12 +365,120 @@ static void EcsUiSolverSetError(
         message);
 }
 
+static void EcsUiSolverSetError(
+    EcsUiSolverContext *ctx,
+    const char *message)
+{
+    EcsUiSolverSetErrorKind(
+        ctx,
+        ECS_UI_FRAME_ERROR_INTERNAL,
+        message);
+}
+
+static void EcsUiSolverElementId(
+    const EcsUiTreeNodeSnapshot *node,
+    char *out,
+    size_t out_size)
+{
+    if (out == NULL || out_size == 0u) {
+        return;
+    }
+    out[0] = '\0';
+    if (node == NULL) {
+        return;
+    }
+
+    const char *authored_id = node->id[0] != '\0' ? node->id : "Node";
+    (void)snprintf(
+        out,
+        out_size,
+        "%s_%llu",
+        authored_id,
+        (unsigned long long)node->entity);
+}
+
+static int EcsUiSolverCompareElementIdEntries(
+    const void *a,
+    const void *b)
+{
+    const EcsUiSolverElementIdEntry *entry_a = a;
+    const EcsUiSolverElementIdEntry *entry_b = b;
+    const int cmp = strcmp(entry_a->id, entry_b->id);
+    if (cmp != 0) {
+        return cmp;
+    }
+    if (entry_a->index < entry_b->index) {
+        return -1;
+    }
+    if (entry_a->index > entry_b->index) {
+        return 1;
+    }
+    return 0;
+}
+
+static bool EcsUiSolverValidateDuplicateElementIds(EcsUiSolverContext *ctx)
+{
+    if (ctx == NULL || ctx->tree == NULL || ctx->element_ids == NULL) {
+        return false;
+    }
+    const EcsUiTreeSnapshot *tree = ctx->tree;
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        ctx->element_ids[i] = (EcsUiSolverElementIdEntry){.index = i};
+        EcsUiSolverElementId(
+            &tree->nodes[i],
+            ctx->element_ids[i].id,
+            sizeof(ctx->element_ids[i].id));
+    }
+    qsort(
+        ctx->element_ids,
+        tree->count,
+        sizeof(ctx->element_ids[0]),
+        EcsUiSolverCompareElementIdEntries);
+    for (uint32_t i = 1u; i < tree->count; i += 1u) {
+        const char *previous = ctx->element_ids[i - 1u].id;
+        const char *current = ctx->element_ids[i].id;
+        if (previous[0] != '\0' && strcmp(previous, current) == 0) {
+            EcsUiSolverSetErrorKind(
+                ctx,
+                ECS_UI_FRAME_ERROR_DUPLICATE_ID,
+                "native layout solver duplicate element id");
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool EcsUiSolverValidatePlacementParents(EcsUiSolverContext *ctx)
+{
+    if (ctx == NULL || ctx->tree == NULL) {
+        return false;
+    }
+    const EcsUiTreeSnapshot *tree = ctx->tree;
+    for (uint32_t i = 0u; i < tree->count; i += 1u) {
+        const EcsUiTreeNodeSnapshot *node = &tree->nodes[i];
+        if (!node->has_placement) {
+            continue;
+        }
+        if (node->parent == 0 ||
+                node->parent_index == ECS_UI_TREE_INVALID_INDEX ||
+                node->parent_index >= tree->count) {
+            EcsUiSolverSetErrorKind(
+                ctx,
+                ECS_UI_FRAME_ERROR_FLOATING_PARENT_NOT_FOUND,
+                "native layout solver placement parent not found");
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool EcsUiSolverValidateSupported(EcsUiSolverContext *ctx)
 {
     if (ctx == NULL || ctx->tree == NULL) {
         return false;
     }
-    return true;
+    return EcsUiSolverValidateDuplicateElementIds(ctx) &&
+        EcsUiSolverValidatePlacementParents(ctx);
 }
 
 typedef enum EcsUiSolverSizingKind {
@@ -892,21 +1012,30 @@ static EcsUiSolverTextMeasure EcsUiSolverMeasureTextRange(
 {
     EcsUiSolverTextMeasure measured = {0};
     if (ctx->measure_text == NULL) {
-        EcsUiSolverSetError(
+        EcsUiSolverSetErrorKind(
             ctx,
+            ECS_UI_FRAME_ERROR_MEASURE_TEXT_MISSING,
             "native layout solver text measure callback missing");
         return measured;
     }
 
     const EcsUiStyleTextRangeMeasure shared =
-        EcsUiStyleMeasureTextRange(
+        EcsUiStyleMeasureTextRangeWithCapacity(
             ctx->measure_text,
             ctx->measure_user_data,
             text_or_null,
             start,
             end,
             font_size,
-            EcsUiSolverScale(ctx->tree));
+            EcsUiSolverScale(ctx->tree),
+            ctx->text_line_capacity);
+    if (shared.truncated) {
+        EcsUiSolverSetErrorKind(
+            ctx,
+            ECS_UI_FRAME_ERROR_TEXT_MEASURE_CAPACITY,
+            "native layout solver text measure line capacity exceeded");
+        return measured;
+    }
     measured.width = shared.width;
     measured.height = shared.height;
     measured.min_width = shared.min_width;
@@ -2259,6 +2388,9 @@ bool EcsUiSolverRun(
     }
 
     EcsUiSolverArenaReset(arena);
+    if (options != NULL && options->error_kind != NULL) {
+        *options->error_kind = ECS_UI_FRAME_ERROR_NONE;
+    }
     EcsUiSolverContext ctx = {
         .tree = tree,
         .arena = arena,
@@ -2276,27 +2408,36 @@ bool EcsUiSolverRun(
             options != NULL ? options->scroll_contents : NULL,
         .scroll_content_count =
             options != NULL ? options->scroll_content_count : 0u,
+        .text_line_capacity =
+            options != NULL ? options->text_line_capacity : 0u,
+        .error_kind = options != NULL ? options->error_kind : NULL,
         .error_message = options != NULL ? options->error_message : NULL,
         .error_message_size =
             options != NULL ? options->error_message_size : 0u,
     };
-    if (!EcsUiSolverValidateSupported(&ctx)) {
-        return false;
-    }
     size_t layout_bytes = 0u;
+    size_t element_id_bytes = 0u;
     size_t metrics_bytes = 0u;
     size_t virtual_bytes = 0u;
     size_t scratch_bytes = 0u;
+    size_t element_id_offset = 0u;
     size_t metrics_offset = 0u;
     size_t virtual_offset = 0u;
     size_t scratch_offset = 0u;
     size_t total_bytes = 0u;
     if (tree->count > UINT32_MAX / 5u) {
-        EcsUiSolverSetError(&ctx, "native layout solver allocation failed");
+        EcsUiSolverSetErrorKind(
+            &ctx,
+            ECS_UI_FRAME_ERROR_ALLOCATION_FAILED,
+            "native layout solver allocation failed");
         return false;
     }
     const uint32_t flow_capacity = tree->count * 5u;
     if (!EcsUiSolverMulSize(sizeof(EcsUiSolverLayout), tree->count, &layout_bytes) ||
+            !EcsUiSolverMulSize(
+                sizeof(EcsUiSolverElementIdEntry),
+                tree->count,
+                &element_id_bytes) ||
             !EcsUiSolverMulSize(sizeof(EcsUiSolverMetrics), tree->count, &metrics_bytes) ||
             !EcsUiSolverMulSize(
                 sizeof(EcsUiSolverVirtualFlow),
@@ -2306,7 +2447,15 @@ bool EcsUiSolverRun(
                 sizeof(EcsUiSolverFlowItem),
                 flow_capacity,
                 &scratch_bytes) ||
-            !EcsUiSolverAlignSize(layout_bytes, sizeof(void *), &metrics_offset) ||
+            !EcsUiSolverAlignSize(
+                layout_bytes,
+                sizeof(void *),
+                &element_id_offset) ||
+            element_id_offset > SIZE_MAX - element_id_bytes ||
+            !EcsUiSolverAlignSize(
+                element_id_offset + element_id_bytes,
+                sizeof(void *),
+                &metrics_offset) ||
             metrics_offset > SIZE_MAX - metrics_bytes ||
             !EcsUiSolverAlignSize(
                 metrics_offset + metrics_bytes,
@@ -2318,7 +2467,10 @@ bool EcsUiSolverRun(
                 sizeof(void *),
                 &scratch_offset) ||
             scratch_offset > SIZE_MAX - scratch_bytes) {
-        EcsUiSolverSetError(&ctx, "native layout solver allocation failed");
+        EcsUiSolverSetErrorKind(
+            &ctx,
+            ECS_UI_FRAME_ERROR_ALLOCATION_FAILED,
+            "native layout solver allocation failed");
         return false;
     }
     total_bytes = scratch_offset + scratch_bytes;
@@ -2327,16 +2479,24 @@ bool EcsUiSolverRun(
         total_bytes,
         sizeof(void *));
     if (work == NULL) {
-        EcsUiSolverSetError(&ctx, "native layout solver allocation failed");
+        EcsUiSolverSetErrorKind(
+            &ctx,
+            ECS_UI_FRAME_ERROR_ALLOCATION_FAILED,
+        "native layout solver allocation failed");
         return false;
     }
     ctx.layouts = (EcsUiSolverLayout *)work;
+    ctx.element_ids =
+        (EcsUiSolverElementIdEntry *)(void *)(work + element_id_offset);
     ctx.metrics = (EcsUiSolverMetrics *)(void *)(work + metrics_offset);
     ctx.virtual_entries =
         (EcsUiSolverVirtualFlow *)(void *)(work + virtual_offset);
     ctx.virtual_capacity = flow_capacity;
     ctx.scratch_items = (EcsUiSolverFlowItem *)(void *)(work + scratch_offset);
     ctx.scratch_item_capacity = flow_capacity;
+    if (!EcsUiSolverValidateSupported(&ctx)) {
+        return false;
+    }
     const EcsUiFrameLayoutOptions *layout =
         options != NULL ? options->layout : NULL;
     EcsUiSolverClearSnapshotLayout(tree);

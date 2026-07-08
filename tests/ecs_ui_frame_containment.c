@@ -2633,12 +2633,218 @@ static int TestEmptyScrollSettle(
     return result;
 }
 
+static EcsUiFrameLayoutOptions TestFrameErrorLayout(void)
+{
+    return (EcsUiFrameLayoutOptions){
+        .physical_bounds = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = 160.0f,
+            .height = 100.0f,
+        },
+    };
+}
+
+static EcsUiTreeNodeSnapshot TestFrameErrorNode(
+    ecs_entity_t entity,
+    const char *id,
+    EcsUiNodeKind kind)
+{
+    EcsUiTreeNodeSnapshot node = {
+        .entity = entity,
+        .kind = kind,
+        .parent_index = ECS_UI_TREE_INVALID_INDEX,
+        .first_child = ECS_UI_TREE_INVALID_INDEX,
+        .next_sibling = ECS_UI_TREE_INVALID_INDEX,
+        .visual = {.opacity = 1.0f},
+    };
+    CopyString(node.id, sizeof(node.id), id);
+    return node;
+}
+
+static EcsUiTreeSnapshot TestFrameErrorRootTree(const char *id)
+{
+    EcsUiTreeSnapshot tree = {
+        .root = 1,
+        .scale = 1.0f,
+        .count = 1u,
+    };
+    tree.nodes[0] = TestFrameErrorNode(1, id, ECS_UI_NODE_ROOT);
+    tree.nodes[0].stack.preferred_width = 120.0f;
+    tree.nodes[0].stack.preferred_height = 80.0f;
+    return tree;
+}
+
+static void TestFrameErrorAppendChild(
+    EcsUiTreeSnapshot *tree,
+    EcsUiTreeNodeSnapshot child)
+{
+    if (tree == NULL || tree->count >= ECS_UI_TREE_NODE_MAX) {
+        return;
+    }
+    const uint32_t index = tree->count;
+    tree->count += 1u;
+    child.parent = tree->nodes[0].entity;
+    child.parent_index = 0u;
+    child.next_sibling = ECS_UI_TREE_INVALID_INDEX;
+    tree->nodes[index] = child;
+    if (tree->nodes[0].first_child == ECS_UI_TREE_INVALID_INDEX) {
+        tree->nodes[0].first_child = index;
+        return;
+    }
+    uint32_t last = tree->nodes[0].first_child;
+    while (tree->nodes[last].next_sibling != ECS_UI_TREE_INVALID_INDEX) {
+        last = tree->nodes[last].next_sibling;
+    }
+    tree->nodes[last].next_sibling = index;
+}
+
+static int TestBackendInitErrorCases(TestFrameErrors *errors)
+{
+    int result = 0;
+    if (errors == NULL) {
+        return Require(false, "missing backend init error recorder");
+    }
+
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        !EcsUiFrameBackendInit(
+            &(EcsUiFrameBackendDesc){
+                .surface_width = 160.0f,
+                .surface_height = 100.0f,
+                .error = TestFrameHandleError,
+                .error_user_data = errors,
+            }),
+        "backend init without measure callback should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_MEASURE_TEXT_MISSING,
+        "backend init should report missing measure callback");
+
+    EcsUiFrameInternalSetBackendDescForTest(
+        &(EcsUiFrameBackendDesc){
+            .surface_width = 160.0f,
+            .surface_height = 100.0f,
+            .measure_text = TestMeasureText,
+            .error = TestFrameHandleError,
+            .error_user_data = errors,
+        });
+    EcsUiTreeSnapshot tree = TestFrameErrorRootTree("NotInitialized");
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = TestFrameErrorLayout();
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) == NULL,
+        "uninitialized frame run should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_NOT_INITIALIZED,
+        "uninitialized frame run should report not initialized");
+    EcsUiFrameInternalSetBackendDescForTest(NULL);
+
+    return result;
+}
+
+static int TestNativeSolverFrameErrors(TestFrameErrors *errors)
+{
+    int result = 0;
+    if (errors == NULL) {
+        return Require(false, "missing native solver error recorder");
+    }
+
+    EcsUiTheme theme = EcsUiThemeDefault();
+    EcsUiFrameLayoutOptions options = TestFrameErrorLayout();
+    EcsUiFrameBackendSetSurfaceSize(160.0f, 100.0f);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
+
+    EcsUiTreeSnapshot duplicate = TestFrameErrorRootTree("Duplicate");
+    TestFrameErrorAppendChild(
+        &duplicate,
+        TestFrameErrorNode(
+            duplicate.nodes[0].entity,
+            "Duplicate",
+            ECS_UI_NODE_VSTACK));
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        EcsUiFrameRun(&duplicate, &theme, &options, NULL, NULL) == NULL,
+        "native duplicate id tree should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_DUPLICATE_ID,
+        "native duplicate id should report duplicate id error");
+
+    EcsUiTreeSnapshot floating = TestFrameErrorRootTree("FloatingParent");
+    TestFrameErrorAppendChild(
+        &floating,
+        TestFrameErrorNode(2, "FloatingChild", ECS_UI_NODE_VSTACK));
+    floating.nodes[1].has_placement = true;
+    floating.nodes[1].placement.mode = ECS_UI_PLACEMENT_PARENT;
+    floating.nodes[1].parent = 0;
+    floating.nodes[1].parent_index = ECS_UI_TREE_INVALID_INDEX;
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        EcsUiFrameRun(&floating, &theme, &options, NULL, NULL) == NULL,
+        "native missing placement parent tree should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_FLOATING_PARENT_NOT_FOUND,
+        "native missing placement parent should report floating parent error");
+
+    EcsUiTreeSnapshot text_capacity = TestFrameErrorRootTree("TextCapacity");
+    EcsUiTreeNodeSnapshot text =
+        TestFrameErrorNode(3, "TextCapacityText", ECS_UI_NODE_TEXT);
+    CopyString(text.text.text, sizeof(text.text.text), "aa\nbb");
+    text.text.role = ECS_UI_TEXT_BODY;
+    TestFrameErrorAppendChild(&text_capacity, text);
+    EcsUiFrameInternalSetTextMeasureLineCapacity(1u);
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        EcsUiFrameRun(&text_capacity, &theme, &options, NULL, NULL) == NULL,
+        "native text measure capacity tree should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_TEXT_MEASURE_CAPACITY,
+        "native text capacity should report text measure capacity error");
+    EcsUiFrameInternalSetTextMeasureLineCapacity(0u);
+
+    EcsUiTreeSnapshot allocation = TestFrameErrorRootTree("Allocation");
+    allocation.count = (UINT32_MAX / 5u) + 1u;
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        EcsUiFrameRun(&allocation, &theme, &options, NULL, NULL) == NULL,
+        "native allocation guard tree should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_ALLOCATION_FAILED,
+        "native allocation guard should report allocation failure");
+
+    EcsUiFrameInternalSetTextMeasureLineCapacity(0u);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
+    return result;
+}
+
 static int TestFrameErrorCases(TestFrameErrors *errors)
 {
     int result = 0;
     if (errors == NULL) {
         return Require(false, "missing error recorder");
     }
+
+    *errors = (TestFrameErrors){0};
+    result |= Require(
+        !EcsUiFrameBackendInit(
+            &(EcsUiFrameBackendDesc){
+                .surface_width = 160.0f,
+                .surface_height = 100.0f,
+                .measure_text = TestMeasureText,
+                .error = TestFrameHandleError,
+                .error_user_data = errors,
+            }),
+        "second backend init should fail");
+    result |= Require(
+        errors->count == 1u &&
+            errors->last_kind == ECS_UI_FRAME_ERROR_ALREADY_INITIALIZED,
+        "second backend init should report already initialized");
 
     *errors = (TestFrameErrors){0};
     EcsUiTheme theme = EcsUiThemeDefault();
@@ -2697,6 +2903,7 @@ static int TestFrameErrorCases(TestFrameErrors *errors)
         "stale collect should report stale interaction frame");
 
     ecs_fini(world);
+    result |= TestNativeSolverFrameErrors(errors);
     return result;
 }
 
@@ -2704,6 +2911,8 @@ int main(void)
 {
     int result = 0;
     TestFrameErrors errors = {0};
+    result |= TestBackendInitErrorCases(&errors);
+    errors = (TestFrameErrors){0};
     result |= Require(
         EcsUiFrameBackendInit(
             &(EcsUiFrameBackendDesc){

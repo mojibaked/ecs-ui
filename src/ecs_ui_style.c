@@ -447,12 +447,17 @@ static void EcsUiStyleAddTextLine(
     uint32_t end,
     float width,
     float height,
-    float scale)
+    float scale,
+    uint32_t line_capacity)
 {
     if (measured == NULL) {
         return;
     }
-    if (measured->line_count >= ECS_UI_STYLE_TEXT_LINE_MAX) {
+    if (line_capacity == 0u ||
+            line_capacity > ECS_UI_STYLE_TEXT_LINE_MAX) {
+        line_capacity = ECS_UI_STYLE_TEXT_LINE_MAX;
+    }
+    if (measured->line_count >= line_capacity) {
         measured->truncated = true;
         return;
     }
@@ -465,18 +470,23 @@ static void EcsUiStyleAddTextLine(
     measured->line_count += 1u;
 }
 
-EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRange(
+EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRangeWithCapacity(
     EcsUiMeasureTextFn measure_text,
     void *measure_user_data,
     const char *text_or_null,
     uint32_t start,
     uint32_t end,
     uint16_t font_size,
-    float scale)
+    float scale,
+    uint32_t line_capacity)
 {
     EcsUiStyleTextRangeMeasure measured = {0};
     if (scale <= 0.0f) {
         scale = 1.0f;
+    }
+    if (line_capacity == 0u ||
+            line_capacity > ECS_UI_STYLE_TEXT_LINE_MAX) {
+        line_capacity = ECS_UI_STYLE_TEXT_LINE_MAX;
     }
     if (measure_text == NULL) {
         return measured;
@@ -543,7 +553,8 @@ EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRange(
                     range_start + (uint32_t)(line_start + line_length),
                     line_width - (final_space ? space_width : 0.0f),
                     measured_height,
-                    scale);
+                    scale,
+                    line_capacity);
                 line_width = 0.0f;
                 line_start = word_end + 1;
             }
@@ -573,11 +584,32 @@ EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRange(
             range_end,
             line_width,
             measured_height,
-            scale);
+            scale,
+            line_capacity);
     }
 
     measured.width = measured_width / scale;
     measured.height = measured_height / scale;
     measured.min_width = min_width / scale;
     return measured;
+}
+
+EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRange(
+    EcsUiMeasureTextFn measure_text,
+    void *measure_user_data,
+    const char *text_or_null,
+    uint32_t start,
+    uint32_t end,
+    uint16_t font_size,
+    float scale)
+{
+    return EcsUiStyleMeasureTextRangeWithCapacity(
+        measure_text,
+        measure_user_data,
+        text_or_null,
+        start,
+        end,
+        font_size,
+        scale,
+        ECS_UI_STYLE_TEXT_LINE_MAX);
 }

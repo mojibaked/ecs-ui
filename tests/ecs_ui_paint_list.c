@@ -1797,7 +1797,7 @@ static int RunPaintCase(
         errors == NULL || errors->count == start_error_count,
         "paint case emitted unexpected frame errors");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2048,7 +2048,7 @@ static int RunOrderPaintCase(
         errors == NULL || errors->count == start_error_count,
         "order paint emitted unexpected frame errors");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2257,7 +2257,7 @@ static int RunClipPaintCase(
         errors == NULL || errors->count == start_error_count,
         "clip paint emitted unexpected frame errors");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2576,7 +2576,7 @@ static int RunTextFieldPaintCase(
         errors == NULL || errors->count == start_error_count,
         "text-field paint emitted unexpected frame errors");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2678,7 +2678,7 @@ static int RunTextFieldOrphanValueCase(
         errors == NULL || errors->count == start_error_count,
         "orphan text-field emitted unexpected frame errors");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2754,7 +2754,7 @@ static int RunPlacedTextPaintCase(
         errors == NULL || errors->count == start_error_count,
         "placed text emitted unexpected frame errors");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2912,7 +2912,7 @@ static int TestGenerationHeldOnSolverFailure(TestFrameErrors *errors)
             last_good->generation == last_generation,
         "artifact generation should stay at last good value after failure");
 
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     ecs_fini(world);
     return result;
 }
@@ -2947,7 +2947,7 @@ static int TestPaintCapacityFailure(TestFrameErrors *errors)
         },
     };
     EcsUiFrameBackendSetSurfaceSize(240.0f, 160.0f);
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     EcsUiFrameInternalSetPaintItemCapacity(0u);
     *errors = (TestFrameErrors){0};
     result |= Require(
@@ -3065,7 +3065,7 @@ static int TestTextFieldScopeGuard(TestFrameErrors *errors)
         },
     };
     EcsUiFrameBackendSetSurfaceSize(180.0f, 80.0f);
-    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_CLAY);
+    EcsUiFrameInternalSelectBackend(ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE);
     *errors = (TestFrameErrors){0};
     result |= Require(
         EcsUiFrameRun(&tree, &theme, &options, NULL, NULL) != NULL,

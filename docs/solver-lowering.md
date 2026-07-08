@@ -1146,3 +1146,46 @@ culling-disabled path.
 Text-run paint items carry `font_id` even though current bridge output and the
 raylib demo use font 0. This preserves today's behavior while making font
 identity explicit for the direct renderer boundary.
+
+### Native frame error contract (clay-cutover Stage 7)
+
+Public frame errors after the native-live flip are native-frame promises, not
+Clay callback translations. Surviving kinds and native producers:
+
+| Error kind | Native producer | Decision |
+| --- | --- | --- |
+| `ECS_UI_FRAME_ERROR_MEASURE_TEXT_MISSING` | `EcsUiFrameBackendInit`; solver text measurement fallback for direct native runs | keep |
+| `ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY` | paint-list/item capacity and paint scope guards | keep |
+| `ECS_UI_FRAME_ERROR_TEXT_MEASURE_CAPACITY` | native text range measurement line-capacity guard | keep |
+| `ECS_UI_FRAME_ERROR_DUPLICATE_ID` | native solver validation of bridge-style emitted element ids (`authored_id_or_Node + entity`) | keep |
+| `ECS_UI_FRAME_ERROR_FLOATING_PARENT_NOT_FOUND` | native solver placement-parent validation for malformed/corrupt snapshots | keep |
+| `ECS_UI_FRAME_ERROR_INTERNAL` | native solver, paint, and unavailable-reference-backend internal failures | keep |
+| `ECS_UI_FRAME_ERROR_NOT_INITIALIZED` | frame run before backend initialization | keep |
+| `ECS_UI_FRAME_ERROR_ALREADY_INITIALIZED` | repeated backend initialization | keep |
+| `ECS_UI_FRAME_ERROR_ALLOCATION_FAILED` | backend allocation and native solver arena-size/allocation guards | keep |
+| `ECS_UI_FRAME_ERROR_INVALID_ARGUMENT` | invalid public frame arguments | keep |
+| `ECS_UI_FRAME_ERROR_STALE_INTERACTION_FRAME` | collecting events from an interaction frame invalidated by a later run | keep |
+
+Clay-only kinds removed from the public enum:
+
+- `ECS_UI_FRAME_ERROR_ARENA_CAPACITY`: Clay arena sizing artifact. Native uses
+  normal allocation/arena-size guards and reports `ALLOCATION_FAILED` or
+  `INTERNAL` depending on source.
+- `ECS_UI_FRAME_ERROR_INVALID_PERCENT`: native ecs-ui snapshots do not expose
+  Clay percent sizing values, so there is no native condition to validate.
+- `ECS_UI_FRAME_ERROR_UNBALANCED_LAYOUT`: native layout consumes an already
+  balanced `EcsUiTreeSnapshot`; unbalanced open/close is a Clay immediate-mode
+  bridge concern, not a native frame runtime state.
+
+While the Clay reference bridge remains compiled, those deleted Clay callback
+cases are downgraded to `ECS_UI_FRAME_ERROR_INTERNAL`. Public error coverage must
+assert native producers directly; tests must not depend on Clay's error callback
+for any surviving kind.
+
+Text range line-buffer overflow is intentionally a frame failure. Earlier shared
+measurement code could silently mark the range truncated; the native-live
+contract now reports `ECS_UI_FRAME_ERROR_TEXT_MEASURE_CAPACITY` and does not
+publish paint for that frame, matching the fail-loud behavior of element and
+paint item capacity errors. With the current `ECS_UI_TEXT_MAX` byte cap this is
+pathological input, but it is still a capacity error rather than a lossy layout
+mode.

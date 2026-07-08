@@ -37,8 +37,11 @@ EcsUiClayLayoutOptions EcsUiFrameInternalClayLayoutOptions(
 #endif
 void EcsUiFrameInternalSelectBackend(EcsUiFrameInternalBackend backend);
 EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void);
+void EcsUiFrameInternalSetBackendDescForTest(
+    const EcsUiFrameBackendDesc *desc);
 const EcsUiPaintList *EcsUiFrameInternalPaintList(void);
 void EcsUiFrameInternalSetPaintItemCapacity(uint32_t capacity);
+void EcsUiFrameInternalSetTextMeasureLineCapacity(uint32_t capacity);
 void EcsUiFrameInternalSetNativeScrollOffsets(
     const EcsUiSolverScrollOffset *offsets,
     uint32_t count);

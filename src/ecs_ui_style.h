@@ -96,5 +96,14 @@ EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRange(
     uint32_t end,
     uint16_t font_size,
     float scale);
+EcsUiStyleTextRangeMeasure EcsUiStyleMeasureTextRangeWithCapacity(
+    EcsUiMeasureTextFn measure_text,
+    void *measure_user_data,
+    const char *text,
+    uint32_t start,
+    uint32_t end,
+    uint16_t font_size,
+    float scale,
+    uint32_t line_capacity);
 
 #endif

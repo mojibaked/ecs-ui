@@ -54,6 +54,7 @@ typedef struct EcsUiFrameBackend {
     EcsUiFrameInternalBackend selected_backend;
     const EcsUiSolverScrollOffset *solver_scroll_offsets;
     uint32_t solver_scroll_offset_count;
+    uint32_t solver_text_line_capacity;
     EcsUiSolverScrollContent *solver_scroll_contents;
     uint32_t solver_scroll_content_count;
     EcsUiSolverScrollContent native_scroll_contents[ECS_UI_TREE_NODE_MAX];
@@ -76,6 +77,16 @@ void EcsUiFrameInternalSelectBackend(EcsUiFrameInternalBackend backend)
 EcsUiFrameInternalBackend EcsUiFrameInternalSelectedBackend(void)
 {
     return g_ecs_ui_frame_backend.selected_backend;
+}
+
+void EcsUiFrameInternalSetBackendDescForTest(
+    const EcsUiFrameBackendDesc *desc)
+{
+    EcsUiFrameBackend *backend = &g_ecs_ui_frame_backend;
+    if (backend->initialized) {
+        return;
+    }
+    backend->desc = desc != NULL ? *desc : (EcsUiFrameBackendDesc){0};
 }
 
 static bool EcsUiFrameBackendIsNative(const EcsUiFrameBackend *backend)
@@ -107,6 +118,11 @@ const EcsUiPaintList *EcsUiFramePaintList(void)
 void EcsUiFrameInternalSetPaintItemCapacity(uint32_t capacity)
 {
     g_ecs_ui_frame_backend.paint_item_capacity = capacity;
+}
+
+void EcsUiFrameInternalSetTextMeasureLineCapacity(uint32_t capacity)
+{
+    g_ecs_ui_frame_backend.solver_text_line_capacity = capacity;
 }
 
 void EcsUiFrameInternalSetNativeScrollOffsets(
@@ -145,7 +161,7 @@ static EcsUiFrameErrorKind EcsUiFrameClayErrorKind(Clay_ErrorType type)
     case CLAY_ERROR_TYPE_TEXT_MEASUREMENT_FUNCTION_NOT_PROVIDED:
         return ECS_UI_FRAME_ERROR_MEASURE_TEXT_MISSING;
     case CLAY_ERROR_TYPE_ARENA_CAPACITY_EXCEEDED:
-        return ECS_UI_FRAME_ERROR_ARENA_CAPACITY;
+        return ECS_UI_FRAME_ERROR_INTERNAL;
     case CLAY_ERROR_TYPE_ELEMENTS_CAPACITY_EXCEEDED:
         return ECS_UI_FRAME_ERROR_ELEMENT_CAPACITY;
     case CLAY_ERROR_TYPE_TEXT_MEASUREMENT_CAPACITY_EXCEEDED:
@@ -155,9 +171,9 @@ static EcsUiFrameErrorKind EcsUiFrameClayErrorKind(Clay_ErrorType type)
     case CLAY_ERROR_TYPE_FLOATING_CONTAINER_PARENT_NOT_FOUND:
         return ECS_UI_FRAME_ERROR_FLOATING_PARENT_NOT_FOUND;
     case CLAY_ERROR_TYPE_PERCENTAGE_OVER_1:
-        return ECS_UI_FRAME_ERROR_INVALID_PERCENT;
+        return ECS_UI_FRAME_ERROR_INTERNAL;
     case CLAY_ERROR_TYPE_UNBALANCED_OPEN_CLOSE:
-        return ECS_UI_FRAME_ERROR_UNBALANCED_LAYOUT;
+        return ECS_UI_FRAME_ERROR_INTERNAL;
     case CLAY_ERROR_TYPE_INTERNAL_ERROR:
     default:
         return ECS_UI_FRAME_ERROR_INTERNAL;
@@ -724,6 +740,8 @@ const EcsUiDrawList *EcsUiFrameRun(
         backend->active_frame = NULL;
         backend->draw_list = (EcsUiDrawList){0};
         char solver_message[256] = {0};
+        EcsUiFrameErrorKind solver_error =
+            ECS_UI_FRAME_ERROR_INTERNAL;
         const uint32_t native_content_count =
             tree->count < ECS_UI_TREE_NODE_MAX ?
                 tree->count :
@@ -744,19 +762,24 @@ const EcsUiDrawList *EcsUiFrameRun(
                     .scroll_offset_count = backend->solver_scroll_offset_count,
                     .scroll_contents = backend->native_scroll_contents,
                     .scroll_content_count = native_content_count,
+                    .text_line_capacity =
+                        backend->solver_text_line_capacity,
                     .force_divergence =
                         backend->selected_backend ==
                             ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DIVERGE,
                     .force_deep_divergence =
                         backend->selected_backend ==
                             ECS_UI_FRAME_INTERNAL_BACKEND_NATIVE_DEEP_DIVERGE,
+                    .error_kind = &solver_error,
                     .error_message = solver_message,
                     .error_message_size = sizeof(solver_message),
                 },
                 &backend->solver_arena)) {
             EcsUiFrameReportError(
                 &backend->desc,
-                ECS_UI_FRAME_ERROR_INTERNAL,
+                solver_error != ECS_UI_FRAME_ERROR_NONE ?
+                    solver_error :
+                    ECS_UI_FRAME_ERROR_INTERNAL,
                 solver_message[0] != '\0' ?
                     solver_message :
                     "native layout solver failed");
