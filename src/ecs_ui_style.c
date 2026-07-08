@@ -209,6 +209,53 @@ float EcsUiStyleCornerRadius(
     return radius;
 }
 
+static float EcsUiStyleNonNegative(float value)
+{
+    return value > 0.0f ? value : 0.0f;
+}
+
+EcsUiPaintBorder EcsUiStyleBorder(
+    const EcsUiTreeNodeSnapshot *node)
+{
+    if (EcsUiStyleHasNineSlice(node) || EcsUiStyleHasBevel(node)) {
+        return (EcsUiPaintBorder){0};
+    }
+    if (node == NULL || !node->has_box_style ||
+            node->box_style.border_color.a == 0u) {
+        return (EcsUiPaintBorder){0};
+    }
+
+    const EcsUiBoxStyle *style = &node->box_style;
+    EcsUiPaintBorder border = {
+        .color = EcsUiStyleColorFrom(style->border_color),
+        .left = EcsUiStyleNonNegative(
+            style->border_left_width > 0.0f ?
+                style->border_left_width :
+                style->border_width),
+        .top = EcsUiStyleNonNegative(
+            style->border_top_width > 0.0f ?
+                style->border_top_width :
+                style->border_width),
+        .right = EcsUiStyleNonNegative(
+            style->border_right_width > 0.0f ?
+                style->border_right_width :
+                style->border_width),
+        .bottom = EcsUiStyleNonNegative(
+            style->border_bottom_width > 0.0f ?
+                style->border_bottom_width :
+                style->border_width),
+    };
+    border.has_border =
+        border.left > 0.0f ||
+        border.top > 0.0f ||
+        border.right > 0.0f ||
+        border.bottom > 0.0f;
+    if (!border.has_border) {
+        return (EcsUiPaintBorder){0};
+    }
+    return border;
+}
+
 EcsUiColorF EcsUiStyleBevelTopLeftColor(
     const EcsUiTreeNodeSnapshot *node)
 {

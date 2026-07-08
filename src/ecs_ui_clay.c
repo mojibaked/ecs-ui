@@ -554,11 +554,6 @@ static Clay_CustomElementConfig EcsUiClayNineSliceCustom(
         (Clay_CustomElementConfig){0};
 }
 
-static bool EcsUiClayHasBevel(const EcsUiTreeNodeSnapshot *node)
-{
-    return EcsUiStyleHasBevel(node);
-}
-
 static bool EcsUiClayHasDrawableBevel(const EcsUiTreeNodeSnapshot *node)
 {
     return EcsUiStyleHasDrawableBevel(node);
@@ -582,39 +577,22 @@ static Clay_BorderElementConfig EcsUiClayBorder(
     const EcsUiTreeNodeSnapshot *node,
     float opacity)
 {
-    if (EcsUiClayHasNineSlice(node) || EcsUiClayHasBevel(node)) {
+    const EcsUiPaintBorder border = EcsUiStyleBorder(node);
+    if (!border.has_border) {
         return (Clay_BorderElementConfig){0};
     }
 
-    if (node == NULL || !node->has_box_style ||
-        node->box_style.border_color.a == 0u) {
-        return (Clay_BorderElementConfig){0};
-    }
-
-    const EcsUiBoxStyle *style = &node->box_style;
-    const uint16_t left = EcsUiClayScaledU16(
-        style->border_left_width > 0.0f ?
-            style->border_left_width :
-            style->border_width);
-    const uint16_t top = EcsUiClayScaledU16(
-        style->border_top_width > 0.0f ?
-            style->border_top_width :
-            style->border_width);
-    const uint16_t right = EcsUiClayScaledU16(
-        style->border_right_width > 0.0f ?
-            style->border_right_width :
-            style->border_width);
-    const uint16_t bottom = EcsUiClayScaledU16(
-        style->border_bottom_width > 0.0f ?
-            style->border_bottom_width :
-            style->border_width);
+    const uint16_t left = EcsUiClayScaledU16(border.left);
+    const uint16_t top = EcsUiClayScaledU16(border.top);
+    const uint16_t right = EcsUiClayScaledU16(border.right);
+    const uint16_t bottom = EcsUiClayScaledU16(border.bottom);
     if (left == 0u && top == 0u && right == 0u && bottom == 0u) {
         return (Clay_BorderElementConfig){0};
     }
 
     return (Clay_BorderElementConfig){
         .color = EcsUiClayApplyOpacity(
-            EcsUiClayColor(node->box_style.border_color),
+            EcsUiClayStyleColor(border.color),
             opacity),
         .width = {
             .left = left,

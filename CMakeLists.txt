@@ -129,6 +129,7 @@ if(ECS_UI_BUILD_CLAY_ADAPTER)
 
         add_library(ecs_ui_frame STATIC
             src/ecs_ui_frame.c
+            src/ecs_ui_paint_clay_adapter.c
             src/ecs_ui_solver.c)
         add_library(ecs_ui::frame ALIAS ecs_ui_frame)
         target_link_libraries(ecs_ui_frame
@@ -356,5 +357,14 @@ if(ECS_UI_BUILD_TESTS)
         add_test(
             NAME ecs_ui_paint_list
             COMMAND ecs_ui_paint_list)
+
+        add_executable(ecs_ui_paint_clay_diff
+            tests/ecs_ui_paint_clay_diff.c)
+        target_link_libraries(ecs_ui_paint_clay_diff
+            PRIVATE ecs_ui_frame ecs_ui_clay)
+        ecs_ui_enable_warnings(ecs_ui_paint_clay_diff)
+        add_test(
+            NAME ecs_ui_paint_clay_diff
+            COMMAND ecs_ui_paint_clay_diff)
     endif()
 endif()

@@ -537,6 +537,55 @@ alive and unmodified. The list storage is fixed-capacity frame storage; emission
 fails loudly by truncating the list if capacity is exceeded, and it does not
 reallocate after item pointers are captured.
 
+### Paint pass (stage 7.3 boxes and bootstrap adapter)
+
+Box paint items carry all box values in renderer-neutral logical units. The
+fill is an `EcsUiColorF` in the same 0-255 float range as the style unit.
+Corner radius is stored as four resolved logical corner values; stage 7.3 uses
+the existing shared `EcsUiStyleCornerRadius` resolver, including the
+`radius < 1 -> radius * 50` quirk. Borders are resolved through the shared style
+unit as logical per-side widths plus an `EcsUiColorF` color and a `has_border`
+flag. The resolver applies exactly the bridge's semantic gating: no border for
+nine-slice or bevel nodes, no border when the color alpha is zero, and no border
+when all selected side widths are zero. Physical scaling and U16 truncation are
+not part of the paint item; the Clay bridge and the transition adapter each do
+that at their own Clay boundary.
+
+The stage 7.3 Clay-command adapter is transition scaffolding, not a backend
+flip. It consumes `EcsUiPaintList` box items and produces a
+`Clay_RenderCommandArray` for tests and future A/B work only; the live frame
+still returns the bridge draw list. The adapter converts each box rect from
+logical root-relative space to physical window space exactly once using the
+tree scale and physical bounds origin. It emits a rectangle command for every
+box item and a border command only when the resolved paint border is present.
+It does not emit scissor commands, clip scopes, text, icons, nine-slice, bevels,
+or custom items in 7.3.
+
+The temporary bootstrap diff joins values, not command streams. For each paint
+box item whose source node has a bridge-computable id, the harness recreates
+the bridge id string (`<authored_id or Node>_<entity><suffix>`, with empty
+suffix for boxes), calls Clay's own `Clay_GetElementId`, and matches bridge
+rectangle commands by `command.id` plus command type. Clay gives border render
+commands a derived id:
+`Clay__HashNumber(element_id, currentElement->children.length)`. That
+`children.length` is Clay's count of emitted child layout elements, not the
+snapshot child count: it excludes floating children and opacity-culled children,
+and includes bridge-injected synthetic children such as text-field caret,
+selection, and inline text segments, plus the inner `CLAY_TEXT` child inside a
+bordered TEXT wrapper. The stage-7.3 bootstrap diff uses the snapshot direct
+child count only for plain visible box elements where it is equal to Clay's
+emitted `children.length`; outside that join scope the test must fail loudly
+with a scope-limitation message rather than reporting a misleading paint value
+mismatch. The border command id is used only for this diff join; the live raylib
+renderer switches on command type and draws command bounds/data, ignoring
+`Clay_RenderCommand.id`.
+
+Geometry, fill color, corner radii, and border widths/color are compared after
+normalizing the paint item through the adapter. Any mismatch is classified as
+SEMANTIC when paint must change, or CLAY-ONLY when it is a scaffolding quirk
+that the durable paint artifact should not preserve; CLAY-ONLY cases must be
+documented in the test and here before being accepted.
+
 ### Stage 6 scope
 
 6a in scope: ZStack containers, floating wrappers with attach-point

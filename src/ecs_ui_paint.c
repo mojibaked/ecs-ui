@@ -60,10 +60,50 @@ static EcsUiColorF EcsUiPaintBoxFill(
     }
 }
 
+static EcsUiPaintCornerRadius EcsUiPaintBoxRadius(
+    const EcsUiTreeNodeSnapshot *node,
+    const EcsUiTheme *theme,
+    EcsUiColorF fill)
+{
+    if (node == NULL || theme == NULL) {
+        return (EcsUiPaintCornerRadius){0};
+    }
+
+    float fallback = 0.0f;
+    bool radius_enabled = fill.a != 0.0f;
+    switch (node->kind) {
+    case ECS_UI_NODE_BUTTON:
+    case ECS_UI_NODE_PRESSABLE:
+    case ECS_UI_NODE_CUSTOM:
+        fallback = theme->radius;
+        radius_enabled = true;
+        break;
+    case ECS_UI_NODE_ROOT:
+    case ECS_UI_NODE_VSTACK:
+    case ECS_UI_NODE_HSTACK:
+    case ECS_UI_NODE_ZSTACK:
+    default:
+        break;
+    }
+    if (!radius_enabled) {
+        return (EcsUiPaintCornerRadius){0};
+    }
+
+    const float radius = EcsUiStyleCornerRadius(node, fallback);
+    return (EcsUiPaintCornerRadius){
+        .top_left = radius,
+        .top_right = radius,
+        .bottom_left = radius,
+        .bottom_right = radius,
+    };
+}
+
 static bool EcsUiPaintPushBox(
     EcsUiPaintList *list,
     const EcsUiTreeNodeSnapshot *node,
     EcsUiColorF fill,
+    EcsUiPaintCornerRadius radius,
+    EcsUiPaintBorder border,
     float opacity,
     uint32_t item_capacity)
 {
@@ -96,6 +136,8 @@ static bool EcsUiPaintPushBox(
         .payload = {
             .box = {
                 .fill = fill,
+                .radius = radius,
+                .border = border,
             },
         },
     };
@@ -124,11 +166,16 @@ static bool EcsUiPaintEmitNode(
 
     if (node->has_layout) {
         const EcsUiColorF fill = EcsUiPaintBoxFill(node, theme);
-        if (fill.a != 0.0f) {
+        const EcsUiPaintBorder border = EcsUiStyleBorder(node);
+        if (fill.a != 0.0f || border.has_border) {
+            const EcsUiPaintCornerRadius radius =
+                EcsUiPaintBoxRadius(node, theme, fill);
             if (!EcsUiPaintPushBox(
                     list,
                     node,
                     fill,
+                    radius,
+                    border,
                     opacity,
                     item_capacity)) {
                 return false;

@@ -41,6 +41,8 @@ bool EcsUiStyleHasDrawableBevel(const EcsUiTreeNodeSnapshot *node);
 float EcsUiStyleCornerRadius(
     const EcsUiTreeNodeSnapshot *node,
     float fallback);
+EcsUiPaintBorder EcsUiStyleBorder(
+    const EcsUiTreeNodeSnapshot *node);
 EcsUiColorF EcsUiStyleBevelTopLeftColor(
     const EcsUiTreeNodeSnapshot *node);
 EcsUiColorF EcsUiStyleBevelBottomRightColor(

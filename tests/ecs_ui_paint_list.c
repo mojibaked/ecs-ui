@@ -92,6 +92,71 @@ static EcsUiColorF TestColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
     };
 }
 
+static EcsUiPaintCornerRadius TestRadius(float radius)
+{
+    return (EcsUiPaintCornerRadius){
+        .top_left = radius,
+        .top_right = radius,
+        .bottom_left = radius,
+        .bottom_right = radius,
+    };
+}
+
+static EcsUiPaintBorder TestNoBorder(void)
+{
+    return (EcsUiPaintBorder){0};
+}
+
+static EcsUiPaintBorder TestBorder(
+    EcsUiColorF color,
+    float left,
+    float top,
+    float right,
+    float bottom)
+{
+    return (EcsUiPaintBorder){
+        .color = color,
+        .left = left,
+        .top = top,
+        .right = right,
+        .bottom = bottom,
+        .has_border = true,
+    };
+}
+
+static int RequireRadius(
+    EcsUiPaintCornerRadius actual,
+    EcsUiPaintCornerRadius expected,
+    const char *message)
+{
+    int result = 0;
+    result |= RequireNear(actual.top_left, expected.top_left, 0.001f, message);
+    result |= RequireNear(actual.top_right, expected.top_right, 0.001f, message);
+    result |= RequireNear(actual.bottom_left, expected.bottom_left, 0.001f, message);
+    result |= RequireNear(actual.bottom_right, expected.bottom_right, 0.001f, message);
+    return result;
+}
+
+static int RequireBorder(
+    EcsUiPaintBorder actual,
+    EcsUiPaintBorder expected,
+    const char *message)
+{
+    int result = 0;
+    result |= Require(
+        actual.has_border == expected.has_border,
+        "paint box border presence mismatch");
+    if (!expected.has_border) {
+        return result;
+    }
+    result |= RequireColor(actual.color, expected.color, message);
+    result |= RequireNear(actual.left, expected.left, 0.001f, message);
+    result |= RequireNear(actual.top, expected.top, 0.001f, message);
+    result |= RequireNear(actual.right, expected.right, 0.001f, message);
+    result |= RequireNear(actual.bottom, expected.bottom, 0.001f, message);
+    return result;
+}
+
 static EcsUiSize TestMeasureText(
     const char *utf8,
     int32_t length,
@@ -201,12 +266,21 @@ static int BuildPaintTree(
 
     ecs_set(world, fit, EcsUiBoxStyle, {
         .background = {10u, 20u, 30u, 255u},
+        .radius = 0.5f,
+        .border_width = 1.5f,
+        .border_left_width = 2.25f,
+        .border_bottom_width = 3.5f,
+        .border_color = {100u, 110u, 120u, 230u},
     });
     ecs_set(world, fit, EcsUiVisual, {
         .opacity = 0.75f,
     });
     ecs_set(world, pressable, EcsUiBoxStyle, {
         .background = {40u, 50u, 60u, 200u},
+        .radius = 6.25f,
+        .border_width = 2.0f,
+        .border_top_width = 2.5f,
+        .border_color = {130u, 140u, 150u, 240u},
     });
     ecs_set(world, transparent_group, EcsUiBoxStyle, {
         .background = {70u, 80u, 90u, 255u},
@@ -223,6 +297,8 @@ static int RequirePaintItem(
     uint32_t index,
     const char *node_id,
     EcsUiColorF expected_fill,
+    EcsUiPaintCornerRadius expected_radius,
+    EcsUiPaintBorder expected_border,
     float expected_opacity)
 {
     int result = 0;
@@ -287,6 +363,14 @@ static int RequirePaintItem(
         item->payload.box.fill,
         expected_fill,
         "paint box fill mismatch");
+    result |= RequireRadius(
+        item->payload.box.radius,
+        expected_radius,
+        "paint box radius mismatch");
+    result |= RequireBorder(
+        item->payload.box.border,
+        expected_border,
+        "paint box border mismatch");
     result |= RequireNear(
         item->opacity,
         expected_opacity,
@@ -354,6 +438,8 @@ static int RequirePaintList(
             theme->root_background.g,
             theme->root_background.b,
             theme->root_background.a),
+        TestRadius(0.0f),
+        TestNoBorder(),
         1.0f);
     result |= RequirePaintItem(
         paint,
@@ -361,6 +447,8 @@ static int RequirePaintList(
         1u,
         "PaintFit",
         TestColor(10u, 20u, 30u, 255u),
+        TestRadius(25.0f),
+        TestBorder(TestColor(100u, 110u, 120u, 230u), 2.25f, 1.5f, 1.5f, 3.5f),
         0.75f);
     result |= RequirePaintItem(
         paint,
@@ -372,6 +460,8 @@ static int RequirePaintList(
             theme->surface_subtle.g,
             theme->surface_subtle.b,
             theme->surface_subtle.a),
+        TestRadius(theme->radius),
+        TestNoBorder(),
         0.75f);
     result |= RequirePaintItem(
         paint,
@@ -379,6 +469,8 @@ static int RequirePaintList(
         3u,
         "PaintPress",
         TestColor(40u, 50u, 60u, 200u),
+        TestRadius(6.25f),
+        TestBorder(TestColor(130u, 140u, 150u, 240u), 2.0f, 2.5f, 2.0f, 2.0f),
         0.75f);
     result |= RequirePaintItem(
         paint,
@@ -390,6 +482,8 @@ static int RequirePaintList(
             theme->button_primary.g,
             theme->button_primary.b,
             theme->button_primary.a),
+        TestRadius(theme->radius),
+        TestNoBorder(),
         1.0f);
     result |= RequirePaintItem(
         paint,
@@ -401,6 +495,8 @@ static int RequirePaintList(
             theme->surface_subtle.g,
             theme->surface_subtle.b,
             theme->surface_subtle.a),
+        TestRadius(theme->radius),
+        TestNoBorder(),
         1.0f);
     result |= RequireNoPaintSource(paint, tree, "PaintNoFill");
     result |= RequireNoPaintSource(paint, tree, "PaintTransparentGroup");

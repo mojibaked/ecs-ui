@@ -62,8 +62,26 @@ typedef struct EcsUiPaintClip {
     bool enabled;
 } EcsUiPaintClip;
 
+typedef struct EcsUiPaintCornerRadius {
+    float top_left;
+    float top_right;
+    float bottom_left;
+    float bottom_right;
+} EcsUiPaintCornerRadius;
+
+typedef struct EcsUiPaintBorder {
+    EcsUiColorF color;
+    float left;
+    float top;
+    float right;
+    float bottom;
+    bool has_border;
+} EcsUiPaintBorder;
+
 typedef struct EcsUiPaintBox {
     EcsUiColorF fill;
+    EcsUiPaintCornerRadius radius;
+    EcsUiPaintBorder border;
 } EcsUiPaintBox;
 
 typedef struct EcsUiPaintItem {
